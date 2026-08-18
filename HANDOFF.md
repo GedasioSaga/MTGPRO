@@ -1,6 +1,6 @@
 # HANDOFF — MTGPRO (simulador automático de Magic)
 
-**Atualizado:** 2026-08-18
+**Atualizado:** 2026-08-18 (motor completo)
 **Diretório:** `C:\Users\gedasio.filho\OneDrive - Vertis Capital\Área de Trabalho\Tudo\Jogo Magic`
 **Remoto:** https://github.com/GedasioSaga/MTGPRO — público, MIT, branch `main`
 
@@ -28,28 +28,40 @@ Modo de trabalho: `ultracode` + `gauntlet-loop` nível máximo + loop até AAA.
 
 ### Funciona, com prova
 
-| Peça | Prova |
+| Peca | Prova |
 |---|---|
-| `crates/mtg-script` — Lua sandboxed, DSL de cartas | `cargo test -p mtg-script` → **5/5 passam**, incluindo sandbox e round-trip Lua→`CardDef` |
-| `crates/mtg-core` compila | `cargo build -p mtg-core` limpo (1 warning de import) |
-| Lua 5.4 vendored compila nesta máquina | build de `mlua` com `lua54,vendored,serialize` OK |
+| **Motor de regras completo** | `cargo test --workspace` -> **104 passando, 0 falhando** |
+| Partida completa roda | `tests/smoke.rs` -> 5/5, sementes 0..20, sem panico, 1.82s |
+| `crates/mtg-script` — Lua sandboxed | `cargo test -p mtg-script` -> 5/5, sandbox e round-trip Lua->CardDef |
+| Catalogo em Lua | **162 cartas** em `cards/*.lua` + 4 decks de 60 |
 
-### Implementado de verdade, ainda não testado ponta a ponta
+Modulos do motor, medidos com `wc -l` (nao por relatorio de agente):
 
-- `engine/turn.rs` (~1050 linhas) — laço de turno, prioridade, `move_object`, `draw_card`
-- `engine/cast.rs` (~1830 linhas) — ações legais, custos, mana
-- `engine/viewgen.rs` (~550 linhas) — projeção para a UI
-- `crates/mtg-db` — SQLite via rusqlite bundled
-- `crates/mtg-ai`, `crates/mtg-server` — parciais
-- `web/src/**` — design system, board, fx, ui parciais (workflow de UI morreu no limite)
+| Modulo | Linhas | Modulo | Linhas |
+|---|---|---|---|
+| `resolve.rs` | 1930 | `turn.rs` | 1049 |
+| `cast.rs` | 1830 | `stack.rs` | 885 |
+| `combat.rs` | 1545 | `layers.rs` | 830 |
+| `query.rs` | 1079 | `triggers.rs` | 590 |
+| `viewgen.rs` | 552 | `sba.rs` | 543 |
 
-### Stub vazio — em reconstrução pelo workflow `wf_401ec653-103`
+Diagnostico de 20 sementes (Goblin Onslaught x Azorius Control) com bots **aleatorios**:
+11 partidas com vencedor entre os turnos 23 e 39, 9 empates no teto de 40 turnos.
+O log mostra Counterspell anulando Shock, ETB de `Wall of Omens`, fichas de
+`Krenko's Command`, remocao e combate. A partida e real.
 
-`query.rs` · `layers.rs` · `stack.rs` · `triggers.rs` · `sba.rs` · `combat.rs` · `resolve.rs`
+### Lacunas conhecidas (em tratamento por `wf_ccb144a6-20c`)
 
-Retornam `None` / `false` / `vec![]`. **Sem eles o jogo não roda** — são as regras.
-
----
+1. **Nenhum `impl Agent` heuristico ligado.** `mtg-ai` expoe `Snapshot`, `evaluate`,
+   `simulate_combat`, `plan_blocks` — mas `mtg-server/src/bot.rs` ainda sorteia
+   uniformemente. O simulador e automatico, nao inteligente. Maior peca aberta.
+   (Causa raiz descoberta na integracao: `mtg-ai/src/lib.rs` tinha so um `\n`, entao
+   1798 linhas de `cards.rs`/`eval.rs`/`sim.rs` nunca eram compiladas.)
+2. **Dano de combate nao entra em `state.log`.** Aparece em `MatchEvent` e `GameEvent`,
+   mas o log sozinho nao reconstroi o combate.
+3. **Cliente web incompleto** — faltam `Card.tsx`, `BoardLayout`, `StackPanel`,
+   `PhaseTrack`, `TargetArrows`, todo o `components/hud/` e `mock/`.
+4. 24 warnings de clippy, todas cosmeticas (nenhuma aponta defeito).
 
 ## Camada Lua (adicionada 18/08, a pedido)
 
@@ -136,7 +148,8 @@ JSON em camelCase. `MatchEvent` usa tag interna `"type"`.
 |---|---|---|
 | `wf_b256501a-a2e` | motor, 10 builders + integração | 5 retornaram, 6 morreram no limite de sessão; integração nunca rodou; **stubs vazios plantados** |
 | `wf_0e9383c5-e1c` | cliente, 5 builders + integração | todos morreram no limite; arquivos parciais no disco |
-| `wf_401ec653-103` | **em execução** — 7 módulos stub + catálogo Lua + integração | — |
+| `wf_401ec653-103` | 7 módulos stub + catálogo Lua + integração | **6/6 verde** — motor completo, 104 testes |
+| `wf_ccb144a6-20c` | **em execução** — IA jogável + cliente web + prova ponta a ponta | — |
 
 Retomar qualquer um: `Workflow({scriptPath: "<script>", resumeFromRunId: "<run id>"})`.
 Scripts em `...\workflows\scripts\`. Antes de diagnosticar resultado vazio, ler
