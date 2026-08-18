@@ -42,6 +42,8 @@ impl ZoneId {
     pub fn library(p: PlayerId) -> Self { ZoneId { kind: ZoneKind::Library, owner: Some(p) } }
     pub fn hand(p: PlayerId) -> Self { ZoneId { kind: ZoneKind::Hand, owner: Some(p) } }
     pub fn graveyard(p: PlayerId) -> Self { ZoneId { kind: ZoneKind::Graveyard, owner: Some(p) } }
+    /// CR 903.6 — a zona de comando é por jogador, como mão e cemitério.
+    pub fn command(p: PlayerId) -> Self { ZoneId { kind: ZoneKind::Command, owner: Some(p) } }
 }
 
 /// Sequência ordenada de objetos. Índice 0 = topo para biblioteca e pilha.

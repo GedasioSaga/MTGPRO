@@ -91,8 +91,8 @@ impl Agent for StreamingAgent {
 /// em si bloqueia a thread até a partida acabar.
 pub fn run_match_blocking(db: Arc<CardDatabase>, req: MatchRequest, tx: Sender<ServerFrame>) {
     let players = vec![
-        PlayerConfig { name: req.name_a.clone(), deck: req.deck_a },
-        PlayerConfig { name: req.name_b.clone(), deck: req.deck_b },
+        PlayerConfig { name: req.name_a.clone(), deck: req.deck_a, commander: None },
+        PlayerConfig { name: req.name_b.clone(), deck: req.deck_b, commander: None },
     ];
 
     // Semente derivada, não a semente crua, para que os dois bots não

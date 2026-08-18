@@ -8,3 +8,8 @@ mtg-core.workspace = true
 serde.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
+
+[dev-dependencies]
+# Só o teste de força precisa do catálogo de verdade: a IA em si continua sem
+# saber o que é um arquivo `.lua`.
+mtg-cards.workspace = true

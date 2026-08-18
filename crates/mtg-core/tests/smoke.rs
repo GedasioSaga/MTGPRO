@@ -94,14 +94,15 @@ fn config() -> GameConfig {
         // uma partida entre dois decks de 60, há algo travado.
         max_turns: 40,
         max_decisions: 60_000,
+        ..GameConfig::default()
     }
 }
 
 /// Roda uma partida e devolve `(resultado, turno final, tamanho do log)`.
 fn play(db: Arc<CardDatabase>, deck_a: Vec<CardDefId>, deck_b: Vec<CardDefId>, seed: u64) -> (GameOutcome, u32, usize) {
     let players = vec![
-        PlayerConfig { name: "Alice".to_string(), deck: deck_a },
-        PlayerConfig { name: "Bob".to_string(), deck: deck_b },
+        PlayerConfig { name: "Alice".to_string(), deck: deck_a, commander: None },
+        PlayerConfig { name: "Bob".to_string(), deck: deck_b, commander: None },
     ];
     let agents: Vec<Box<dyn Agent>> = vec![
         Box::new(DiceAgent::new("alice", seed)),
@@ -188,8 +189,8 @@ fn agentes_degenerados_nao_travam_o_motor() {
     // dois extremos que costumam expor laço infinito de prioridade.
     let db = database();
     let players = vec![
-        PlayerConfig { name: "Passiva".to_string(), deck: deck(&db, "Azorius Control") },
-        PlayerConfig { name: "Gulosa".to_string(), deck: deck(&db, "Goblin Onslaught") },
+        PlayerConfig { name: "Passiva".to_string(), deck: deck(&db, "Azorius Control"), commander: None },
+        PlayerConfig { name: "Gulosa".to_string(), deck: deck(&db, "Goblin Onslaught"), commander: None },
     ];
     let agents: Vec<Box<dyn Agent>> = vec![
         Box::new(mtg_core::engine::FirstLegalAgent),

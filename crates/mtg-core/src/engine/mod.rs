@@ -13,6 +13,7 @@
 //!   - `cast`     — legalidade de lançamento, custos, mana (CR 601, 202)
 //!   - `combat`   — ataque, bloqueio, dano (CR 506–511)
 //!   - `sba`      — ações baseadas em estado (CR 704)
+//!   - `commander`— regras próprias de Commander (CR 903)
 //!   - `triggers` — casamento de evento com gatilho (CR 603)
 //!   - `resolve`  — interpretador do IR de efeitos
 //!   - `viewgen`  — projeção redigida para a UI
@@ -33,6 +34,7 @@ use crate::view::{GameView, MatchEvent, Observer};
 
 pub mod cast;
 pub mod combat;
+pub mod commander;
 pub mod layers;
 pub mod query;
 pub mod resolve;
@@ -111,8 +113,38 @@ impl Characteristics {
 // Configuração
 // ---------------------------------------------------------------------------
 
+/// Formato da partida, no que o **motor** precisa saber.
+///
+/// Standard, Modern e Pauper compartilham exatamente as mesmas regras de motor
+/// (20 de vida, sem zona de comando), e diferem só na lista de cartas legal —
+/// validação de deck é responsabilidade de outra camada. Por isso os três caem
+/// em `Constructed` e só Commander ganha variante própria: variante de enum que
+/// não muda comportamento é ramo morto esperando divergir.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum GameFormat {
+    #[default]
+    Constructed,
+    Commander,
+}
+
+impl GameFormat {
+    /// CR 103.3 / CR 903.7 — vida inicial por formato.
+    pub fn default_starting_life(self) -> i32 {
+        match self {
+            GameFormat::Constructed => 20,
+            GameFormat::Commander => 40,
+        }
+    }
+    pub fn is_commander(self) -> bool {
+        matches!(self, GameFormat::Commander)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GameConfig {
+    /// Regras de motor específicas do formato (zona de comando, taxa, 903.10).
+    #[serde(default)]
+    pub format: GameFormat,
     pub starting_life: i32,
     pub starting_hand_size: usize,
     pub allow_mulligan: bool,
@@ -125,7 +157,8 @@ pub struct GameConfig {
 impl Default for GameConfig {
     fn default() -> Self {
         GameConfig {
-            starting_life: 20,
+            format: GameFormat::Constructed,
+            starting_life: GameFormat::Constructed.default_starting_life(),
             starting_hand_size: 7,
             allow_mulligan: true,
             max_turns: 60,
@@ -134,11 +167,41 @@ impl Default for GameConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+impl GameConfig {
+    /// Configuração base de um formato, com a vida inicial que ele manda.
+    pub fn for_format(format: GameFormat) -> GameConfig {
+        GameConfig {
+            format,
+            starting_life: format.default_starting_life(),
+            ..GameConfig::default()
+        }
+    }
+    /// CR 903.7 — Commander começa com 40 de vida.
+    pub fn commander() -> GameConfig {
+        GameConfig::for_format(GameFormat::Commander)
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlayerConfig {
     pub name: String,
     /// Cartas do deck, na ordem em que entram na biblioteca antes do embaralho.
     pub deck: Vec<CardDefId>,
+    /// CR 903.6 — comandante deste jogador. Um só por jogador nesta rodada:
+    /// Partner e Commander de duas cabeças pedem uma lista e uma regra de
+    /// identidade de cor combinada, que ficam para depois.
+    #[serde(default)]
+    pub commander: Option<CardDefId>,
+}
+
+impl PlayerConfig {
+    pub fn new(name: impl Into<String>, deck: Vec<CardDefId>) -> PlayerConfig {
+        PlayerConfig { name: name.into(), deck, commander: None }
+    }
+    pub fn with_commander(mut self, commander: CardDefId) -> PlayerConfig {
+        self.commander = Some(commander);
+        self
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -178,6 +241,9 @@ impl Game {
             decisions_made: 0,
             seed,
         };
+        // CR 903.6 — o comandante sai do deck e vai para a zona de comando
+        // antes do embaralho, para que o embaralho não dependa dele.
+        commander::setup(&mut game, &players);
         turn::shuffle_all_libraries(&mut game);
         turn::opening_hands(&mut game);
         Ok(game)

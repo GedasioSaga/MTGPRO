@@ -1,0 +1,7 @@
+[package]
+name = "mtg-oracle"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+mtg-core.workspace = true

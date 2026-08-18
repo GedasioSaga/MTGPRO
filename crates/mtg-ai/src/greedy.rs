@@ -21,7 +21,6 @@ use mtg_core::action::{Action, Request};
 use mtg_core::engine::{Agent, Game};
 use mtg_core::state::GameOutcome;
 
-use crate::eval::Snapshot;
 use crate::heuristic::{self, HeuristicBot};
 
 pub struct GreedyBot {
@@ -69,7 +68,7 @@ impl Agent for GreedyBot {
         let Some(me) = request.player() else {
             return first.clone();
         };
-        let s = Snapshot::from_game(game, me);
+        let s = heuristic::snapshot_for(game, me, request);
         let ctx = heuristic::make_ctx(game, &s, me, request);
         heuristic::pick_best(legal, self.seed, self.decisions, |action| {
             heuristic::lookahead_score(&ctx, action)

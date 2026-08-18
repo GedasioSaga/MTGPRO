@@ -45,17 +45,25 @@ export function cssVars(
 /** Largura de referência da mesa; abaixo disso tudo encolhe junto. */
 const BOARD_REFERENCE = { width: 1920, height: 1080 } as const
 const MIN_BOARD_SCALE = 0.62
+/**
+ * Teto de ampliação. A mesa era travada em 1, então num monitor 4K ela ficava
+ * do tamanho de 1920 no meio da tela com tarja preta em volta — o jogo parecia
+ * pequeno num display grande, que é o oposto do esperado. O teto existe para a
+ * carta não virar cartaz em tela ultrawide.
+ */
+const MAX_BOARD_SCALE = 1.6
 
 /**
- * Fator único de escala da mesa. A mesa é desenhada para 1920x1080 e encolhe
- * proporcionalmente — é o que garante que 1280x800 continue cabendo sem rolagem
- * e sem que cada componente invente o próprio breakpoint.
+ * Fator único de escala da mesa. A mesa é desenhada para 1920x1080 e acompanha
+ * o viewport nos dois sentidos: encolhe até 0.62 para 1280x800 caber sem
+ * rolagem, e cresce até 1.6 para ocupar um monitor maior. Uma variável só, em
+ * vez de cada componente inventar o próprio breakpoint.
  */
 export function boardScaleFor(width: number, height: number): number {
   const byWidth = width / BOARD_REFERENCE.width
   const byHeight = height / BOARD_REFERENCE.height
   const raw = Math.min(byWidth, byHeight)
-  return Math.max(MIN_BOARD_SCALE, Math.min(1, Number(raw.toFixed(3))))
+  return Math.max(MIN_BOARD_SCALE, Math.min(MAX_BOARD_SCALE, Number(raw.toFixed(3))))
 }
 
 /** Acompanha o viewport e devolve `boardScaleFor` já reativo. */

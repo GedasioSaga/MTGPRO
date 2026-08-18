@@ -105,6 +105,7 @@ mod tests {
             allow_mulligan: true,
             max_turns: 60,
             max_decisions: 100_000,
+            ..GameConfig::default()
         }
     }
 
@@ -117,8 +118,8 @@ mod tests {
         seed: u64,
     ) -> GameOutcome {
         let players = vec![
-            PlayerConfig { name: "A".to_string(), deck: decks.0 },
-            PlayerConfig { name: "B".to_string(), deck: decks.1 },
+            PlayerConfig { name: "A".to_string(), deck: decks.0, commander: None },
+            PlayerConfig { name: "B".to_string(), deck: decks.1, commander: None },
         ];
         // Sementes derivadas distintas: dois bots com a mesma semente tomariam
         // exatamente as mesmas decisões "aleatórias" em posições simétricas.

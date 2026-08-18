@@ -72,9 +72,18 @@ export async function fetchDecks(signal?: AbortSignal): Promise<DeckInfo[]> {
   return decks
 }
 
-/** `GET /api/cards`. Aceita snake_case (forma atual do `CardDef`) e camelCase. */
+/**
+ * `GET /api/catalog` — o catálogo curado, como array de `CardDef`.
+ *
+ * Não é `/api/cards`: aquela rota virou busca paginada quando o catálogo do
+ * Scryfall entrou (32 mil cartas), e responde um objeto de página, não um
+ * array. Quem monta partida quer as cartas jogáveis inteiras, que é o que
+ * `/api/catalog` entrega.
+ *
+ * Aceita snake_case (forma atual do `CardDef`) e camelCase.
+ */
 export async function fetchCardCatalog(signal?: AbortSignal): Promise<CardDef[]> {
-  const body = await getJson('/api/cards', signal)
+  const body = await getJson('/api/catalog', signal)
   if (!Array.isArray(body)) return []
   return body
     .filter((item): item is CardDefWire => isCardDefWire(item))

@@ -117,12 +117,17 @@ pub fn peek(game: &Game) -> Option<&StackItem> {
 /// CR 603.3b — gatilhos que dispararam vão para a pilha na próxima vez que um
 /// jogador receberia prioridade, em ordem APNAP: o jogador ativo põe os dele
 /// primeiro, depois cada não-ativo na ordem de turno.
-pub fn put_triggers_on_stack(game: &mut Game) {
+///
+/// Devolve `true` se algum item chegou de fato à pilha. Quem chama usa isso para
+/// reiniciar a rodada de prioridade: com três ou quatro jogadores, alguém que já
+/// tinha passado precisa poder responder ao gatilho novo (CR 117.4).
+pub fn put_triggers_on_stack(game: &mut Game) -> bool {
     if game.state.pending_triggers.is_empty() {
-        return;
+        return false;
     }
     let pending = std::mem::take(&mut game.state.pending_triggers);
     let order = apnap_order(game);
+    let mut matched = 0usize;
     let mut placed = 0usize;
 
     for player in order.iter().copied() {
@@ -134,7 +139,7 @@ pub fn put_triggers_on_stack(game: &mut Game) {
         if group.is_empty() {
             continue;
         }
-        placed += group.len();
+        matched += group.len();
         // CR 603.3b — com dois ou mais do mesmo controlador, ele escolhe a
         // ordem em que entram (o último a entrar resolve primeiro).
         let ordered = if group.len() > 1 {
@@ -145,13 +150,14 @@ pub fn put_triggers_on_stack(game: &mut Game) {
         for item in ordered {
             if let Some(ready) = prepare_trigger(game, item) {
                 push_trigger_item(game, ready);
+                placed += 1;
             }
         }
     }
 
-    // Rede de segurança: gatilho cujo controlador já saiu da partida não pode
-    // ser esquecido silenciosamente sem registro.
-    if placed < pending.len() {
+    // CR 800.4a — gatilho de quem já deixou a partida deixa de existir; ele não
+    // pode sumir sem registro, ou o log mente sobre o que aconteceu.
+    if matched < pending.len() {
         let orphans: Vec<PlayerId> = pending
             .iter()
             .filter(|i| !order.contains(&i.controller))
@@ -164,10 +170,15 @@ pub fn put_triggers_on_stack(game: &mut Game) {
             );
         }
     }
+
+    placed > 0
 }
 
-/// Jogadores vivos a partir do ativo, na ordem de turno (CR 101.4).
-fn apnap_order(game: &Game) -> Vec<PlayerId> {
+/// Jogadores ainda na partida a partir do ativo, na ordem de turno (CR 101.4).
+///
+/// É a ordem canônica de toda escolha simultânea — gatilho indo para a pilha,
+/// mas também qualquer decisão que vários jogadores fariam ao mesmo tempo.
+pub fn apnap_order(game: &Game) -> Vec<PlayerId> {
     let mut out = Vec::with_capacity(game.state.players.len());
     let mut current = game.state.active_player;
     for _ in 0..game.state.players.len() {
@@ -719,11 +730,39 @@ pub(crate) mod testkit {
         db.reindex();
         let deck: Vec<CardDefId> = (0..12).map(|_| CardDefId(0)).collect();
         let players = vec![
-            PlayerConfig { name: "A".into(), deck: deck.clone() },
-            PlayerConfig { name: "B".into(), deck },
+            PlayerConfig { name: "A".into(), deck: deck.clone(), commander: None },
+            PlayerConfig { name: "B".into(), deck, commander: None },
         ];
         let agents: Vec<Box<dyn crate::engine::Agent>> =
             vec![Box::new(FirstLegalAgent), Box::new(FirstLegalAgent)];
+        let config = GameConfig { allow_mulligan: false, ..Default::default() };
+        match Game::new(Arc::new(db), players, agents, config, 42) {
+            Ok(g) => g,
+            Err(e) => panic!("montagem de partida de teste falhou: {e}"),
+        }
+    }
+
+    /// Partida de `count` jogadores (nomes `P0`..`Pn`), todos com o mesmo deck e
+    /// com o agente que sempre escolhe a primeira ação legal.
+    pub fn game_with_players(cards: Vec<CardDef>, count: usize) -> Game {
+        let agents: Vec<Box<dyn crate::engine::Agent>> = (0..count)
+            .map(|_| Box::new(FirstLegalAgent) as Box<dyn crate::engine::Agent>)
+            .collect();
+        game_with_agents(cards, agents)
+    }
+
+    /// Igual a `game_with_players`, mas com agentes escolhidos pelo teste — a
+    /// quantidade de agentes define a quantidade de jogadores.
+    pub fn game_with_agents(
+        cards: Vec<CardDef>,
+        agents: Vec<Box<dyn crate::engine::Agent>>,
+    ) -> Game {
+        let mut db = CardDatabase { cards };
+        db.reindex();
+        let deck: Vec<CardDefId> = (0..12).map(|_| CardDefId(0)).collect();
+        let players: Vec<PlayerConfig> = (0..agents.len())
+            .map(|i| PlayerConfig { name: format!("P{i}"), deck: deck.clone(), commander: None })
+            .collect();
         let config = GameConfig { allow_mulligan: false, ..Default::default() };
         match Game::new(Arc::new(db), players, agents, config, 42) {
             Ok(g) => g,
@@ -845,6 +884,45 @@ mod tests {
         );
         // Último a entrar é o topo, logo resolve antes.
         assert_eq!(peek(&game).map(|i| i.id), Some(ObjectId(9000)));
+    }
+
+    #[test]
+    fn apnap_com_quatro_jogadores_ordena_gatilhos() {
+        let mut game = game_with_players(vec![card(0, "Peça", vec![CardType::Creature])], 4);
+        // Ativo no meio da mesa: a ordem correta dá a volta e não é a ordem dos
+        // ids nem a ordem de disparo.
+        game.state.active_player = PlayerId(2);
+        let sources: Vec<ObjectId> = (0..4)
+            .map(|i| put_on_battlefield(&mut game, PlayerId(i)))
+            .collect();
+
+        // Ordem de disparo propositalmente embaralhada.
+        game.state.pending_triggers = vec![
+            trigger_item(ObjectId(9000), sources[1], PlayerId(1)),
+            trigger_item(ObjectId(9001), sources[3], PlayerId(3)),
+            trigger_item(ObjectId(9002), sources[0], PlayerId(0)),
+            trigger_item(ObjectId(9003), sources[2], PlayerId(2)),
+        ];
+
+        assert!(
+            put_triggers_on_stack(&mut game),
+            "os quatro gatilhos tinham que entrar na pilha"
+        );
+
+        let controllers: Vec<PlayerId> = game.state.stack.iter().map(|i| i.controller).collect();
+        assert_eq!(
+            controllers,
+            vec![PlayerId(2), PlayerId(3), PlayerId(0), PlayerId(1)],
+            "CR 101.4: ativo primeiro, depois os não-ativos em ordem de turno"
+        );
+        let Some(top) = peek(&game) else {
+            panic!("a pilha ficou vazia depois de colocar quatro gatilhos");
+        };
+        assert_eq!(
+            top.controller,
+            PlayerId(1),
+            "o último a entrar é o topo, logo resolve primeiro"
+        );
     }
 
     #[test]

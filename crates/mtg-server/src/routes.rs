@@ -6,17 +6,21 @@
 //! computados ao cliente. Ver `docs/ENGINE_CONTRACT.md`.
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::State;
-use axum::http::HeaderValue;
+use axum::extract::{Path as UrlPath, Query, State};
+use axum::http::{HeaderValue, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use mtg_core::card::{CardDatabase, CardDef};
+use mtg_core::mana::Color;
+use mtg_core::types::CardType;
+use mtg_db::{CardPage, CardQuery, CardStore, CatalogStats};
+use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Notify};
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
@@ -26,6 +30,12 @@ use tracing::{error, warn};
 use crate::catalog::DeckInfo;
 use crate::protocol::{ClientMessage, DeckSummary, HealthResponse, ServerFrame};
 use crate::sim::{self, MatchRequest};
+
+/// Teto de itens por página. Existe para que um `limit=999999` de cliente
+/// distraído não vire uma resposta de dezenas de MB — que é exatamente o que
+/// o antigo `/api/cards` fazia com o catálogo inteiro.
+const MAX_PAGE_LIMIT: usize = 200;
+const DEFAULT_PAGE_LIMIT: usize = 60;
 
 pub struct AppState {
     pub db: Arc<CardDatabase>,
@@ -38,13 +48,35 @@ impl AppState {
     }
 }
 
+/// Estado das rotas de catálogo. `CardStore` guarda uma `rusqlite::Connection`,
+/// que é `Send` mas não `Sync` — o `Mutex` é o que permite compartilhá-la
+/// entre requisições. Toda consulta roda em `spawn_blocking`, então o lock
+/// nunca é segurado através de um `await`.
+struct CatalogState {
+    store: Option<Mutex<CardStore>>,
+    /// Catálogo curado em Lua, servido inteiro pela rota legada.
+    curated: Arc<CardDatabase>,
+}
+
 pub fn build_router(state: Arc<AppState>) -> Router {
+    let catalog = Arc::new(CatalogState {
+        store: crate::catalog::open_store(&state.db).map(Mutex::new),
+        curated: state.db.clone(),
+    });
+
+    let catalog_api = Router::new()
+        .route("/api/cards", get(cards))
+        .route("/api/cards/:oracle_id", get(card_by_oracle_id))
+        .route("/api/catalog", get(curated_catalog))
+        .route("/api/stats", get(stats))
+        .with_state(catalog);
+
     let api = Router::new()
         .route("/api/health", get(health))
-        .route("/api/cards", get(cards))
         .route("/api/decks", get(decks))
         .route("/ws/match", get(ws_match))
-        .with_state(state);
+        .with_state(state)
+        .merge(catalog_api);
 
     // Vite roda em porta separada durante o desenvolvimento — libera
     // qualquer porta de localhost/127.0.0.1 em vez de fixar uma.
@@ -82,8 +114,220 @@ async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
     Json(HealthResponse { status: "ok", cards: state.db.cards.len(), decks: state.decks.len() })
 }
 
-async fn cards(State(state): State<Arc<AppState>>) -> Json<Vec<CardDef>> {
-    Json(state.db.cards.clone())
+// ---------------------------------------------------------------------------
+// Catálogo
+// ---------------------------------------------------------------------------
+
+/// Parâmetros de `GET /api/cards`. Tudo chega como texto e é validado aqui —
+/// query string é entrada hostil, então valor malformado vira 400 com
+/// mensagem, nunca `unwrap` nem filtro silenciosamente ignorado.
+#[derive(Debug, Deserialize)]
+struct CardsParams {
+    q: Option<String>,
+    colors: Option<String>,
+    #[serde(rename = "type")]
+    card_type: Option<String>,
+    mv: Option<String>,
+    set: Option<String>,
+    playable: Option<String>,
+    limit: Option<String>,
+    offset: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ApiError {
+    error: String,
+}
+
+#[derive(Debug)]
+enum ApiFailure {
+    BadRequest(String),
+    NotFound(String),
+    Unavailable(String),
+    Internal(String),
+}
+
+impl IntoResponse for ApiFailure {
+    fn into_response(self) -> axum::response::Response {
+        let (status, message) = match self {
+            ApiFailure::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
+            ApiFailure::NotFound(m) => (StatusCode::NOT_FOUND, m),
+            ApiFailure::Unavailable(m) => (StatusCode::SERVICE_UNAVAILABLE, m),
+            ApiFailure::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, m),
+        };
+        (status, Json(ApiError { error: message })).into_response()
+    }
+}
+
+/// `GET /api/cards` — busca paginada. Substituiu a resposta que despejava o
+/// catálogo inteiro num array; com 35 mil cartas aquilo eram dezenas de MB
+/// por requisição. Quem precisa do array antigo usa `/api/catalog`.
+async fn cards(
+    State(state): State<Arc<CatalogState>>,
+    Query(params): Query<CardsParams>,
+) -> Result<Json<CardPage>, ApiFailure> {
+    let query = build_query(&params)?;
+    let page = blocking_query(state, move |store| store.search_page(&query)).await?;
+    Ok(Json(page))
+}
+
+/// `GET /api/cards/:oracle_id` — uma carta, com o `CardDef` completo.
+async fn card_by_oracle_id(
+    State(state): State<Arc<CatalogState>>,
+    UrlPath(oracle_id): UrlPath<String>,
+) -> Result<impl IntoResponse, ApiFailure> {
+    let wanted = oracle_id.clone();
+    let found = blocking_query(state, move |store| store.find_by_oracle_id(&wanted)).await?;
+    match found {
+        Some(detail) => Ok(Json(detail)),
+        None => Err(ApiFailure::NotFound(format!("carta não encontrada: {oracle_id}"))),
+    }
+}
+
+/// `GET /api/stats` — total, jogáveis, não jogáveis e o recorte por coleção.
+async fn stats(State(state): State<Arc<CatalogState>>) -> Result<Json<CatalogStats>, ApiFailure> {
+    let stats = blocking_query(state, |store| store.stats()).await?;
+    Ok(Json(stats))
+}
+
+/// Rota legada, explícita: o catálogo curado em Lua inteiro, como array.
+/// É o formato que `GET /api/cards` tinha antes da paginação, e é seguro
+/// porque essas cartas são poucas (centenas) e todas jogáveis — o catálogo do
+/// Scryfall nunca sai por aqui.
+async fn curated_catalog(State(state): State<Arc<CatalogState>>) -> Json<Vec<CardDef>> {
+    Json(state.curated.cards.clone())
+}
+
+/// Roda uma consulta do SQLite fora da runtime async. O `Mutex` é travado
+/// dentro do `spawn_blocking` e solto antes do retorno, então nenhum guard
+/// atravessa `await`.
+async fn blocking_query<T, F>(state: Arc<CatalogState>, work: F) -> Result<T, ApiFailure>
+where
+    T: Send + 'static,
+    F: FnOnce(&CardStore) -> Result<T, mtg_db::DbError> + Send + 'static,
+{
+    let result = tokio::task::spawn_blocking(move || {
+        let Some(store) = state.store.as_ref() else {
+            return Err(ApiFailure::Unavailable("catálogo indisponível".to_string()));
+        };
+        // `PoisonError` só acontece se outra requisição entrou em pânico
+        // segurando o lock; responder 503 é melhor que propagar o pânico.
+        let guard = store
+            .lock()
+            .map_err(|_| ApiFailure::Unavailable("catálogo em estado inconsistente".to_string()))?;
+        work(&guard).map_err(|err| {
+            error!(%err, "consulta ao catálogo falhou");
+            ApiFailure::Internal("falha ao consultar o catálogo".to_string())
+        })
+    })
+    .await;
+
+    match result {
+        Ok(inner) => inner,
+        Err(err) => {
+            error!(%err, "tarefa de catálogo não completou");
+            Err(ApiFailure::Internal("falha ao consultar o catálogo".to_string()))
+        }
+    }
+}
+
+fn build_query(params: &CardsParams) -> Result<CardQuery, ApiFailure> {
+    let limit = parse_usize(params.limit.as_deref(), "limit")?
+        .unwrap_or(DEFAULT_PAGE_LIMIT)
+        .clamp(1, MAX_PAGE_LIMIT);
+    let offset = parse_usize(params.offset.as_deref(), "offset")?.unwrap_or(0);
+
+    Ok(CardQuery {
+        text: params.q.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string),
+        colors: parse_colors(params.colors.as_deref())?,
+        types: parse_types(params.card_type.as_deref())?,
+        mana_value_max: None,
+        mana_value: parse_u32(params.mv.as_deref(), "mv")?,
+        set_code: params.set.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string),
+        playable: parse_bool(params.playable.as_deref())?,
+        limit,
+        offset,
+    })
+}
+
+/// Aceita `WU`, `w,u` ou `white,blue` — o cliente não precisa saber qual.
+fn parse_colors(raw: Option<&str>) -> Result<Option<Vec<Color>>, ApiFailure> {
+    let Some(raw) = raw.map(str::trim).filter(|s| !s.is_empty()) else { return Ok(None) };
+    let mut out: Vec<Color> = Vec::new();
+    let mut push = |c: Color, out: &mut Vec<Color>| {
+        if !out.contains(&c) {
+            out.push(c);
+        }
+    };
+    for part in raw.split([',', ' ']).filter(|p| !p.is_empty()) {
+        match part.to_ascii_lowercase().as_str() {
+            "white" => push(Color::White, &mut out),
+            "blue" => push(Color::Blue, &mut out),
+            "black" => push(Color::Black, &mut out),
+            "red" => push(Color::Red, &mut out),
+            "green" => push(Color::Green, &mut out),
+            // Forma compacta: `WU`, `bg`, `wubrg`. Cada letra é uma cor.
+            letters => {
+                for ch in letters.chars() {
+                    match Color::from_letter(ch.to_ascii_uppercase()) {
+                        Some(c) => push(c, &mut out),
+                        None => {
+                            return Err(ApiFailure::BadRequest(format!("cor desconhecida: {part}")))
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(if out.is_empty() { None } else { Some(out) })
+}
+
+fn parse_types(raw: Option<&str>) -> Result<Option<Vec<CardType>>, ApiFailure> {
+    let Some(raw) = raw.map(str::trim).filter(|s| !s.is_empty()) else { return Ok(None) };
+    let mut out = Vec::new();
+    for part in raw.split([',', ' ']).filter(|p| !p.is_empty()) {
+        let parsed = match part.to_ascii_lowercase().as_str() {
+            "artifact" => Some(CardType::Artifact),
+            "battle" => Some(CardType::Battle),
+            "creature" => Some(CardType::Creature),
+            "enchantment" => Some(CardType::Enchantment),
+            "instant" => Some(CardType::Instant),
+            "land" => Some(CardType::Land),
+            "planeswalker" => Some(CardType::Planeswalker),
+            "sorcery" => Some(CardType::Sorcery),
+            "kindred" | "tribal" => Some(CardType::Kindred),
+            _ => None,
+        };
+        match parsed {
+            Some(t) if !out.contains(&t) => out.push(t),
+            Some(_) => {}
+            None => return Err(ApiFailure::BadRequest(format!("tipo desconhecido: {part}"))),
+        }
+    }
+    Ok(if out.is_empty() { None } else { Some(out) })
+}
+
+fn parse_bool(raw: Option<&str>) -> Result<Option<bool>, ApiFailure> {
+    let Some(raw) = raw.map(str::trim).filter(|s| !s.is_empty()) else { return Ok(None) };
+    match raw.to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" => Ok(Some(true)),
+        "0" | "false" | "no" => Ok(Some(false)),
+        other => Err(ApiFailure::BadRequest(format!("playable inválido: {other}"))),
+    }
+}
+
+fn parse_usize(raw: Option<&str>, field: &str) -> Result<Option<usize>, ApiFailure> {
+    let Some(raw) = raw.map(str::trim).filter(|s| !s.is_empty()) else { return Ok(None) };
+    raw.parse::<usize>()
+        .map(Some)
+        .map_err(|_| ApiFailure::BadRequest(format!("{field} inválido: {raw}")))
+}
+
+fn parse_u32(raw: Option<&str>, field: &str) -> Result<Option<u32>, ApiFailure> {
+    let Some(raw) = raw.map(str::trim).filter(|s| !s.is_empty()) else { return Ok(None) };
+    raw.parse::<u32>()
+        .map(Some)
+        .map_err(|_| ApiFailure::BadRequest(format!("{field} inválido: {raw}")))
 }
 
 async fn decks(State(state): State<Arc<AppState>>) -> Json<Vec<DeckSummary>> {
@@ -274,4 +518,105 @@ async fn send_frame(out: &mpsc::Sender<Message>, frame: &ServerFrame) -> bool {
         }
     };
     out.send(Message::Text(text)).await.is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn params() -> CardsParams {
+        CardsParams {
+            q: None,
+            colors: None,
+            card_type: None,
+            mv: None,
+            set: None,
+            playable: None,
+            limit: None,
+            offset: None,
+        }
+    }
+
+    #[test]
+    fn limit_is_capped_and_defaulted() {
+        let q = build_query(&params()).expect("query padrão");
+        assert_eq!(q.limit, DEFAULT_PAGE_LIMIT);
+        assert_eq!(q.offset, 0);
+
+        let mut p = params();
+        p.limit = Some("999999".into());
+        assert_eq!(build_query(&p).expect("limit alto").limit, MAX_PAGE_LIMIT);
+
+        // limit=0 devolveria página vazia para sempre — sobe para 1.
+        p.limit = Some("0".into());
+        assert_eq!(build_query(&p).expect("limit zero").limit, 1);
+    }
+
+    #[test]
+    fn malformed_numbers_are_rejected_not_ignored() {
+        let mut p = params();
+        p.limit = Some("abc".into());
+        assert!(matches!(build_query(&p), Err(ApiFailure::BadRequest(_))));
+
+        let mut p = params();
+        p.mv = Some("-1".into());
+        assert!(matches!(build_query(&p), Err(ApiFailure::BadRequest(_))));
+
+        let mut p = params();
+        p.offset = Some("1e9".into());
+        assert!(matches!(build_query(&p), Err(ApiFailure::BadRequest(_))));
+    }
+
+    #[test]
+    fn colors_accept_letters_commas_and_names() {
+        assert_eq!(parse_colors(Some("WU")).expect("letras"), Some(vec![Color::White, Color::Blue]));
+        assert_eq!(parse_colors(Some("w,u")).expect("vírgula"), Some(vec![Color::White, Color::Blue]));
+        assert_eq!(
+            parse_colors(Some("white blue")).expect("nomes"),
+            Some(vec![Color::White, Color::Blue])
+        );
+        // Repetição não duplica o filtro.
+        assert_eq!(parse_colors(Some("GG")).expect("repetido"), Some(vec![Color::Green]));
+        assert_eq!(parse_colors(Some("  ")).expect("vazio"), None);
+        assert!(parse_colors(Some("roxo")).is_err());
+    }
+
+    #[test]
+    fn types_and_playable_parse_or_fail_loudly() {
+        assert_eq!(
+            parse_types(Some("creature,land")).expect("tipos"),
+            Some(vec![CardType::Creature, CardType::Land])
+        );
+        assert!(parse_types(Some("planeswalkerr")).is_err());
+
+        assert_eq!(parse_bool(Some("true")).expect("bool"), Some(true));
+        assert_eq!(parse_bool(Some("0")).expect("bool"), Some(false));
+        assert_eq!(parse_bool(None).expect("bool"), None);
+        assert!(parse_bool(Some("talvez")).is_err());
+    }
+
+    #[test]
+    fn blank_text_filter_is_dropped() {
+        let mut p = params();
+        p.q = Some("   ".into());
+        assert!(build_query(&p).expect("query").text.is_none());
+
+        p.q = Some("  bolt  ".into());
+        assert_eq!(build_query(&p).expect("query").text.as_deref(), Some("bolt"));
+    }
+
+    /// Único teste que mexe em `MTG_DB_PATH` — o valor `:memory:` evita que
+    /// rodar a suíte crie arquivo de banco na árvore do repositório.
+    #[test]
+    fn router_builds_with_all_catalog_routes() {
+        std::env::set_var("MTG_DB_PATH", ":memory:");
+        let db = match mtg_cards::build_database() {
+            Ok(db) => db,
+            Err(err) => panic!("catálogo não carregou: {err}"),
+        };
+        let state = Arc::new(AppState { db: Arc::new(db), decks: Vec::new() });
+        // Rota duplicada ou conflito de padrão viraria pânico aqui, não 404
+        // em produção.
+        let _router = build_router(state);
+    }
 }

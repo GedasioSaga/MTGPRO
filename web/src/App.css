@@ -278,7 +278,13 @@
 
   /* Ângulo do tampo. Um número só manda na inclinação do tapete e na
      contra-rotação de tudo que está apoiado nele — ver `.mat-plane`. */
-  --mat-tilt: 20deg;
+  /* 20deg dava profundidade mas recuava o tampo inteiro: a mesa encolhia para
+     metade da largura e sobrava tela morta nas laterais. 9deg mantém a leitura
+     de "mesa vista de quem senta nela" sem pagar largura. */
+  --mat-tilt: 9deg;
+  /* Recupera a largura que a rotação come. Sem isto o tampo fica menor que o
+     espaço disponível mesmo com o ângulo baixo. */
+  --mat-tilt-recover: 1.05;
 
   position: relative;
   /* Acima da luz de arena (`.app-shell__table::after`), que é `z-index: 0`. */
@@ -415,7 +421,7 @@
   position: absolute;
   inset: 0;
   transform-style: preserve-3d;
-  transform: rotateX(var(--mat-tilt));
+  transform: rotateX(var(--mat-tilt)) scale(var(--mat-tilt-recover, 1));
 }
 
 /* A serigrafia deita no tampo; as cartas ficam de pé sobre ele. Dois planos

@@ -1643,8 +1643,8 @@ mod tests {
         db.reindex();
         let deck: Vec<CardDefId> = vec![CardDefId(0); 10];
         let players = vec![
-            PlayerConfig { name: "A".to_string(), deck: deck.clone() },
-            PlayerConfig { name: "B".to_string(), deck },
+            PlayerConfig { name: "A".to_string(), deck: deck.clone(), commander: None },
+            PlayerConfig { name: "B".to_string(), deck, commander: None },
         ];
         let agents: Vec<Box<dyn Agent>> = vec![Scripted::new(answers), Scripted::new(Vec::new())];
         let config = GameConfig { allow_mulligan: false, ..GameConfig::default() };

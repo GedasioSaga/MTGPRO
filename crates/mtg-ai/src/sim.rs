@@ -547,26 +547,38 @@ fn target_object(targets: &[TargetChoice], r: &ObjRef, self_obj: Option<ObjectId
     }
 }
 
-fn target_side(
+/// Jogadores atingidos por uma referência de jogador do IR.
+///
+/// Devolve `Vec` e não `Side` porque com três ou quatro jogadores as duas
+/// coisas deixam de coincidir: `PlayerRef::Opponents` é *cada* oponente, não
+/// "o outro lado", e mandar a perda de vida toda para o lado em foco creditaria
+/// a vida errada. A lista sai em ordem estável (`Snapshot::all_players`).
+fn target_players(
     s: &Snapshot,
     targets: &[TargetChoice],
     r: &PlayerRef,
     controller: Side,
-) -> Option<Side> {
+) -> Vec<PlayerId> {
+    let me = match controller {
+        Side::Me => s.me,
+        Side::Opponent => s.opponent,
+    };
     match r {
-        PlayerRef::You => Some(controller),
-        PlayerRef::Opponents => Some(controller.other()),
-        PlayerRef::Target(i) => match targets.get(*i as usize) {
-            Some(TargetChoice::Player(p)) => {
-                if *p == s.me {
-                    Some(Side::Me)
-                } else {
-                    Some(Side::Opponent)
-                }
-            }
-            _ => None,
+        PlayerRef::You => vec![me],
+        // Só quem controla o efeito é modelado como "eu"; um efeito controlado
+        // pelo oponente em foco tem a mesa dele, que este modelo não separa.
+        PlayerRef::Opponents => match controller {
+            Side::Me => s.opponent_ids(),
+            Side::Opponent => vec![s.me],
         },
-        _ => None,
+        PlayerRef::Target(i) => match targets.get(*i as usize) {
+            Some(TargetChoice::Player(p)) => vec![*p],
+            _ => Vec::new(),
+        },
+        // `Each`, `ControllerOf`, `OwnerOf` e `ActivePlayer` seguem fora do
+        // vocabulário previsto, como já estavam: previsão conservadora é melhor
+        // que previsão inventada, e mexer nisso mudaria o duelo sem necessidade.
+        _ => Vec::new(),
     }
 }
 
@@ -613,8 +625,9 @@ pub fn predict_effect(
             }
         }
         Effect::DealDamageToPlayer { amount, player } => {
-            if let Some(side) = target_side(s, targets, player, controller) {
-                s.add_life(side, -value_of(amount, x));
+            let n = value_of(amount, x);
+            for p in target_players(s, targets, player, controller) {
+                s.add_life_of(p, -n);
             }
         }
         Effect::DivideDamage { total, targets: idx } => {
@@ -627,52 +640,41 @@ pub fn predict_effect(
             }
         }
         Effect::GainLife { amount, player } => {
-            if let Some(side) = target_side(s, targets, player, controller) {
-                s.add_life(side, value_of(amount, x));
+            let n = value_of(amount, x);
+            for p in target_players(s, targets, player, controller) {
+                s.add_life_of(p, n);
             }
         }
         Effect::LoseLife { amount, player } => {
-            if let Some(side) = target_side(s, targets, player, controller) {
-                s.add_life(side, -value_of(amount, x));
+            let n = value_of(amount, x);
+            for p in target_players(s, targets, player, controller) {
+                s.add_life_of(p, -n);
             }
         }
         Effect::SetLife { amount, player } => {
-            if let Some(side) = target_side(s, targets, player, controller) {
-                let delta = value_of(amount, x) - s.life(side);
-                s.add_life(side, delta);
+            let n = value_of(amount, x);
+            for p in target_players(s, targets, player, controller) {
+                let delta = n - s.life_of(p);
+                s.add_life_of(p, delta);
             }
         }
         Effect::DrawCards { count, player } => {
-            if let Some(side) = target_side(s, targets, player, controller) {
-                let n = value_of(count, x).max(0) as usize;
-                match side {
-                    Side::Me => {
-                        s.my_hand += n;
-                        s.my_library = s.my_library.saturating_sub(n);
-                    }
-                    Side::Opponent => {
-                        s.opp_hand += n;
-                        s.opp_library = s.opp_library.saturating_sub(n);
-                    }
-                }
+            let n = value_of(count, x).max(0);
+            for p in target_players(s, targets, player, controller) {
+                s.add_hand_of(p, n);
+                s.add_library_of(p, -n);
             }
         }
         Effect::Discard { count, player, .. } => {
-            if let Some(side) = target_side(s, targets, player, controller) {
-                let n = value_of(count, x).max(0) as usize;
-                match side {
-                    Side::Me => s.my_hand = s.my_hand.saturating_sub(n),
-                    Side::Opponent => s.opp_hand = s.opp_hand.saturating_sub(n),
-                }
+            let n = value_of(count, x).max(0);
+            for p in target_players(s, targets, player, controller) {
+                s.add_hand_of(p, -n);
             }
         }
         Effect::Mill { count, player } => {
-            if let Some(side) = target_side(s, targets, player, controller) {
-                let n = value_of(count, x).max(0) as usize;
-                match side {
-                    Side::Me => s.my_library = s.my_library.saturating_sub(n),
-                    Side::Opponent => s.opp_library = s.opp_library.saturating_sub(n),
-                }
+            let n = value_of(count, x).max(0);
+            for p in target_players(s, targets, player, controller) {
+                s.add_library_of(p, -n);
             }
         }
         Effect::Destroy { target, .. } => {
@@ -690,11 +692,10 @@ pub fn predict_effect(
         }
         Effect::ReturnToHand { target } => {
             if let Some(id) = target_object(targets, target, self_obj) {
-                if let Some(side) = s.side_of(id) {
-                    match side {
-                        Side::Me => s.my_hand += 1,
-                        Side::Opponent => s.opp_hand += 1,
-                    }
+                // A carta volta para a mão do dono dela, que pode ser o
+                // terceiro jogador da mesa e não o oponente em foco.
+                if let Some(owner) = s.controller_of(id) {
+                    s.add_hand_of(owner, 1);
                 }
                 s.remove_creature(id);
             }
@@ -785,16 +786,17 @@ pub fn predict_effect(
             count,
             controller: who,
         } => {
-            if let Some(side) = target_side(s, targets, who, controller) {
-                let n = value_of(count, x).max(0).min(8);
+            let n = value_of(count, x).max(0).min(8);
+            for owner in target_players(s, targets, who, controller) {
                 for k in 0..n {
                     // Id sintético fora da faixa real: só existe na simulação.
                     let id = ObjectId(u32::MAX - 1 - k as u32);
-                    let owner = if side == Side::Me { s.me } else { s.opponent };
                     let mut c = CreatureInfo::vanilla(id, owner, spec.power, spec.toughness);
                     c.traits = Traits::from_keywords(&spec.keywords);
                     c.summoning_sick = true;
-                    s.creatures_mut(side).push(c);
+                    if let Some(list) = s.creatures_of_mut(owner) {
+                        list.push(c);
+                    }
                 }
             }
         }

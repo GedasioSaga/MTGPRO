@@ -15,7 +15,7 @@
 //! pura da semente do bot e do contador de decisões.
 use mtg_core::action::{Action, Request, TargetChoice};
 use mtg_core::engine::{Agent, Game};
-use mtg_core::event::Step;
+use mtg_core::event::{Defender, Step};
 use mtg_core::ids::{ObjectId, PlayerId};
 use mtg_core::ir::Effect;
 use mtg_core::mana::Color;
@@ -24,6 +24,7 @@ use mtg_core::zone::ZoneId;
 
 use crate::cards::{self, SpellRole};
 use crate::eval::{self, CreatureInfo, Side, Snapshot};
+use crate::politics;
 use crate::sim;
 
 // ---------------------------------------------------------------------------
@@ -71,6 +72,23 @@ impl HeuristicBot {
     }
 }
 
+/// Retrato do ponto de vista de `me`, com o foco no oponente que **esta**
+/// decisão precisa enxergar.
+///
+/// A escolha padrão do foco é o oponente mais ameaçador. Declarar bloqueadores
+/// é a exceção: ali o que interessa é quem está atacando, e o atacante é sempre
+/// o jogador ativo (CR 506.3a). Sem essa troca, numa mesa de quatro o bot
+/// avaliaria bloqueio contra o campo do jogador errado.
+pub(crate) fn snapshot_for(game: &Game, me: PlayerId, request: &Request) -> Snapshot {
+    let s = Snapshot::from_game(game, me);
+    match request {
+        Request::DeclareBlockers { .. }
+        | Request::OrderBlockers { .. }
+        | Request::AssignCombatDamage { .. } => s.focused_on(game.state.active_player),
+        _ => s,
+    }
+}
+
 impl Agent for HeuristicBot {
     fn name(&self) -> &str {
         "heuristic"
@@ -89,7 +107,7 @@ impl Agent for HeuristicBot {
         let Some(me) = request.player() else {
             return first.clone();
         };
-        let s = Snapshot::from_game(game, me);
+        let s = snapshot_for(game, me, request);
         let ctx = Ctx { game, s: &s, me, request };
         pick_best(legal, self.seed, self.decisions, |action| score(&ctx, action))
     }
@@ -153,8 +171,11 @@ impl Ctx<'_> {
         self.s.my_creatures.iter().find(|c| c.id == id)
     }
 
+    /// Criatura de **qualquer** oponente, em foco ou não. Numa mesa de quatro,
+    /// olhar só o campo do foco faria toda remoção mirada nos outros dois
+    /// parecer alvo inexistente — e o bot a trataria como carta desperdiçada.
     fn opp_creature(&self, id: ObjectId) -> Option<&CreatureInfo> {
-        self.s.opp_creatures.iter().find(|c| c.id == id)
+        self.s.find(id).filter(|c| c.controller != self.me)
     }
 }
 
@@ -330,7 +351,7 @@ fn role_adjustment(
             }
             let damage = effect.map_or(0, |e| cards::fixed_damage(e, x));
             let threshold = eval::removal_threshold(mana_value);
-            if targets_a_player(targets, s.opponent) {
+            if let Some(victim) = targeted_opponent(ctx, targets) {
                 // Dano na cara sem fechar o jogo é o pior uso de uma carta de
                 // queima enquanto houver criatura que ela mataria. O caso
                 // letal já saiu por `terminal_score`, antes de chegar aqui.
@@ -339,6 +360,8 @@ fn role_adjustment(
                 } else {
                     adj += 60;
                 }
+                // Entre dois oponentes, a queima vai para quem mais importa.
+                adj += politics::target_player_bonus(s, victim);
             } else {
                 match hostile_creature_targets(ctx, targets).max() {
                     Some((value, toughness)) if damage >= toughness && value >= threshold => {
@@ -401,10 +424,13 @@ fn in_combat(step: Step) -> bool {
     )
 }
 
-fn targets_a_player(targets: &[TargetChoice], who: PlayerId) -> bool {
-    targets
-        .iter()
-        .any(|t| matches!(t, TargetChoice::Player(p) if *p == who))
+/// Primeiro oponente mirado entre os alvos escolhidos. `None` quando o efeito
+/// não mira jogador nenhum, ou mira só a mim mesmo.
+fn targeted_opponent(ctx: &Ctx, targets: &[TargetChoice]) -> Option<PlayerId> {
+    targets.iter().find_map(|t| match t {
+        TargetChoice::Player(p) if *p != ctx.me => Some(*p),
+        _ => None,
+    })
 }
 
 fn hits_own_side(ctx: &Ctx, targets: &[TargetChoice]) -> bool {
@@ -482,19 +508,69 @@ fn already_answered(ctx: &Ctx, targets: &[TargetChoice]) -> bool {
 /// avaliação já enxerga o contra-ataque sem bloqueador em casa — é daí que sai
 /// o "não ataco com a única criatura que segura o troco", sem regra explícita.
 fn score_combat_declaration(ctx: &Ctx, action: &Action) -> i64 {
-    let mut value = ctx.after(action);
     match action {
-        // Pressão de leve como desempate: entre duas linhas de valor idêntico,
-        // a que declara mais atacantes fecha a partida mais cedo.
-        Action::Attack { assignments } => value += assignments.len() as i64 * 2,
+        Action::Attack { assignments } => score_attack(ctx, assignments),
         Action::Block { assignments } => {
+            let mut value = ctx.after(action);
             if matches_planned_blocks(ctx, assignments) {
                 value += 50;
             }
+            value
         }
-        _ => {}
+        _ => ctx.after(action),
     }
+}
+
+/// Nota de uma declaração de ataque.
+///
+/// Três coisas que o duelo não precisava e a mesa cheia exige:
+///
+///  1. **Medir contra o defensor certo.** `sim` resolve combate contra o lado
+///     em foco, então o retrato é refocado no jogador que está sendo atacado —
+///     senão os bloqueadores previstos seriam os de outra pessoa.
+///  2. **Escolher o alvo por ameaça.** A avaliação de posição é quase simétrica
+///     entre oponentes (tirar 3 de vida de um ou de outro mexe quase o mesmo),
+///     então sem `attack_target_bonus` a escolha do defensor cairia no ruído de
+///     desempate.
+///  3. **Cobrar a exposição.** Atacar com o time inteiro entrega o turno
+///     seguinte a quem ficou de fora — `exposure_penalty` é esse preço.
+fn score_attack(ctx: &Ctx, assignments: &[(ObjectId, Defender)]) -> i64 {
+    let action = Action::Attack {
+        assignments: assignments.to_vec(),
+    };
+    // Não atacar não tem defensor e não tem exposição a cobrar.
+    let Some(defender) = assignments.first().map(|(_, d)| *d) else {
+        return ctx.after(&action);
+    };
+    let Some(defending_player) = defending_player(ctx, defender) else {
+        return ctx.after(&action);
+    };
+
+    let focused = ctx.s.focused_on(defending_player);
+    let mut next = focused.clone();
+    sim::apply_action(&mut next, ctx.game, &action);
+    let mut value = eval::evaluate(&next);
+
+    // Pressão de leve como desempate: entre duas linhas de valor idêntico,
+    // a que declara mais atacantes fecha a partida mais cedo.
+    value += assignments.len() as i64 * 2;
+    value += politics::target_player_bonus(&focused, defending_player);
+
+    let attackers: Vec<ObjectId> = assignments.iter().map(|(id, _)| *id).collect();
+    value -= politics::exposure_penalty(&focused, defending_player, &attackers);
     value
+}
+
+/// Jogador por trás de um defensor declarado (CR 506.2). Planeswalker e batalha
+/// devolvem quem os controla: o dano vai neles, mas a política é com o dono.
+fn defending_player(ctx: &Ctx, defender: Defender) -> Option<PlayerId> {
+    match defender {
+        Defender::Player(p) => Some(p),
+        Defender::Planeswalker(id) | Defender::Battle(id) => ctx
+            .s
+            .controller_of(id)
+            .or_else(|| ctx.game.characteristics(id).map(|c| c.controller)),
+    }
 }
 
 /// O bloqueio proposto é o mesmo que `plan_blocks` escolheria? A enumeração do

@@ -9,7 +9,9 @@ determinísticos), semente fixa, ferramental único em
 `crates/mtg-core/tests/common/mod.rs`.
 
 **Onde cada teste vive** — itens 1–41 em `tests/interactions_core.rs`, 42–60 em
-`tests/interactions_combat.rs`, 61–65 em `tests/fuzz.rs`.
+`tests/interactions_combat.rs`, 61–65 em `tests/fuzz.rs`, 66–73 nos testes de
+unidade de `engine/turn.rs` e `engine/stack.rs` (precisam de função privada e da
+fábrica de partida com 3 e 4 jogadores).
 
 ## Legenda
 
@@ -18,7 +20,7 @@ determinísticos), semente fixa, ferramental único em
 
 ## Estado real em 18/08/2026
 
-**65/65 `[x]`.** Nenhum `[~]`, nenhum `[ ]`, nenhum `[!]` em aberto. Verificado
+**73/73 `[x]`.** Nenhum `[~]`, nenhum `[ ]`, nenhum `[!]` em aberto. Verificado
 com `cargo test --workspace` (175 testes, 0 falhas, 4 `#[ignore]` só por lentidão)
 e `cargo test --workspace -- --ignored` (4 testes, 0 falhas).
 
@@ -131,11 +133,34 @@ falha.
     estado com mana infinita e confirmar que a carta aparece nas ações legais e
     resolve sem erro.
 
+## 9. Multijogador (CR 101.4, 117, 800.4)
+
+Mesa de 3 e 4 jogadores. O motor já era multijogador por construção (`players` é
+`Vec`, `opponents` devolve todos, `next_player` faz módulo pela contagem real);
+estes itens cobrem o comportamento que só aparece acima de dois.
+
+66. [x] `passo_so_termina_quando_todos_os_quatro_passam` — CR 117.4: com quatro na mesa,
+    o passo só acaba com quatro passes em sequência, começando pelo jogador ativo.
+67. [x] `magica_resolvida_reinicia_a_rodada_de_prioridade_com_quatro` — CR 117.3b/117.3c:
+    lançar e resolver reiniciam a rodada, e os quatro passam de novo.
+68. [x] `apnap_com_quatro_jogadores_ordena_gatilhos` — CR 101.4: ativo primeiro, depois os
+    não-ativos em ordem de turno, dando a volta na mesa.
+69. [x] `jogador_eliminado_leva_seus_permanentes_junto` — CR 800.4a: os objetos que ele
+    possui deixam o jogo em qualquer zona, e a partida continua.
+70. [x] `permanente_emprestado_volta_ao_dono_na_eliminacao` — CR 800.4a: o efeito de
+    controle dele termina e o permanente volta ao controle do dono.
+71. [x] `turno_termina_quando_jogador_ativo_e_eliminado` — CR 800.4: o turno para no passo
+    em que ele saiu e o próximo vivo assume.
+72. [x] `partida_acaba_quando_resta_um` — CR 104.2a: com 4, só há vencedor quando sobra um.
+73. [x] `partida_de_quatro_jogadores_termina_com_um_vencedor` — partida inteira de 4 com bots
+    determinísticos: termina com vencedor único e com ao menos uma eliminação aplicada
+    com a mesa ainda de pé.
+
 ## Metas
 
 | Métrica | Alvo | Aferido em 18/08/2026 | Como medir |
 |---|---|---|---|
-| Pass rate da suíte | 100% dos itens 1–65 | 65/65 | `cargo test --workspace` |
+| Pass rate da suíte | 100% dos itens 1–73 | 73/73 | `cargo test --workspace` |
 | Partidas sem pânico | 200/200 | 200/200 | teste 63 (`--ignored`) |
 | Determinismo | 100% | 100% | teste 61 |
 | Cartas jogáveis | 100% do catálogo | 100% | teste 65 (`--ignored`) |

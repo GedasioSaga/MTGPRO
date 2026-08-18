@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use super::query::{self, EvalCtx};
-use super::{layers, stack, turn, Game};
+use super::{commander, layers, stack, turn, Game};
 use crate::action::{Action, ActionError, ManaSourceChoice, Request, TargetChoice};
 use crate::card::{Ability, ManaProduction, StaticMod};
 use crate::event::GameEvent;
@@ -1157,11 +1157,35 @@ fn describe_cost(cost: &Cost) -> String {
 // ---------------------------------------------------------------------------
 
 /// Custo de mana da mágica depois de redutores e aumentadores estáticos.
+///
+/// A zona de origem é lida do próprio objeto. Depois de CR 601.2a a carta já
+/// está na pilha e essa leitura mente sobre a taxa de comandante — quem já
+/// moveu a carta deve usar `spell_total_cost_from` com a zona original.
 pub fn spell_total_cost(game: &Game, object: ObjectId, controller: PlayerId) -> Vec<ManaSymbol> {
+    let from = game.state.object(object).map(|o| o.zone);
+    spell_total_cost_from(game, object, controller, from)
+}
+
+/// Igual a `spell_total_cost`, com a zona de onde a mágica está sendo lançada
+/// dada explicitamente (CR 903.8 depende dela).
+pub fn spell_total_cost_from(
+    game: &Game,
+    object: ObjectId,
+    controller: PlayerId,
+    from: Option<ZoneId>,
+) -> Vec<ManaSymbol> {
     let Some(card_id) = card_of(game, object) else { return Vec::new() };
     let Some(card) = game.db.get(card_id) else { return Vec::new() };
     let mut symbols = card.mana_cost.symbols.clone();
-    let delta = cost_delta(game, object, controller);
+    // CR 903.8 — a taxa é aumento de custo, então entra no mesmo saldo que os
+    // aumentadores estáticos e pode ser cortada por redutores (CR 601.2f).
+    let tax = match from {
+        Some(zone) if zone.kind == ZoneKind::Command => {
+            commander::cast_tax(&game.state, object) as i32
+        }
+        _ => 0,
+    };
+    let delta = cost_delta(game, object, controller) + tax;
     apply_generic_delta(&mut symbols, delta);
     symbols
 }
@@ -1291,6 +1315,13 @@ fn enumerate_priority(game: &Game, player: PlayerId) -> (Vec<Action>, Vec<String
     }
 
     for obj in &hand {
+        collect_cast_actions(game, player, *obj, &mut actions, &mut notes);
+    }
+
+    // CR 903.8 — o comandante também pode ser lançado da zona de comando.
+    let mut command = zone_objects(game, ZoneId::command(player));
+    command.sort_unstable();
+    for obj in &command {
         collect_cast_actions(game, player, *obj, &mut actions, &mut notes);
     }
 
@@ -1630,7 +1661,11 @@ fn cast_spell(
         .object(object)
         .map(|o| o.zone)
         .ok_or(ActionError::BadObject(object))?;
-    if from != ZoneId::hand(player) {
+    // CR 903.8 — o comandante é a única carta lançável fora da mão sem efeito
+    // que a permita; qualquer outra origem continua ilegal.
+    let from_command = from == ZoneId::command(player)
+        && commander::is_commander(&game.state, object);
+    if from != ZoneId::hand(player) && !from_command {
         return Err(ActionError::BadObject(object));
     }
     if !can_cast_now(game, player, object) {
@@ -1662,20 +1697,25 @@ fn cast_spell(
     let ctx = ctx_for(Some(object), player, x);
     for (spec, target) in specs.iter().zip(targets.iter()) {
         if !query::target_still_legal(game, *target, spec, &ctx) {
-            turn::move_object(game, object, ZoneId::hand(player));
+            revert_cast(game, object, from);
             return Err(ActionError::BadTargets(spec.description.clone()));
         }
     }
 
     // CR 601.2f/g/h — custo total, habilidades de mana, pagamento.
-    let symbols = spell_total_cost(game, object, player);
+    let symbols = spell_total_cost_from(game, object, player, Some(from));
     let cost = Cost::Mana(symbols);
     if let Err(err) = pay_cost_from(game, player, Some(object), &cost, x, plan) {
         // CR 601.2h — pagamento impossível desfaz o lançamento.
-        turn::move_object(game, object, ZoneId::hand(player));
+        revert_cast(game, object, from);
         game.state
             .push_log("lançamento revertido: custo não pago", Some(player));
         return Err(err);
+    }
+
+    // CR 903.8 — só o lançamento que de fato aconteceu encarece o próximo.
+    if from_command {
+        commander::note_cast_from_command_zone(&mut game.state, object);
     }
 
     if let Some(p) = game.state.players.get_mut(player.index()) {
@@ -1692,6 +1732,24 @@ fn cast_spell(
 
     stack::push_spell(game, object, player, targets, x, modes);
     Ok(())
+}
+
+/// CR 601.2h — lançamento ilegal é desfeito e o jogo volta ao estado anterior.
+///
+/// Isso não é mudança de zona de verdade: o evento nunca aconteceu, então
+/// efeito de substituição nenhum pode se aplicar. A designação de comandante é
+/// suspensa durante o retorno para que CR 903.9 não sequestre a carta a caminho
+/// de casa.
+fn revert_cast(game: &mut Game, object: ObjectId, from: ZoneId) {
+    let was_commander = game
+        .state
+        .object_mut(object)
+        .map(|o| std::mem::replace(&mut o.is_commander, false))
+        .unwrap_or(false);
+    turn::move_object(game, object, from);
+    if let Some(o) = game.state.object_mut(object) {
+        o.is_commander = was_commander;
+    }
 }
 
 /// CR 602.2 — ativar habilidade: custo pago, item vai para a pilha.

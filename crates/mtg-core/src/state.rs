@@ -72,6 +72,10 @@ pub struct ObjectState {
     pub timestamp: u64,
 
     pub combat: CombatState,
+    /// CR 903.3 — o objeto é o comandante do seu dono. A designação é da carta,
+    /// não da instância, então `reset_for_zone_change` não a apaga.
+    #[serde(default)]
+    pub is_commander: bool,
     /// Usos de habilidades ativadas neste turno: (índice, contagem).
     pub ability_uses: BTreeMap<u16, u8>,
     /// Gatilhos "uma vez por turno" já disparados.
@@ -103,6 +107,7 @@ impl ObjectState {
             entered_turn: 0,
             timestamp: ts,
             combat: CombatState::default(),
+            is_commander: false,
             ability_uses: BTreeMap::new(),
             triggers_fired: BTreeMap::new(),
             regeneration_shields: 0,
@@ -286,6 +291,20 @@ pub struct PlayerState {
     pub life_gained_this_turn: i32,
     pub life_lost_this_turn: i32,
     pub damage_taken_this_turn: i32,
+
+    /// CR 903.6 — objeto do comandante deste jogador. `None` fora de Commander.
+    /// Commander de duas cabeças / Partner precisariam de uma lista; esta
+    /// rodada suporta um comandante por jogador.
+    #[serde(default)]
+    pub commander: Option<ObjectId>,
+    /// CR 903.8 — quantas vezes o comandante já foi lançado da zona de comando
+    /// nesta partida. A taxa é {2} genérico por lançamento anterior.
+    #[serde(default)]
+    pub commander_casts: u32,
+    /// CR 903.10 — dano de combate recebido de cada comandante, por objeto.
+    /// `BTreeMap` e não `HashMap`: a ordem de iteração é parte do determinismo.
+    #[serde(default)]
+    pub commander_damage: BTreeMap<ObjectId, i32>,
 }
 
 impl PlayerState {
@@ -307,7 +326,14 @@ impl PlayerState {
             life_gained_this_turn: 0,
             life_lost_this_turn: 0,
             damage_taken_this_turn: 0,
+            commander: None,
+            commander_casts: 0,
+            commander_damage: BTreeMap::new(),
         }
+    }
+    /// CR 903.10 — dano de combate já recebido do comandante indicado.
+    pub fn commander_damage_from(&self, commander: ObjectId) -> i32 {
+        self.commander_damage.get(&commander).copied().unwrap_or(0)
     }
     pub fn reset_turn_counters(&mut self) {
         self.lands_played_this_turn = 0;
@@ -411,6 +437,10 @@ impl GameState {
     }
     pub fn graveyard(&self, p: PlayerId) -> &Zone {
         self.zone(ZoneId::graveyard(p))
+    }
+    /// CR 903.6 — zona de comando do jogador.
+    pub fn command(&self, p: PlayerId) -> &Zone {
+        self.zone(ZoneId::command(p))
     }
     pub fn opponents(&self, p: PlayerId) -> Vec<PlayerId> {
         self.players.iter().map(|x| x.id).filter(|x| *x != p).collect()

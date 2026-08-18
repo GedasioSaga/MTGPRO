@@ -85,19 +85,24 @@ pub fn check(game: &mut Game) -> bool {
 }
 
 /// CR 704.3 — repete até nenhuma SBA se aplicar; só então alguém recebe
-/// prioridade.
-pub fn check_until_stable(game: &mut Game) {
+/// prioridade. Devolve `true` se alguma rodada aplicou alguma coisa: quem chama
+/// precisa saber que o estado mudou para reiniciar a rodada de prioridade
+/// (CR 117.4 — "passar em sequência" exige que nada tenha acontecido no meio).
+pub fn check_until_stable(game: &mut Game) -> bool {
+    let mut applied = false;
     let mut rounds = 0u32;
     while check(game) {
+        applied = true;
         rounds += 1;
         if rounds >= STABILITY_GUARD {
             turn::force_draw(game, "ações baseadas em estado não estabilizaram");
-            return;
+            return applied;
         }
         if game.state.is_over() {
-            return;
+            return applied;
         }
     }
+    applied
 }
 
 // ---------------------------------------------------------------------------

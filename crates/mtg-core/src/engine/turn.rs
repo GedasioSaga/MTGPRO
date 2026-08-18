@@ -13,6 +13,7 @@ use crate::action::{Action, ActionError, Request};
 use crate::card::CardDatabase;
 use crate::event::{GameEvent, LossReason, Step};
 use crate::ids::{IdGen, ObjectId, PlayerId};
+use crate::ir::StaticModRuntime;
 use crate::state::{GameOutcome, GameState, LastKnown, ObjectState, PlayerState};
 use crate::types::CounterKind;
 use crate::view::MatchEvent;
@@ -319,7 +320,7 @@ pub fn run_game(game: &mut Game) {
 fn run_turn(game: &mut Game) {
     begin_turn(game);
     for step in Step::SEQUENCE {
-        if game.state.is_over() {
+        if turn_interrupted(game) {
             return;
         }
         match step {
@@ -417,34 +418,34 @@ fn run_combat_phase(game: &mut Game) {
     loop {
         game.state.first_strike_done = false;
         run_step(game, Step::BeginCombat);
-        if game.state.is_over() {
+        if turn_interrupted(game) {
             return;
         }
         run_step(game, Step::DeclareAttackers);
-        if game.state.is_over() {
+        if turn_interrupted(game) {
             return;
         }
         // CR 508.1d — sem atacantes declarados, bloqueio e dano são pulados.
         if has_attackers(game) {
             run_step(game, Step::DeclareBlockers);
-            if game.state.is_over() {
+            if turn_interrupted(game) {
                 return;
             }
             if combat::has_first_strike_creatures(game) {
                 run_step(game, Step::FirstStrikeDamage);
                 game.state.first_strike_done = true;
-                if game.state.is_over() {
+                if turn_interrupted(game) {
                     return;
                 }
             }
             run_step(game, Step::CombatDamage);
-            if game.state.is_over() {
+            if turn_interrupted(game) {
                 return;
             }
         }
         run_step(game, Step::EndCombat);
         // CR 506.5 — fase de combate adicional repete o bloco inteiro.
-        if game.state.is_over() || game.state.extra_combats == 0 {
+        if turn_interrupted(game) || game.state.extra_combats == 0 {
             return;
         }
         game.state.extra_combats -= 1;
@@ -562,14 +563,11 @@ fn declare_blockers_step(game: &mut Game) {
     if attackers.is_empty() {
         return;
     }
-    let active = game.state.active_player;
-    let defenders: Vec<PlayerId> = game
-        .state
-        .players
-        .iter()
-        .filter(|p| p.id != active && !p.has_lost)
-        .map(|p| p.id)
-        .collect();
+    // CR 509.1 / CR 101.4 — cada jogador visado por ao menos um atacante declara
+    // seus bloqueadores, em ordem APNAP. Com três ou quatro jogadores há mais de
+    // um defensor no mesmo combate, e a ordem em que eles decidem é regra, não
+    // detalhe: quem declara antes é informação para quem declara depois.
+    let defenders = combat::blocking_defenders(game, &attackers);
 
     for defender in defenders {
         let eligible = combat::eligible_blockers(game, defender);
@@ -637,13 +635,13 @@ fn cleanup_step(game: &mut Game) {
         triggers::collect(game);
         let needs_priority = sba_applied || !game.state.pending_triggers.is_empty();
 
-        if !needs_priority || game.state.is_over() {
+        if !needs_priority || turn_interrupted(game) {
             leave_step(game, Step::Cleanup);
             return;
         }
         give_priority(game);
         leave_step(game, Step::Cleanup);
-        if game.state.is_over() {
+        if turn_interrupted(game) {
             return;
         }
     }
@@ -698,8 +696,10 @@ fn clear_damage_and_expiring_effects(game: &mut Game) {
 // Prioridade (CR 117)
 // ---------------------------------------------------------------------------
 
-/// Laço de prioridade do passo corrente. Sai quando todos passam em sequência
-/// com a pilha vazia; com pilha cheia, resolve o topo e recomeça.
+/// Laço de prioridade do passo corrente. Sai quando **todos** os jogadores
+/// ainda na partida passam em sequência com a pilha vazia — com dois, três ou
+/// quatro, o critério é o mesmo: `consecutive_passes == alive` (CR 117.4).
+/// Com pilha cheia, resolve o topo e recomeça a rodada (CR 117.3b).
 pub fn give_priority(game: &mut Game) {
     let mut guard = 0u32;
     game.state.priority_player = game.state.active_player;
@@ -714,14 +714,27 @@ pub fn give_priority(game: &mut Game) {
 
         // CR 117.5 — antes de qualquer jogador receber prioridade: SBA, depois
         // gatilhos esperando vão para a pilha.
-        sba::check_until_stable(game);
+        let sba_applied = sba::check_until_stable(game);
         if game.state.is_over() {
             break;
         }
         triggers::collect(game);
-        stack::put_triggers_on_stack(game);
+        let triggers_placed = stack::put_triggers_on_stack(game);
         if game.state.is_over() {
             break;
+        }
+        // CR 800.4 — o jogador ativo deixou a partida: o turno dele acaba na
+        // hora, e com ele este passo.
+        if active_player_left(&game.state) {
+            break;
+        }
+
+        // CR 117.4 — "passar em sequência" quer dizer sem nada acontecer no
+        // meio. SBA aplicada ou gatilho novo na pilha muda o estado, então a
+        // rodada recomeça: com quatro jogadores, quem já tinha passado antes do
+        // gatilho existir seria pulado sem isto.
+        if sba_applied || triggers_placed {
+            game.state.consecutive_passes = 0;
         }
 
         let alive = alive_count(&game.state);
@@ -754,7 +767,11 @@ pub fn give_priority(game: &mut Game) {
                 // CR 117.3b — depois de resolver, o jogador ativo recebe prioridade.
                 game.state.priority_player = game.state.active_player;
             }
-            Action::Concede => lose_game(game, player, LossReason::Concede),
+            Action::Concede => {
+                lose_game(game, player, LossReason::Concede);
+                // Desistir é uma ação: a sequência de passes recomeça.
+                game.state.consecutive_passes = 0;
+            }
             other => {
                 if let Err(err) = cast::execute(game, player, other) {
                     game.state
@@ -779,6 +796,20 @@ fn empty_mana_pools(game: &mut Game) {
 
 fn alive_count(state: &GameState) -> usize {
     state.players.iter().filter(|p| !p.has_lost).count()
+}
+
+/// CR 800.4 — o jogador ativo deixou a partida no meio do próprio turno.
+fn active_player_left(state: &GameState) -> bool {
+    state
+        .players
+        .get(state.active_player.index())
+        .is_none_or(|p| p.has_lost)
+}
+
+/// Motivo para abandonar o turno em andamento: a partida acabou, ou o jogador
+/// ativo saiu e o turno dele termina imediatamente (CR 800.4).
+fn turn_interrupted(game: &Game) -> bool {
+    game.state.is_over() || active_player_left(&game.state)
 }
 
 fn next_alive(state: &GameState, from: PlayerId) -> Option<PlayerId> {
@@ -814,11 +845,16 @@ pub fn zone_objects(game: &Game, zone: ZoneId) -> Vec<ObjectId> {
 /// o par de eventos correto. Destinos ordenados recebem a carta no topo, exceto
 /// biblioteca — para o topo da biblioteca use `move_object_top`.
 pub fn move_object(game: &mut Game, obj: ObjectId, to: ZoneId) {
+    // CR 903.9 — o comandante pode ser desviado para a zona de comando antes
+    // que a mudança de zona aconteça; é efeito de substituição (CR 614).
+    let to = super::commander::redirect_zone_change(game, obj, to);
     move_object_inner(game, obj, to, false);
 }
 
 /// Igual a `move_object`, mas força a posição de topo (topo da biblioteca).
 pub fn move_object_top(game: &mut Game, obj: ObjectId, to: ZoneId) {
+    // CR 903.9 — vale igual para o topo da biblioteca.
+    let to = super::commander::redirect_zone_change(game, obj, to);
     move_object_inner(game, obj, to, true);
 }
 
@@ -1015,7 +1051,11 @@ pub fn discard_card(game: &mut Game, player: PlayerId, card: ObjectId) {
 // Fim de jogo
 // ---------------------------------------------------------------------------
 
-/// Tira um jogador da partida e recalcula o resultado.
+/// Tira um jogador da partida e recalcula o resultado (CR 104.2a, 800.4).
+///
+/// Com dois jogadores, quem perde encerra a partida e não há o que limpar. Com
+/// três ou quatro, a partida continua sem ele: aí é `leave_game` que aplica o
+/// CR 800.4 — objetos, efeitos de controle e itens de pilha dele saem junto.
 pub fn lose_game(game: &mut Game, player: PlayerId, reason: LossReason) {
     if game.state.players.get(player.index()).is_none_or(|p| p.has_lost) {
         return;
@@ -1054,11 +1094,205 @@ pub fn lose_game(game: &mut Game, player: PlayerId, reason: LossReason) {
             game.state.outcome = GameOutcome::Winner(*winner);
             game.state.emit(GameEvent::PlayerWon { player: *winner });
         }
-        _ => return,
+        // CR 104.2a — ainda há dois ou mais jogadores: a partida segue, e só
+        // agora vale o trabalho de tirar da mesa o que era dele.
+        _ => {
+            leave_game(game, player);
+            return;
+        }
     }
     let outcome = game.state.outcome;
     game.push_event(MatchEvent::GameOver { outcome });
     game.state.pending = Request::GameOver;
+}
+
+// ---------------------------------------------------------------------------
+// Saída de jogador (CR 800.4)
+// ---------------------------------------------------------------------------
+
+/// CR 800.4a — o jogador deixa a partida imediatamente e leva junto o que é
+/// dele. A ordem é a da regra, e ela importa:
+///   1. efeitos que davam controle a ele terminam, e o que ele controlava sem
+///      possuir volta ao dono;
+///   2. o que ele controlava na pilha deixa de existir (mágica de outro dono
+///      que ele controlava é exilada);
+///   3. tudo o que ele possui sai do jogo, em qualquer zona.
+///
+/// Inverter 2 e 3 deixaria item de pilha apontando para objeto que já saiu.
+fn leave_game(game: &mut Game, player: PlayerId) {
+    end_control_effects_of(game, player);
+    return_borrowed_permanents(game, player);
+    discard_stack_items_of(game, player);
+    remove_owned_objects(game, player);
+
+    let name = game.state.player(player).name.clone();
+    game.state.push_log(
+        format!("{name} deixa a partida: objetos e efeitos saem junto (CR 800.4a)"),
+        Some(player),
+    );
+}
+
+/// CR 800.4a — "qualquer efeito que dê a esse jogador o controle de objetos
+/// termina". Só os efeitos de controle: um `+3/+3 até o fim do turno` que ele
+/// lançou continua valendo, porque não é o controle dele que o sustenta.
+fn end_control_effects_of(game: &mut Game, player: PlayerId) {
+    let before = game.state.continuous.len();
+    game.state.continuous.retain(|eff| {
+        !matches!(eff.modification, StaticModRuntime::GainControl(p) if p == player)
+    });
+    let removed = before.saturating_sub(game.state.continuous.len());
+    if removed > 0 {
+        game.state.push_log(
+            format!("{removed} efeito(s) de controle terminaram com a saída do jogador"),
+            Some(player),
+        );
+    }
+}
+
+/// CR 800.4a — permanente que ele controlava sem possuir volta ao dono. O efeito
+/// que dava o controle já terminou em `end_control_effects_of`; aqui só falta o
+/// controlador base, que é o que `ObjectState` guarda.
+fn return_borrowed_permanents(game: &mut Game, player: PlayerId) {
+    let borrowed: Vec<ObjectId> = zone_objects(game, ZoneId::BATTLEFIELD)
+        .into_iter()
+        .filter(|id| {
+            game.state
+                .object(*id)
+                .is_some_and(|o| o.controller == player && o.owner != player)
+        })
+        .collect();
+
+    for id in borrowed {
+        let owner = match game.state.object_mut(id) {
+            Some(obj) => {
+                let owner = obj.owner;
+                obj.controller = owner;
+                // CR 302.6 — o dono não controlava a criatura desde o começo do
+                // turno dele, então ela volta com enjoo de invocação.
+                obj.summoning_sick = true;
+                owner
+            }
+            None => continue,
+        };
+        game.state.emit(GameEvent::ControlChanged {
+            object: id,
+            from: player,
+            to: owner,
+        });
+        let name = game.card_name(id);
+        game.state
+            .push_log(format!("{name} volta ao controle do dono (CR 800.4a)"), Some(owner));
+    }
+}
+
+/// CR 800.4a — habilidade na pilha controlada por ele deixa de existir; mágica
+/// de outro dono que ele controlava é exilada. Mágica que ele possui sai do jogo
+/// junto com o resto, em `remove_owned_objects`.
+fn discard_stack_items_of(game: &mut Game, player: PlayerId) {
+    let items = std::mem::take(&mut game.state.stack);
+    let mut kept: Vec<crate::state::StackItem> = Vec::with_capacity(items.len());
+    let mut exile: Vec<ObjectId> = Vec::new();
+    let mut removed = 0usize;
+
+    for item in items {
+        let spell_object = match item.kind {
+            crate::state::StackItemKind::Spell { object } => Some(object),
+            _ => None,
+        };
+        let owned_by_leaver = spell_object
+            .and_then(|obj| game.state.object(obj))
+            .is_some_and(|o| o.owner == player);
+        if item.controller != player && !owned_by_leaver {
+            kept.push(item);
+            continue;
+        }
+        removed += 1;
+        if let (Some(object), false) = (spell_object, owned_by_leaver) {
+            exile.push(object);
+        }
+    }
+    game.state.stack = kept;
+    // Gatilho que ainda esperava a pilha nunca vai chegar lá.
+    game.state.pending_triggers.retain(|i| i.controller != player);
+
+    for object in exile {
+        move_object(game, object, ZoneId::EXILE);
+    }
+    if removed > 0 {
+        game.state.push_log(
+            format!("{removed} item(ns) da pilha saíram com o jogador (CR 800.4a)"),
+            Some(player),
+        );
+    }
+}
+
+/// CR 800.4a — todo objeto que ele possui deixa o jogo, esteja onde estiver.
+fn remove_owned_objects(game: &mut Game, player: PlayerId) {
+    let owned: Vec<ObjectId> = game
+        .state
+        .objects
+        .iter()
+        .filter(|o| o.owner == player)
+        .map(|o| o.id)
+        .collect();
+    for id in owned {
+        remove_from_game(game, id);
+    }
+}
+
+/// Tira o objeto do jogo. "Sair do jogo" não é ir para outra zona: o modelo não
+/// tem zona fora do jogo, então o objeto é retirado da lista da zona em que
+/// estava e não entra em nenhuma outra — nenhuma consulta volta a encontrá-lo.
+/// Por isso não passa por `move_object`, que sempre põe o objeto em uma zona.
+fn remove_from_game(game: &mut Game, obj: ObjectId) {
+    let (from, owner) = match game.state.object(obj) {
+        Some(state) => (state.zone, state.owner),
+        None => return,
+    };
+    // Ficha que já deixou de existir, ou objeto já retirado: não está listado em
+    // zona alguma e não há evento a emitir de novo.
+    if !zone_objects(game, from).contains(&obj) {
+        return;
+    }
+
+    if from.kind == ZoneKind::Battlefield {
+        capture_last_known(game, obj, from);
+    }
+    detach_all(game, obj);
+
+    let turn = game.state.turn;
+    let timestamp = game.state.next_timestamp();
+    if let Some(zone) = game.state.zones.get_mut(&zone_key(from)) {
+        zone.remove(obj);
+    }
+    if let Some(object) = game.state.object_mut(obj) {
+        // CR 400.7 — fora do jogo, nada do estado anterior sobrevive.
+        object.reset_for_zone_change(ZoneId::EXILE, turn, timestamp);
+        object.controller = owner;
+    }
+
+    // Só a saída do campo e da pilha é observável por quem ficou na partida;
+    // carta que sai de mão ou biblioteca não é evento que gatilho algum veja.
+    if matches!(from.kind, ZoneKind::Battlefield | ZoneKind::Stack) {
+        game.state.emit(GameEvent::ObjectMoved {
+            object: obj,
+            from,
+            to: ZoneId::EXILE,
+        });
+        if from.kind == ZoneKind::Battlefield {
+            game.state.emit(GameEvent::LeftBattlefield {
+                object: obj,
+                to: ZoneId::EXILE,
+            });
+        }
+        game.push_event(MatchEvent::CardMoved {
+            card: obj,
+            from: from.kind,
+            to: ZoneKind::Exile,
+            owner,
+            reveal: true,
+        });
+    }
 }
 
 /// Encerra a partida em empate — trava de segurança da simulação, não regra.
@@ -1097,5 +1331,327 @@ fn loss_label(reason: LossReason) -> &'static str {
         LossReason::PoisonCounters => "dez marcadores de veneno",
         LossReason::Effect => "efeito de carta",
         LossReason::Concede => "desistiu",
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Testes — multijogador (CR 101.4, 117, 800.4)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use super::*;
+    use crate::card::CardDef;
+    use crate::engine::stack::testkit::{
+        card, game_with_agents, game_with_players, put_on_battlefield,
+    };
+    use crate::engine::Agent;
+    use crate::ir::Duration;
+    use crate::state::ContinuousEffect;
+    use crate::types::CardType;
+
+    fn creature_deck() -> Vec<CardDef> {
+        vec![card(0, "Soldado", vec![CardType::Creature])]
+    }
+
+    /// Instantâneo de custo zero: garante que todo jogador tem mais de uma ação
+    /// legal em qualquer prioridade, então o agente é de fato consultado.
+    fn instant_deck() -> Vec<CardDef> {
+        let mut trick = card(0, "Truque", vec![CardType::Instant]);
+        trick.power = None;
+        trick.toughness = None;
+        vec![trick]
+    }
+
+    /// Agente que anota de quem foi cada prioridade recebida. Com `cast_once`,
+    /// lança uma única mágica na primeira oportunidade e passa daí em diante.
+    struct PassRecorder {
+        seen: Arc<Mutex<Vec<PlayerId>>>,
+        cast_once: bool,
+    }
+
+    impl Agent for PassRecorder {
+        fn name(&self) -> &str {
+            "pass-recorder"
+        }
+        fn decide(&mut self, _game: &Game, request: &Request, legal: &[Action]) -> Action {
+            if let Request::Priority { player } = request {
+                if let Ok(mut seen) = self.seen.lock() {
+                    seen.push(*player);
+                }
+            }
+            if self.cast_once {
+                if let Some(cast) = legal.iter().find(|a| matches!(a, Action::CastSpell { .. })) {
+                    self.cast_once = false;
+                    return cast.clone();
+                }
+            }
+            if legal.contains(&Action::PassPriority) {
+                return Action::PassPriority;
+            }
+            legal.first().cloned().unwrap_or(Action::PassPriority)
+        }
+    }
+
+    fn recorders(seen: &Arc<Mutex<Vec<PlayerId>>>, caster: Option<usize>) -> Vec<Box<dyn Agent>> {
+        (0..4)
+            .map(|i| {
+                Box::new(PassRecorder {
+                    seen: Arc::clone(seen),
+                    cast_once: caster == Some(i),
+                }) as Box<dyn Agent>
+            })
+            .collect()
+    }
+
+    #[test]
+    fn passo_so_termina_quando_todos_os_quatro_passam() {
+        let seen: Arc<Mutex<Vec<PlayerId>>> = Arc::new(Mutex::new(Vec::new()));
+        let mut game = game_with_agents(instant_deck(), recorders(&seen, None));
+        game.state.step = Step::PrecombatMain;
+
+        give_priority(&mut game);
+
+        let Ok(order) = seen.lock() else {
+            panic!("o registro de prioridades foi envenenado");
+        };
+        assert_eq!(
+            *order,
+            vec![PlayerId(0), PlayerId(1), PlayerId(2), PlayerId(3)],
+            "CR 117.4: o passo só acaba depois que os quatro passam em sequência"
+        );
+    }
+
+    /// A outra metade do CR 117.4 com quatro jogadores: mágica lançada e mágica
+    /// resolvida reiniciam a rodada, então os quatro têm que passar de novo.
+    #[test]
+    fn magica_resolvida_reinicia_a_rodada_de_prioridade_com_quatro() {
+        let seen: Arc<Mutex<Vec<PlayerId>>> = Arc::new(Mutex::new(Vec::new()));
+        let mut game = game_with_agents(instant_deck(), recorders(&seen, Some(0)));
+        game.state.step = Step::PrecombatMain;
+
+        give_priority(&mut game);
+
+        let Ok(order) = seen.lock() else {
+            panic!("o registro de prioridades foi envenenado");
+        };
+        assert_eq!(
+            *order,
+            vec![
+                // Lança e recebe prioridade de volta (CR 117.3c).
+                PlayerId(0),
+                // Rodada com a mágica na pilha: os quatro passam, ela resolve.
+                PlayerId(0),
+                PlayerId(1),
+                PlayerId(2),
+                PlayerId(3),
+                // CR 117.3b — resolvida, o jogador ativo recomeça a rodada.
+                PlayerId(0),
+                PlayerId(1),
+                PlayerId(2),
+                PlayerId(3),
+            ],
+            "resolver um objeto da pilha reinicia a rodada de prioridade"
+        );
+        assert!(
+            game.state.stack.is_empty(),
+            "a mágica lançada tinha que ter resolvido antes do passo acabar"
+        );
+    }
+
+    #[test]
+    fn jogador_eliminado_leva_seus_permanentes_junto() {
+        let mut game = game_with_players(creature_deck(), 3);
+        let doomed = PlayerId(1);
+        let permanent = put_on_battlefield(&mut game, doomed);
+        let Some(hand_card) = zone_objects(&game, ZoneId::hand(doomed)).first().copied() else {
+            panic!("o jogador de teste precisa de carta na mão");
+        };
+
+        lose_game(&mut game, doomed, LossReason::ZeroLife);
+
+        assert_eq!(
+            game.state.outcome,
+            GameOutcome::Ongoing,
+            "com três jogadores, perder um não encerra a partida"
+        );
+        assert!(
+            !zone_objects(&game, ZoneId::BATTLEFIELD).contains(&permanent),
+            "CR 800.4a: o permanente dele sai do campo junto com ele"
+        );
+        assert!(
+            !zone_objects(&game, ZoneId::hand(doomed)).contains(&hand_card),
+            "CR 800.4a: a mão dele também deixa o jogo"
+        );
+        assert!(
+            zone_objects(&game, ZoneId::library(doomed)).is_empty(),
+            "CR 800.4a: a biblioteca dele também deixa o jogo"
+        );
+        assert!(
+            !zone_objects(&game, ZoneId::EXILE).contains(&permanent),
+            "sair do jogo não é ir para o exílio: nenhuma zona lista o objeto"
+        );
+    }
+
+    #[test]
+    fn permanente_emprestado_volta_ao_dono_na_eliminacao() {
+        let mut game = game_with_players(creature_deck(), 3);
+        let owner = PlayerId(0);
+        let thief = PlayerId(1);
+        let creature = put_on_battlefield(&mut game, owner);
+
+        // Controle roubado do jeito que `resolve::gain_control` deixa o estado:
+        // controlador base trocado e um efeito contínuo de camada 2.
+        let Some(obj) = game.state.object_mut(creature) else {
+            panic!("{creature} não existe: não dá para roubar o controle");
+        };
+        obj.controller = thief;
+        game.state.continuous.push(ContinuousEffect {
+            id: 1,
+            source: creature,
+            affected: vec![creature],
+            modification: StaticModRuntime::GainControl(thief),
+            duration: Duration::Permanent,
+            timestamp: 1,
+            created_turn: 1,
+            controller: thief,
+        });
+
+        lose_game(&mut game, thief, LossReason::Concede);
+
+        assert!(
+            zone_objects(&game, ZoneId::BATTLEFIELD).contains(&creature),
+            "CR 800.4a: o permanente é do dono, então fica no campo"
+        );
+        let Some(state) = game.state.object(creature) else {
+            panic!("{creature} sumiu: o permanente do dono não podia sair do jogo");
+        };
+        assert_eq!(
+            state.controller, owner,
+            "CR 800.4a: o controle volta ao dono quando o controlador sai"
+        );
+        assert!(
+            !game
+                .state
+                .continuous
+                .iter()
+                .any(|e| matches!(e.modification, StaticModRuntime::GainControl(p) if p == thief)),
+            "CR 800.4a: o efeito que dava o controle a ele termina"
+        );
+        let Some(ch) = layers::characteristics(&game, creature) else {
+            panic!("{creature} ficou sem características depois da eliminação");
+        };
+        assert_eq!(
+            ch.controller, owner,
+            "as camadas também precisam devolver o controle ao dono"
+        );
+    }
+
+    #[test]
+    fn turno_termina_quando_jogador_ativo_e_eliminado() {
+        let mut game = game_with_players(creature_deck(), 3);
+        let active = game.state.active_player;
+        assert_eq!(active, PlayerId(0), "a partida começa no primeiro jogador");
+        // Morre na primeira checagem de ações baseadas em estado do turno dele.
+        game.state.player_mut(active).life = 0;
+
+        run_turn(&mut game);
+
+        assert!(
+            game.state.player(active).has_lost,
+            "CR 704.5a: vida zero derrota o jogador ativo"
+        );
+        assert_eq!(
+            game.state.outcome,
+            GameOutcome::Ongoing,
+            "ainda sobram dois jogadores"
+        );
+        assert_eq!(
+            game.state.step,
+            Step::Upkeep,
+            "CR 800.4: o turno acaba no passo em que o jogador ativo saiu"
+        );
+
+        advance_turn(&mut game);
+
+        assert_eq!(
+            game.state.active_player,
+            PlayerId(1),
+            "o turno passa para o próximo jogador ainda na partida"
+        );
+    }
+
+    /// Agente determinístico que escolhe sempre a última ação legal — com deck
+    /// de criaturas isso quer dizer lançar e atacar, então a mesa de fato anda.
+    struct GreedyAgent;
+
+    impl Agent for GreedyAgent {
+        fn name(&self) -> &str {
+            "greedy"
+        }
+        fn decide(&mut self, _game: &Game, _request: &Request, legal: &[Action]) -> Action {
+            legal.last().cloned().unwrap_or(Action::PassPriority)
+        }
+    }
+
+    /// Partida inteira de quatro jogadores, do começo ao fim. É o teste que
+    /// prova que eliminação, prioridade e ordem de turno funcionam juntas.
+    #[test]
+    fn partida_de_quatro_jogadores_termina_com_um_vencedor() {
+        let agents: Vec<Box<dyn Agent>> =
+            (0..4).map(|_| Box::new(GreedyAgent) as Box<dyn Agent>).collect();
+        let mut game = game_with_agents(creature_deck(), agents);
+
+        let outcome = game.run();
+
+        let GameOutcome::Winner(winner) = outcome else {
+            panic!("mesa de quatro terminou sem vencedor: {outcome:?}");
+        };
+        let alive: Vec<PlayerId> = game
+            .state
+            .players
+            .iter()
+            .filter(|p| !p.has_lost)
+            .map(|p| p.id)
+            .collect();
+        assert_eq!(alive, vec![winner], "CR 104.2a: o vencedor é o único que sobra");
+        // A limpeza do CR 800.4a só acontece enquanto a partida continua; a
+        // última eliminação encerra o jogo e não tem o que limpar. Com quatro,
+        // ao menos uma eliminação aconteceu com a mesa ainda de pé.
+        assert!(
+            game.state
+                .log
+                .iter()
+                .any(|entry| entry.text.contains("deixa a partida")),
+            "CR 800.4a: alguém saiu com a partida em andamento e levou o que era dele"
+        );
+    }
+
+    #[test]
+    fn partida_acaba_quando_resta_um() {
+        let mut game = game_with_players(creature_deck(), 4);
+
+        lose_game(&mut game, PlayerId(0), LossReason::Concede);
+        assert_eq!(
+            game.state.outcome,
+            GameOutcome::Ongoing,
+            "com três jogadores vivos a partida continua"
+        );
+
+        lose_game(&mut game, PlayerId(1), LossReason::ZeroLife);
+        assert_eq!(
+            game.state.outcome,
+            GameOutcome::Ongoing,
+            "com dois jogadores vivos a partida continua"
+        );
+
+        lose_game(&mut game, PlayerId(3), LossReason::PoisonCounters);
+        assert_eq!(
+            game.state.outcome,
+            GameOutcome::Winner(PlayerId(2)),
+            "CR 104.2a: sobrou um jogador, e ele vence"
+        );
     }
 }

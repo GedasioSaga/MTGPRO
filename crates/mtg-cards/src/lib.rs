@@ -24,7 +24,9 @@
 
 mod decks;
 
-pub use decks::{deck_by_name, decks, DeckList};
+pub use decks::{
+    all_decks, commander_decks, deck_by_name, deck_list_by_name, decks, DeckList, Format,
+};
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -38,7 +40,7 @@ use mtg_script::{CardScriptHost, ScriptError};
 /// usadas pelas cartas, então precisa rodar antes de qualquer arquivo de carta.
 /// Depender da ordem do sistema de arquivos aqui daria erro que só aparece em
 /// uma das máquinas.
-pub const CARD_FILES: [&str; 8] = [
+pub const CARD_FILES: [&str; 9] = [
     "tokens.lua",
     "artifacts.lua",
     "lands.lua",
@@ -47,10 +49,11 @@ pub const CARD_FILES: [&str; 8] = [
     "black.lua",
     "red.lua",
     "green.lua",
+    "legends.lua",
 ];
 
 /// Cópia dos scripts embutida no binário, na mesma ordem de `CARD_FILES`.
-const EMBEDDED: [(&str, &str); 8] = [
+const EMBEDDED: [(&str, &str); 9] = [
     ("tokens.lua", include_str!("../../../cards/tokens.lua")),
     ("artifacts.lua", include_str!("../../../cards/artifacts.lua")),
     ("lands.lua", include_str!("../../../cards/lands.lua")),
@@ -59,6 +62,7 @@ const EMBEDDED: [(&str, &str); 8] = [
     ("black.lua", include_str!("../../../cards/black.lua")),
     ("red.lua", include_str!("../../../cards/red.lua")),
     ("green.lua", include_str!("../../../cards/green.lua")),
+    ("legends.lua", include_str!("../../../cards/legends.lua")),
 ];
 
 #[derive(Debug, thiserror::Error)]

@@ -1,0 +1,9 @@
+[package]
+name = "mtg-format"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+mtg-core.workspace = true
+serde.workspace = true
+thiserror.workspace = true

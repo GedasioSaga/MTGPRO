@@ -211,14 +211,22 @@ pub fn draw_desirability(game: &Game, s: &Snapshot, id: ObjectId) -> i64 {
 
 /// Existe alvo adversário que justifique gastar uma remoção deste custo?
 /// Usado para não queimar Doom Blade em Elfo e para decidir dano na cara.
+/// Varre a mesa inteira: numa partida de quatro, a criatura que merece a
+/// remoção raramente é a do oponente em foco.
 pub fn has_worthy_creature_target(s: &Snapshot, threshold: i64) -> bool {
-    s.opp_creatures
-        .iter()
-        .any(|c| !c.traits.untargetable_by_opponent() && c.value() >= threshold)
+    s.opponents_view().iter().any(|o| {
+        o.creatures
+            .iter()
+            .any(|c| !c.traits.untargetable_by_opponent() && c.value() >= threshold)
+    })
 }
 
-/// Ameaça representada por uma criatura adversária: o valor dela mais o quanto
-/// ela está machucando agora. Criatura atacando vale mais morta.
+/// Ameaça representada por uma criatura adversária: o valor dela, o quanto ela
+/// está machucando agora, e quão perigoso é o jogador que a controla.
+///
+/// O último termo é o que faz diferença em mesa cheia. Duas criaturas 4/4
+/// idênticas não valem a mesma remoção: a do jogador que está montando a mesa
+/// vale mais morta que a do jogador que já está com 3 de vida e sem cartas.
 pub fn threat_value(s: &Snapshot, c: &CreatureInfo) -> i64 {
     let mut v = c.value();
     if c.attacking {
@@ -228,7 +236,38 @@ pub fn threat_value(s: &Snapshot, c: &CreatureInfo) -> i64 {
         // Sozinha ela já é metade do relógio: prioridade máxima.
         v += 400;
     }
-    v
+    v + controller_threat_bonus(s, c)
+}
+
+/// Amplitude do ajuste por dono da criatura. Pequena de propósito: quem decide
+/// se a remoção vale a pena continua sendo o corpo, não a política.
+const CONTROLLER_THREAT_SPREAD: i64 = 220;
+
+/// Ajuste normalizado pelo perigo de quem controla a criatura, na faixa
+/// `[0, CONTROLLER_THREAT_SPREAD]`. Zero em duelo — não há quem comparar.
+fn controller_threat_bonus(s: &Snapshot, c: &CreatureInfo) -> i64 {
+    let views = s.opponents_view();
+    let living: Vec<&crate::table::OppRef<'_>> =
+        views.iter().filter(|o| o.is_alive()).collect();
+    if living.len() < 2 {
+        return 0;
+    }
+    let mut best = i64::MIN;
+    let mut worst = i64::MAX;
+    let mut chosen: Option<i64> = None;
+    for o in &living {
+        let t = crate::politics::threat(s.my_life, o);
+        best = best.max(t);
+        worst = worst.min(t);
+        if o.id == c.controller {
+            chosen = Some(t);
+        }
+    }
+    let Some(chosen) = chosen else { return 0 };
+    if best <= worst {
+        return 0;
+    }
+    (chosen - worst) * CONTROLLER_THREAT_SPREAD / (best - worst)
 }
 
 /// Palavras que denunciam um custo (o bot escolhe o pior) em vez de um

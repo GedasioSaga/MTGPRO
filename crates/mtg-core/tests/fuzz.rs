@@ -56,6 +56,7 @@ fn fuzz_config() -> GameConfig {
         allow_mulligan: true,
         max_turns: 40,
         max_decisions: 60_000,
+        ..GameConfig::default()
     }
 }
 
@@ -491,6 +492,7 @@ fn try_card(db: Arc<CardDatabase>, def: CardDefId) -> Result<(), String> {
             allow_mulligan: false,
             max_turns: 60,
             max_decisions: 200_000,
+            ..GameConfig::default()
         },
         4242,
     );

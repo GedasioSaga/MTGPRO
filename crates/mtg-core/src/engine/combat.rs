@@ -12,7 +12,7 @@
 use std::collections::BTreeMap;
 
 use super::query::{self, EvalCtx};
-use super::{layers, triggers, Characteristics, Game};
+use super::{commander, layers, triggers, Characteristics, Game};
 use crate::action::{Action, Request};
 use crate::event::{DamageKind, Defender, GameEvent};
 use crate::ids::{ObjectId, PlayerId};
@@ -175,7 +175,17 @@ pub fn can_block(game: &Game, blocker: ObjectId, attacker: ObjectId) -> bool {
     if !bch.is_creature() || !ach.is_creature() || bch.cant_block {
         return false;
     }
-    if attacking_defender(game, attacker).is_none() {
+    // CR 509.1a — bloqueadores são declarados pelo jogador defensor daquele
+    // atacante. Com dois jogadores isso é automático; com três ou quatro, não:
+    // um terceiro jogador tem criaturas desviradas e nenhum direito de bloquear
+    // um atacante que não está mirando nele nem em permanente dele.
+    let Some(defender) = attacking_defender(game, attacker) else {
+        return false;
+    };
+    let Some(defending) = defending_player(game, defender) else {
+        return false;
+    };
+    if bch.controller != defending {
         return false;
     }
     // CR 509.1b — "não pode ser bloqueada" encerra o assunto.
@@ -280,6 +290,121 @@ fn attack_targets(game: &Game, attacker_controller: PlayerId) -> Vec<Defender> {
     out
 }
 
+/// Retrato tático de um oponente. Só leitura; existe para eleger quais alvos de
+/// ataque entram na lista **antes** do corte por teto.
+struct OpponentProfile {
+    player: PlayerId,
+    life: i32,
+    /// Soma do poder das criaturas que ele controla — o quanto ele ameaça.
+    board_power: i32,
+    /// Criaturas desviradas dele, que é o que ele consegue declarar bloqueando.
+    ready_blockers: usize,
+}
+
+fn opponent_profiles(game: &Game, attacker_controller: PlayerId) -> Vec<OpponentProfile> {
+    let mut out: Vec<OpponentProfile> = game
+        .state
+        .players
+        .iter()
+        .filter(|p| p.id != attacker_controller && !p.has_lost)
+        .map(|p| OpponentProfile {
+            player: p.id,
+            life: p.life,
+            board_power: 0,
+            ready_blockers: 0,
+        })
+        .collect();
+
+    for profile in out.iter_mut() {
+        let ids: Vec<ObjectId> = game
+            .state
+            .permanents_controlled_by(profile.player)
+            .map(|o| o.id)
+            .collect();
+        for id in ids {
+            let Some(ch) = chars(game, id) else {
+                continue;
+            };
+            if !ch.is_creature() {
+                continue;
+            }
+            profile.board_power += ch.power.max(0);
+            let untapped = game.state.object(id).is_some_and(|o| !o.tapped);
+            if untapped && !ch.cant_block {
+                profile.ready_blockers += 1;
+            }
+        }
+    }
+    out.sort_by_key(|p| p.player);
+    out
+}
+
+fn push_unique_defender(list: &mut Vec<Defender>, d: Defender) {
+    if !list.contains(&d) {
+        list.push(d);
+    }
+}
+
+/// Defensores na ordem em que entram na lista de opções.
+///
+/// Com três ou quatro jogadores o espaço de atribuições é |defensores|^|atacantes|
+/// e não cabe em `MAX_COMBAT_OPTIONS`. Como o corte remove o **fim** da lista, o
+/// fim tem de ser o que menos importa: primeiro vêm os alvos que um bot razoável
+/// realmente considera — o oponente mais fraco, o com menos vida e o com menos
+/// bloqueadores — e só depois o resto.
+///
+/// Todo desempate cai no id do jogador. Sem isso, dois oponentes empatados
+/// trocariam de lugar conforme a ordem de iteração e a partida deixaria de ser
+/// reproduzível pela semente.
+fn ranked_defenders(game: &Game, player: PlayerId, defenders: &[Defender]) -> Vec<Defender> {
+    let profiles = opponent_profiles(game, player);
+    let weakest = profiles.iter().min_by_key(|p| (p.board_power, p.player));
+    let lowest_life = profiles.iter().min_by_key(|p| (p.life, p.player));
+    let fewest_blockers = profiles.iter().min_by_key(|p| (p.ready_blockers, p.player));
+
+    let mut ranked: Vec<Defender> = Vec::new();
+    for pick in [weakest, lowest_life, fewest_blockers].into_iter().flatten() {
+        push_unique_defender(&mut ranked, Defender::Player(pick.player));
+    }
+    for d in defenders {
+        push_unique_defender(&mut ranked, *d);
+    }
+    // Um perfil só vira opção se o defensor correspondente for mesmo legal.
+    ranked.retain(|d| defenders.contains(d));
+    ranked
+}
+
+/// Espalhamento: os atacantes divididos entre vários oponentes no mesmo combate
+/// (CR 508.1a permite um defensor por atacante).
+///
+/// É a única família de atribuições que precisa de três jogadores para existir —
+/// "todos contra um" nunca a produz — e por isso entra na lista antes de
+/// qualquer subconjunto.
+fn spread_assignments(usable: &[ObjectId], targets: &[Defender]) -> Vec<Vec<(ObjectId, Defender)>> {
+    if usable.len() < 2 || targets.len() < 2 {
+        return Vec::new();
+    }
+    let round_robin: Vec<(ObjectId, Defender)> = usable
+        .iter()
+        .enumerate()
+        .map(|(i, id)| (*id, targets[i % targets.len()]))
+        .collect();
+    // Blocos contíguos: como `usable` chega ordenado por id, este corte agrupa
+    // criaturas vizinhas e não alterna. Difere do rodízio sempre que houver mais
+    // de dois atacantes, e é a divisão que concentra força em vez de diluí-la.
+    let chunk = usable.len().div_ceil(targets.len()).max(1);
+    let chunked: Vec<(ObjectId, Defender)> = usable
+        .iter()
+        .enumerate()
+        .map(|(i, id)| (*id, targets[(i / chunk).min(targets.len() - 1)]))
+        .collect();
+    if chunked == round_robin {
+        vec![round_robin]
+    } else {
+        vec![round_robin, chunked]
+    }
+}
+
 /// Subconjuntos candidatos, determinísticos e em número controlado.
 ///
 /// Até `SUBSET_ENUM_LIMIT` candidatos a enumeração é exaustiva (2^5 = 32, o que
@@ -325,6 +450,21 @@ fn attack_subsets(game: &Game, eligible: &[ObjectId]) -> Vec<Vec<ObjectId>> {
 }
 
 pub fn attack_options(game: &Game, player: PlayerId, eligible: &[ObjectId]) -> Vec<Action> {
+    attack_options_counted(game, player, eligible).0
+}
+
+/// Igual a `attack_options`, mas informa quantas atribuições ficaram de fora
+/// pelo teto.
+///
+/// `attack_options` recebe `&Game` e por isso não pode escrever no log; quem tem
+/// `&mut Game` — a declaração de atacantes — usa este par para registrar o corte.
+/// Sem esse registro o replay não explicaria por que uma jogada legal e óbvia
+/// nunca chegou a ser oferecida ao agente.
+fn attack_options_counted(
+    game: &Game,
+    player: PlayerId,
+    eligible: &[ObjectId],
+) -> (Vec<Action>, usize) {
     // CR 508.1 — não atacar é sempre legal.
     let mut out: Vec<Action> = vec![Action::Attack {
         assignments: Vec::new(),
@@ -335,31 +475,62 @@ pub fn attack_options(game: &Game, player: PlayerId, eligible: &[ObjectId]) -> V
         .filter(|id| chars(game, *id).is_some_and(|c| c.is_creature() && !c.cant_attack))
         .collect();
     if usable.is_empty() {
-        return out;
+        return (out, 0);
     }
     let defenders = attack_targets(game, player);
     if defenders.is_empty() {
-        return out;
+        return (out, 0);
     }
+    let ranked = ranked_defenders(game, player, &defenders);
+    let player_targets: Vec<Defender> = ranked
+        .iter()
+        .copied()
+        .filter(|d| matches!(d, Defender::Player(_)))
+        .collect();
 
     let subsets = attack_subsets(game, &usable);
-    // Primeiro todo mundo contra cada defensor, depois os subconjuntos contra
-    // cada defensor: assim o corte por teto nunca remove o caso "todos".
-    for defender in &defenders {
+    let spreads = spread_assignments(&usable, &player_targets);
+    // Tamanho do espaço que **esta** enumeração considera. Não é o espaço
+    // combinatório completo (|defensores|^|atacantes|), que é justamente o que
+    // não se enumera; serve para dizer no log quanto o teto engoliu.
+    let space = 1 + subsets.len() * ranked.len() + spreads.len();
+
+    // 1. Todos os atacantes contra cada defensor, na ordem de prioridade tática.
+    //    Isto cobre "todos no mais fraco", "todos no de menos vida" e "todos no
+    //    de menos bloqueadores" sem nenhum caso especial.
+    for defender in &ranked {
         if let Some(all) = subsets.first() {
             push_attack(&mut out, all, *defender);
         }
     }
+    // 2. Espalhamentos, antes dos subconjuntos: o teto corta o fim da lista.
+    for spread in spreads {
+        let action = Action::Attack {
+            assignments: spread,
+        };
+        if !out.contains(&action) {
+            out.push(action);
+        }
+    }
+    // 3. Subconjuntos contra cada defensor, até bater o teto.
     'outer: for subset in subsets.iter().skip(1) {
-        for defender in &defenders {
+        for defender in &ranked {
             push_attack(&mut out, subset, *defender);
             if out.len() >= MAX_COMBAT_OPTIONS {
                 break 'outer;
             }
         }
     }
+    let truncated = out.len() >= MAX_COMBAT_OPTIONS;
     out.truncate(MAX_COMBAT_OPTIONS);
-    out
+    // Só há corte quando o teto foi de fato atingido: a lista encurta também por
+    // deduplicação, e isso não é perda de jogada.
+    let cut = if truncated {
+        space.saturating_sub(out.len())
+    } else {
+        0
+    };
+    (out, cut)
 }
 
 fn push_attack(out: &mut Vec<Action>, subset: &[ObjectId], defender: Defender) {
@@ -388,6 +559,37 @@ fn blockable_attackers(game: &Game, player: PlayerId, attackers: &[ObjectId]) ->
         })
         .collect();
     out.sort_unstable();
+    out
+}
+
+/// Jogadores que precisam declarar bloqueadores neste combate, em ordem APNAP
+/// (CR 101.4): a partir do jogador ativo, na ordem de turno.
+///
+/// Só entra quem tem ao menos um atacante mirando nele ou num permanente dele —
+/// perguntar aos outros gastaria decisão do agente sem poder mudar o combate,
+/// já que `can_block` recusaria qualquer bloqueio que eles propusessem.
+pub fn blocking_defenders(game: &Game, attackers: &[ObjectId]) -> Vec<PlayerId> {
+    let active = game.state.active_player;
+    let count = game.state.players.len();
+    let mut out: Vec<PlayerId> = Vec::new();
+    let mut cursor = active;
+    for _ in 0..count.saturating_sub(1) {
+        cursor = game.state.next_player(cursor);
+        if cursor == active {
+            break;
+        }
+        let lost = game
+            .state
+            .players
+            .get(cursor.index())
+            .is_some_and(|p| p.has_lost);
+        if lost {
+            continue;
+        }
+        if !blockable_attackers(game, cursor, attackers).is_empty() {
+            out.push(cursor);
+        }
+    }
     out
 }
 
@@ -687,6 +889,19 @@ pub fn declare_attackers(game: &mut Game, assignments: &[(ObjectId, Defender)]) 
     let active = game.state.active_player;
     let eligible = eligible_attackers(game, active);
     let targets = attack_targets(game, active);
+
+    // O teto de opções esconde atribuições legais do agente. Registrar o corte é
+    // o que permite ler um replay e saber que a jogada ausente não foi escolha
+    // do bot, foi limite de enumeração.
+    let cut = attack_options_counted(game, active, &eligible).1;
+    if cut > 0 {
+        game.state.push_log(
+            format!(
+                "opções de ataque cortadas no teto de {MAX_COMBAT_OPTIONS}: ~{cut} atribuições não enumeradas"
+            ),
+            Some(active),
+        );
+    }
 
     let mut declared: Vec<(ObjectId, Defender)> = Vec::new();
     for (creature, defender) in assignments {
@@ -1260,6 +1475,12 @@ fn apply_damage_to_player(game: &mut Game, assign: &Assign, player: PlayerId) {
         delta: -assign.amount,
         total,
     });
+
+    // CR 903.10a — o combate é quem sabe que este dano foi de combate e contra
+    // quem; a matriz dos 21 e a identidade do comandante são do módulo de
+    // Commander. Ponto único de crédito, e só para dano de combate: o dano de
+    // mágica de um comandante não conta.
+    commander::note_combat_damage(&mut game.state, assign.source, player, assign.amount);
 }
 
 fn gain_life(game: &mut Game, player: PlayerId, amount: i32) {
@@ -1331,6 +1552,7 @@ mod tests {
     use crate::card::{Ability, CardDatabase, CardDef};
     use crate::engine::turn;
     use crate::engine::{Agent, FirstLegalAgent, GameConfig, PlayerConfig};
+    use crate::state::GameOutcome;
     use crate::ids::CardDefId;
     use crate::mana::ManaCost;
     use crate::types::{Rarity, TypeLine};
@@ -1365,9 +1587,15 @@ mod tests {
     }
 
     fn build(defs: Vec<CardDef>) -> Game {
+        build_players(defs, 2)
+    }
+
+    /// Partida com `count` jogadores (Commander vai de 2 a 4). O motor é
+    /// multijogador por construção: aqui nada muda além do tamanho de `players`.
+    fn build_players(defs: Vec<CardDef>, count: usize) -> Game {
         let db = CardDatabase { cards: defs };
         let deck: Vec<CardDefId> = (0..db.cards.len() as u32)
-            .flat_map(|i| std::iter::repeat(CardDefId(i)).take(4))
+            .flat_map(|i| std::iter::repeat_n(CardDefId(i), 4))
             .collect();
         let config = GameConfig {
             starting_life: 20,
@@ -1375,18 +1603,18 @@ mod tests {
             allow_mulligan: false,
             max_turns: 60,
             max_decisions: 100_000,
+            ..GameConfig::default()
         };
-        let players = vec![
-            PlayerConfig {
-                name: "A".to_string(),
-                deck: deck.clone(),
-            },
-            PlayerConfig {
-                name: "B".to_string(),
-                deck,
-            },
-        ];
-        let agents: Vec<Box<dyn Agent>> = vec![Box::new(FirstLegalAgent), Box::new(FirstLegalAgent)];
+        let names = ["A", "B", "C", "D"];
+        let mut players: Vec<PlayerConfig> = Vec::with_capacity(count);
+        let mut agents: Vec<Box<dyn Agent>> = Vec::with_capacity(count);
+        for i in 0..count {
+            let Some(name) = names.get(i) else {
+                panic!("teste pediu {count} jogadores; há nome para {}", names.len());
+            };
+            players.push(PlayerConfig::new(*name, deck.clone()));
+            agents.push(Box::new(FirstLegalAgent));
+        }
         match Game::new(Arc::new(db), players, agents, config, 7) {
             Ok(g) => g,
             Err(e) => panic!("montagem de teste falhou: {e}"),
@@ -1587,6 +1815,273 @@ mod tests {
         assert!(options
             .iter()
             .any(|a| matches!(a, Action::Attack { assignments } if assignments.len() == ids.len())));
+    }
+
+    // -----------------------------------------------------------------------
+    // Combate com 3 e 4 jogadores (CR 506.2, 508)
+    // -----------------------------------------------------------------------
+
+    /// CR 508.1a — cada atacante escolhe o **seu** defensor. Duas criaturas do
+    /// mesmo controlador podem mirar oponentes diferentes no mesmo combate.
+    #[test]
+    fn atacantes_do_mesmo_jogador_miram_defensores_diferentes() {
+        let mut game = build_players(vec![creature(0, "Recruta", 2, 2, &[])], 3);
+        let a1 = deploy(&mut game, PlayerId::P0, CardDefId(0));
+        let a2 = deploy(&mut game, PlayerId::P0, CardDefId(0));
+
+        let options = attack_options(&game, PlayerId::P0, &[a1, a2]);
+        let mixed = options.iter().find_map(|action| match action {
+            Action::Attack { assignments } if assignments.len() == 2 => {
+                let (_, d0) = assignments[0];
+                let (_, d1) = assignments[1];
+                if d0 == d1 {
+                    None
+                } else {
+                    Some(assignments.clone())
+                }
+            }
+            _ => None,
+        });
+        let Some(mixed) = mixed else {
+            panic!("com dois oponentes a enumeração precisa oferecer um espalhamento");
+        };
+
+        declare_attackers(&mut game, &mixed);
+
+        for (attacker, defender) in &mixed {
+            let Some(obj) = game.state.object(*attacker) else {
+                panic!("{attacker} sumiu do campo durante a declaração");
+            };
+            assert_eq!(
+                obj.combat.attacking,
+                Some(*defender),
+                "cada atacante guarda o defensor que foi atribuído a ele"
+            );
+        }
+        let (_, d0) = mixed[0];
+        let (_, d1) = mixed[1];
+        assert_ne!(d0, d1, "o espalhamento tem de mirar dois defensores distintos");
+    }
+
+    /// CR 509.1a — bloqueadores são declarados pelo jogador defensor daquele
+    /// atacante; um terceiro jogador não tem o que declarar contra ele.
+    #[test]
+    fn so_o_defensor_visado_pode_bloquear_aquele_atacante() {
+        let mut game = build_players(vec![creature(0, "Soldado", 2, 2, &[])], 3);
+        let attacker = deploy(&mut game, PlayerId::P0, CardDefId(0));
+        let visado = deploy(&mut game, PlayerId::P1, CardDefId(0));
+        let terceiro = deploy(&mut game, PlayerId(2), CardDefId(0));
+        set_attacking(&mut game, attacker, PlayerId::P1);
+
+        assert!(
+            can_block(&game, visado, attacker),
+            "o jogador atacado bloqueia normalmente"
+        );
+        assert!(
+            !can_block(&game, terceiro, attacker),
+            "quem não está sendo atacado não pode bloquear este atacante"
+        );
+
+        let options = block_options(&game, PlayerId(2), &[terceiro], &[attacker]);
+        assert_eq!(
+            options,
+            vec![Action::Block {
+                assignments: Vec::new()
+            }],
+            "sem atacante mirando P2, a única opção legal é não bloquear"
+        );
+
+        declare_blockers(&mut game, &[(terceiro, attacker)]);
+        let Some(obj) = game.state.object(attacker) else {
+            panic!("{attacker} sumiu do campo");
+        };
+        assert!(
+            obj.combat.blocked_by.is_empty(),
+            "bloqueio declarado por quem não é o defensor é descartado"
+        );
+
+        assert_eq!(
+            blocking_defenders(&game, &[attacker]),
+            vec![PlayerId::P1],
+            "só o defensor visado é perguntado na rodada de bloqueio"
+        );
+    }
+
+    /// CR 510.1d — o dano que passa vai ao jogador que **aquele** atacante
+    /// estava atacando. Não existe "o defensor" da fase de combate.
+    #[test]
+    fn dano_que_passa_vai_ao_defensor_correto() {
+        let mut game = build_players(
+            vec![
+                creature(0, "Lanceiro", 3, 3, &[]),
+                creature(1, "Arqueiro", 1, 1, &[]),
+            ],
+            4,
+        );
+        let forte = deploy(&mut game, PlayerId::P0, CardDefId(0));
+        let fraco = deploy(&mut game, PlayerId::P0, CardDefId(1));
+        set_attacking(&mut game, forte, PlayerId::P1);
+        set_attacking(&mut game, fraco, PlayerId(3));
+
+        combat_damage_step(&mut game, false);
+
+        assert_eq!(
+            game.state.player(PlayerId::P1).life,
+            17,
+            "P1 leva os 3 do Lanceiro"
+        );
+        assert_eq!(
+            game.state.player(PlayerId(2)).life,
+            20,
+            "P2 não estava sendo atacado e não perde vida"
+        );
+        assert_eq!(
+            game.state.player(PlayerId(3)).life,
+            19,
+            "P3 leva 1 do Arqueiro"
+        );
+    }
+
+    /// CR 903.10 — dano de **combate** de um comandante entra na matriz do
+    /// jogador atingido, além de tirar vida. Dano de outra criatura não entra.
+    #[test]
+    fn dano_de_combate_de_comandante_e_creditado() {
+        let mut game = build_players(vec![creature(0, "General", 4, 4, &[])], 3);
+        let general = deploy(&mut game, PlayerId::P0, CardDefId(0));
+        let tropa = deploy(&mut game, PlayerId::P0, CardDefId(0));
+        // A designação de comandante é do módulo de Commander; aqui ela é feita
+        // à mão só para exercitar o crédito que o combate faz.
+        let Some(obj) = game.state.object_mut(general) else {
+            panic!("{general} não está no campo: o cenário exige o comandante em jogo");
+        };
+        obj.is_commander = true;
+        game.state.player_mut(PlayerId::P0).commander = Some(general);
+
+        set_attacking(&mut game, general, PlayerId(2));
+        set_attacking(&mut game, tropa, PlayerId(2));
+
+        combat_damage_step(&mut game, false);
+
+        assert_eq!(
+            game.state.player(PlayerId(2)).life,
+            12,
+            "as duas criaturas causam 8 de dano ao todo"
+        );
+        assert_eq!(
+            game.state.player(PlayerId(2)).commander_damage_from(general),
+            4,
+            "CR 903.10 — só o dano do comandante entra na matriz"
+        );
+        assert_eq!(
+            game.state.player(PlayerId(2)).commander_damage_from(tropa),
+            0,
+            "criatura comum não credita nada"
+        );
+        assert_eq!(
+            game.state.player(PlayerId::P1).commander_damage_from(general),
+            0,
+            "quem não foi atacado não acumula dano de comandante"
+        );
+    }
+
+    /// O teto de opções continua valendo com quatro jogadores, e a enumeração
+    /// segue determinística — mesma entrada, mesma lista.
+    #[test]
+    fn opcoes_de_ataque_multijogador_respeitam_teto_e_sao_deterministicas() {
+        let mut game = build_players(vec![creature(0, "Recruta", 1, 1, &[])], 4);
+        let mut ids = Vec::new();
+        for _ in 0..4 {
+            ids.push(deploy(&mut game, PlayerId::P0, CardDefId(0)));
+        }
+        let first = attack_options(&game, PlayerId::P0, &ids);
+        let second = attack_options(&game, PlayerId::P0, &ids);
+        assert_eq!(first, second, "mesma entrada, mesma saída");
+        assert!(first.len() <= MAX_COMBAT_OPTIONS);
+
+        for defender in [PlayerId::P1, PlayerId(2), PlayerId(3)] {
+            let has_all_in = first.iter().any(|a| match a {
+                Action::Attack { assignments } => {
+                    assignments.len() == ids.len()
+                        && assignments
+                            .iter()
+                            .all(|(_, d)| *d == Defender::Player(defender))
+                }
+                _ => false,
+            });
+            assert!(
+                has_all_in,
+                "'todos contra {defender}' precisa sobreviver ao corte por teto"
+            );
+        }
+    }
+
+    /// Quando o espaço de atribuições estoura o teto, o corte precisa aparecer
+    /// no log — sem isso o replay não explicaria a jogada que nunca foi
+    /// oferecida ao agente.
+    #[test]
+    fn corte_de_opcoes_de_ataque_vai_para_o_log() {
+        let mut game = build_players(
+            vec![
+                creature(0, "Recruta", 1, 1, &[]),
+                creature(1, "Milícia", 1, 1, &[]),
+            ],
+            4,
+        );
+        let mut ids = Vec::new();
+        for _ in 0..3 {
+            ids.push(deploy(&mut game, PlayerId::P0, CardDefId(0)));
+        }
+        for _ in 0..2 {
+            ids.push(deploy(&mut game, PlayerId::P0, CardDefId(1)));
+        }
+        let options = attack_options(&game, PlayerId::P0, &ids);
+        assert_eq!(
+            options.len(),
+            MAX_COMBAT_OPTIONS,
+            "cinco atacantes e três oponentes têm de estourar o teto"
+        );
+
+        let Some(first) = ids.first().copied() else {
+            panic!("o cenário exige ao menos um atacante");
+        };
+        declare_attackers(&mut game, &[(first, Defender::Player(PlayerId::P1))]);
+
+        assert!(
+            game.state
+                .log
+                .iter()
+                .any(|e| e.text.contains("opções de ataque cortadas")),
+            "o corte por teto tem de ficar registrado no log"
+        );
+    }
+
+    /// Partida completa com quatro jogadores: o laço de combate precisa
+    /// atravessar declaração, bloqueio e dano sem travar, e o resultado precisa
+    /// ser reprodutível pela semente (mesma semente, mesma partida).
+    #[test]
+    fn partida_de_quatro_jogadores_roda_ate_o_fim_e_e_reprodutivel() {
+        let defs = vec![creature(0, "Recruta", 2, 2, &[])];
+
+        let mut first = build_players(defs.clone(), 4);
+        let outcome = first.run();
+        assert!(
+            !matches!(outcome, GameOutcome::Ongoing),
+            "a partida tem de chegar a um desfecho"
+        );
+        assert!(
+            first.state.players.iter().any(|p| p.damage_taken_this_turn > 0
+                || p.life < 20
+                || p.has_lost),
+            "com quatro jogadores o combate precisa ter causado algum dano"
+        );
+
+        let mut second = build_players(defs, 4);
+        assert_eq!(second.run(), outcome, "mesma semente, mesmo desfecho");
+        assert_eq!(
+            second.state.log.len(),
+            first.state.log.len(),
+            "mesma semente, mesmo log"
+        );
     }
 
     #[test]

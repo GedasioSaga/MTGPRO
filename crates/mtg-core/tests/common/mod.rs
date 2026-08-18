@@ -29,7 +29,7 @@ use mtg_core::card::{
 };
 use mtg_core::engine::query::EvalCtx;
 use mtg_core::engine::{sba, stack, triggers, turn};
-use mtg_core::engine::{Agent, Game, GameConfig, PlayerConfig};
+use mtg_core::engine::{Agent, Game, GameConfig, GameFormat, PlayerConfig};
 use mtg_core::event::{Defender, Step};
 use mtg_core::ids::{CardDefId, ObjectId, PlayerId};
 use mtg_core::ir::{Condition, Cost, Effect, Keyword, TargetSpec, TimingRestriction};
@@ -508,6 +508,7 @@ pub fn test_config() -> GameConfig {
         allow_mulligan: false,
         max_turns: 20,
         max_decisions: 100_000,
+        ..GameConfig::default()
     }
 }
 
@@ -569,10 +570,12 @@ pub fn game_with_defs_seeded(
         PlayerConfig {
             name: "A".to_string(),
             deck: deck.clone(),
+            commander: None,
         },
         PlayerConfig {
             name: "B".to_string(),
             deck,
+            commander: None,
         },
     ];
     match Game::new(Arc::new(db), players, agents, sim_config(), seed) {
@@ -594,10 +597,12 @@ pub fn game_with_catalog(
         PlayerConfig {
             name: "Alice".to_string(),
             deck: deck_a,
+            commander: None,
         },
         PlayerConfig {
             name: "Bob".to_string(),
             deck: deck_b,
+            commander: None,
         },
     ];
     match Game::new(db, players, agents, config, seed) {
@@ -609,6 +614,8 @@ pub fn game_with_catalog(
 pub struct Setup {
     cards: Vec<CardDef>,
     decks: Vec<Vec<CardDefId>>,
+    /// CR 903.6 — comandante de cada jogador, quando o formato é Commander.
+    commanders: [Option<CardDefId>; 2],
     pub config: GameConfig,
     pub seed: u64,
     pub names: [String; 2],
@@ -631,6 +638,7 @@ impl Setup {
         Setup {
             cards,
             decks: vec![Vec::new(), Vec::new()],
+            commanders: [None, None],
             config: test_config(),
             seed: TEST_SEED,
             names: ["Alice".to_string(), "Bob".to_string()],
@@ -652,6 +660,15 @@ impl Setup {
             Some(c) => c.id,
             None => panic!("carta '{name}' não existe no catálogo montado"),
         }
+    }
+
+    /// Declara o comandante do jogador e liga o formato Commander na partida.
+    /// A vida inicial **não** é mexida: `test_config` deixa 20 de propósito, e
+    /// teste que quiser 40 ajusta `setup.config.starting_life`.
+    pub fn commander(&mut self, player: PlayerId, card: CardDefId) -> &mut Setup {
+        self.commanders[player.index()] = Some(card);
+        self.config.format = GameFormat::Commander;
+        self
     }
 
     /// Acrescenta cartas ao deck do jogador, na ordem dada.
@@ -689,6 +706,7 @@ impl Setup {
                 PlayerConfig {
                     name: self.names[i].clone(),
                     deck,
+                    commander: self.commanders[i],
                 }
             })
             .collect();

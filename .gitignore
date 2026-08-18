@@ -10,3 +10,12 @@ target-probe/
 target*/
 docs/shots/
 .playwright-mcp/
+data/
+.cache/
+*.sqlite-wal
+*.sqlite-shm
+
+# Bulk do Scryfall: 23 MB de dado de terceiro que muda todo dia.
+.cache/scryfall/
+# Catalogo importado do Scryfall (gerado por `mtg-import sync`).
+catalog.sqlite

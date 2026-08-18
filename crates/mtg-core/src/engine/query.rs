@@ -765,8 +765,8 @@ mod tests {
             .map(|i| CardDefId((i % db.cards.len()) as u32))
             .collect();
         let players = vec![
-            PlayerConfig { name: "A".into(), deck: deck.clone() },
-            PlayerConfig { name: "B".into(), deck },
+            PlayerConfig { name: "A".into(), deck: deck.clone(), commander: None },
+            PlayerConfig { name: "B".into(), deck, commander: None },
         ];
         let config = GameConfig::default();
         let state = match crate::engine::turn::initial_state(&db, &players, &config) {
