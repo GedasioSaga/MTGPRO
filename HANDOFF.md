@@ -76,15 +76,25 @@ Confirmado CERTO pela auditoria (nao mexer): item 27 (biblioteca vazia perde na 
 seguinte), item 31 (indestrutivel com resistencia 0 morre), itens 47 e 49 (bloqueador que
 sumiu; atropelar com toque mortal).
 
-### Gauntlet — rodada 1 (UI): PERDEMOS, e isso e o mecanismo funcionando
+### Gauntlet — placar da UI (bar: `docs/bar/arena-board-01.jpg`)
 
-Comparacao cega contra `docs/bar/arena-board-01.jpg`, ambas as imagens em JPEG (formato
-diferente vazaria qual e a referencia). Critic escolheu a bar.
+Protocolo: critic e sempre Agent de contexto fresco; as duas imagens vao em JPEG
+(formato diferente vazaria qual e a referencia); ordem alternada por rodada;
+veredito binario; um unico maior gap; builder recebe so o gap.
 
-Gap unico nomeado: *"o tabuleiro e uma superficie vazia e sem luz, cercado por dois paineis
-de telemetria que ficam com o peso visual da tela — o jogo virou moldura do seu proprio HUD."*
-Correcao prescrita: paineis viram overlay sob demanda, mesa recebe a largura inteira,
-textura de arena com vinheta e luz direcional, criaturas frente a frente na linha de combate.
+| Rodada | Nosso era | Veredito | Gap unico nomeado | Estado |
+|---|---|---|---|---|
+| 1 | A | perdemos | paineis de telemetria comem 40% da largura; o jogo virou moldura do proprio HUD | **fechado** |
+| 2 | B | perdemos | nao existe tabuleiro: cartas flutuam sobre vazio verde, sem superficie, sombra ou zonas demarcadas | em ataque (rodada 3) |
+
+O gap MUDOU entre 1 e 2 — o da rodada 1 foi de fato fechado (o critic novo nem
+menciona paineis laterais). Nao e seca. **Seca** seria o mesmo gap apontado duas
+rodadas seguidas sem progresso; ai o protocolo manda parar e reportar o delta.
+
+Rodada 3 em execucao ataca: mesa com superficie e textura, sombra projetada sob
+cada carta, zonas de campo e de terreno demarcadas mesmo vazias, cartas em jogo
+maiores que as da mao, vida/nome nas bordas do tabuleiro em vez de coluna
+lateral, e telemetria de motor recolhida num rodape.
 
 ## Camada Lua (adicionada 18/08, a pedido)
 

@@ -565,7 +565,6 @@ mod tests {
             targets: Vec::new(),
             effect: Effect::GainLife {
                 amount: Value::ToughnessOf(ObjRef::TriggerObject),
-                last_known: None,
                 player: PlayerRef::You,
             },
             optional: false,
