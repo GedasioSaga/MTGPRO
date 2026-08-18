@@ -136,14 +136,17 @@ function AttachmentBadge({ count }: { count: number }) {
   )
 }
 
-/** Agrupa por nome; cartas ocultas ou sem nome ficam sozinhas. */
+/**
+ * Agrupa por nome + estado de virado: um monte só de "Forest" mistura o que
+ * já foi gasto com o que ainda produz mana, e essa é a informação que importa.
+ * Carta oculta (sem nome) fica sozinha.
+ */
 function groupLands(lands: CardView[]): LandGroup[] {
   const groups: LandGroup[] = []
   const index = new Map<string, LandGroup>()
 
   for (const card of lands) {
-    // Terreno virado precisa continuar visível, então não entra num grupo.
-    const key = card.name === null || card.tapped ? `solo:${card.id}` : `name:${card.name}`
+    const key = card.name === null ? `solo:${card.id}` : `${card.name}|${card.tapped}`
     const existing = index.get(key)
     if (existing === undefined) {
       const group: LandGroup = { key, ids: [card.id] }

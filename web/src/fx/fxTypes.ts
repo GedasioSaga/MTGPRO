@@ -1,4 +1,4 @@
-import type { PlayerId } from '../types/protocol'
+import type { ObjectId, PlayerId } from '../types/protocol'
 
 /** Ponto em coordenadas de viewport (o overlay e `position: fixed`). */
 export interface FxPoint {
@@ -30,7 +30,7 @@ export type FxBody =
   | { kind: 'castBeam'; from: FxPoint; to: FxPoint; color: string; name: string }
   | { kind: 'resolveBurst'; at: FxPoint; color: string }
   | { kind: 'counterShatter'; at: FxPoint }
-  | { kind: 'attackLunge'; rect: FxRect; toward: FxPoint }
+  | { kind: 'attackLunge'; card: ObjectId; rect: FxRect; toward: FxPoint }
   | { kind: 'blockClash'; at: FxPoint }
   | { kind: 'damageNumber'; at: FxPoint; amount: number; tone: 'damage' | 'life'; lethal: boolean }
   | { kind: 'lifePulse'; at: FxPoint; tone: 'damage' | 'life' }
@@ -57,6 +57,9 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K>
 export type FxSpec = DistributiveOmit<FxEffect, 'id' | 'startedAt'>
 
 export type FxKind = FxBody['kind']
+
+/** Acesso a uma variante especifica sem repetir `Extract` em cada componente. */
+export type FxOf<K extends FxKind> = Extract<FxEffect, { kind: K }>
 
 /**
  * Prioridade decide quem sobrevive quando a rajada estoura o teto de

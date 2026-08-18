@@ -215,6 +215,7 @@ export function translateEvent(event: MatchEvent, ctx: FxTranslateContext): FxSp
             {
               kind: 'attackLunge',
               durationMs: d,
+              card: num(pair[0]),
               rect: cardRect(num(pair[0])),
               toward: defenderPoint(pair[1]),
             },

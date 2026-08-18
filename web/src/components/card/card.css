@@ -1,0 +1,1050 @@
+/*
+ * Carta de Magic. Todo o dimensionamento sai de --cw (largura da carta), então
+ * um único número escala tipografia, molduras, sombras e badges juntos — é o
+ * que permite micro e large serem literalmente a mesma marcação.
+ */
+
+.mtgc {
+  --r: calc(var(--cw) * 0.048);
+  --bezel: calc(var(--cw) * 0.032);
+  --serif: 'Palatino Linotype', Palatino, 'Iowan Old Style', Georgia, serif;
+  --display: Georgia, 'Palatino Linotype', 'Times New Roman', serif;
+  --danger: #e03a2a;
+
+  position: relative;
+  display: block;
+  width: var(--cw);
+  aspect-ratio: 5 / 7;
+  flex: 0 0 auto;
+  font-family: var(--serif);
+  color: var(--plate-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Camada que gira: separada do footprint para que virar não empurre o layout. */
+.mtgc__tilt {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+  transition:
+    transform 380ms cubic-bezier(0.34, 1.28, 0.5, 1),
+    filter 260ms ease;
+  will-change: transform;
+}
+
+.mtgc__bezel {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r);
+  padding: var(--bezel);
+  background:
+    radial-gradient(130% 90% at 50% -10%, #2a2731 0%, #0d0b12 55%, #050409 100%);
+  box-shadow:
+    0 calc(var(--cw) * 0.018) calc(var(--cw) * 0.05) rgba(3, 2, 8, 0.55),
+    0 calc(var(--cw) * 0.004) calc(var(--cw) * 0.012) rgba(3, 2, 8, 0.5),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  transition: box-shadow 380ms ease;
+}
+
+/* --------------------------------------------------------------------- */
+/* Moldura                                                               */
+/* --------------------------------------------------------------------- */
+
+.mtgc__frame {
+  position: relative;
+  height: 100%;
+  border-radius: calc(var(--r) * 0.62);
+  padding: calc(var(--cw) * 0.026);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--cw) * 0.014);
+  overflow: hidden;
+  background:
+    linear-gradient(
+      168deg,
+      var(--frame-light) 0%,
+      var(--frame-dark) 46%,
+      var(--frame-dark) 62%,
+      color-mix(in srgb, var(--frame-dark) 78%, #000) 100%
+    );
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.22),
+    inset 0 0 calc(var(--cw) * 0.09) rgba(0, 0, 0, 0.35);
+  transition: filter 260ms ease;
+}
+
+/* Bicolor: as duas identidades dividem a moldura na diagonal. */
+.mtgc--dual .mtgc__frame {
+  background:
+    linear-gradient(
+      104deg,
+      var(--frame-light) 0%,
+      var(--frame-dark) 36%,
+      color-mix(in srgb, var(--frame-dark) 50%, var(--frame-dark-2)) 50%,
+      var(--frame-dark-2) 64%,
+      var(--frame-light-2) 100%
+    );
+}
+
+/* Brilho de superfície: dá volume sem custar mais um elemento. */
+.mtgc__frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(198deg, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0) 34%),
+    linear-gradient(0deg, rgba(0, 0, 0, 0.24) 0%, rgba(0, 0, 0, 0) 26%);
+}
+
+/* --------------------------------------------------------------------- */
+/* Barras de nome e de tipo                                              */
+/* --------------------------------------------------------------------- */
+
+.mtgc__bar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--cw) * 0.022);
+  border-radius: calc(var(--cw) * 0.022);
+  padding-inline: calc(var(--cw) * 0.042);
+  color: var(--bar-ink);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--bar) 72%, #fff 10%) 0%,
+      var(--bar) 42%,
+      color-mix(in srgb, var(--bar) 80%, #000) 100%
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.4),
+    0 1px 2px rgba(0, 0, 0, 0.42);
+}
+
+.mtgc__title {
+  flex: 0 0 8.4%;
+}
+
+.mtgc__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: calc(var(--cw) * 0.071);
+  letter-spacing: calc(var(--cw) * 0.0012);
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6);
+}
+
+.mtgc__type {
+  flex: 0 0 6.8%;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: calc(var(--cw) * 0.053);
+  letter-spacing: calc(var(--cw) * 0.001);
+  line-height: 1;
+}
+
+.mtgc__typeText {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55);
+}
+
+/* Selo do set: o disco de raridade que a carta impressa traz na linha de tipo. */
+.mtgc__stamp {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  height: calc(var(--cw) * 0.062);
+  min-width: calc(var(--cw) * 0.062);
+  padding-inline: calc(var(--cw) * 0.012);
+  border-radius: 999px;
+  font-family: var(--display);
+  font-size: calc(var(--cw) * 0.038);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #0d0b12;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--rarity) 70%, #fff), var(--rarity));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* --------------------------------------------------------------------- */
+/* Janela de arte                                                        */
+/* --------------------------------------------------------------------- */
+
+.mtgc__artwin {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 43%;
+  border-radius: calc(var(--cw) * 0.014);
+  overflow: hidden;
+  background: #0a0910;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.75),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.14),
+    0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.mtgc--compact .mtgc__artwin {
+  flex: 1 1 auto;
+}
+
+/* --------------------------------------------------------------------- */
+/* Caixa de texto                                                        */
+/* --------------------------------------------------------------------- */
+
+.mtgc__text {
+  position: relative;
+  z-index: 2;
+  flex: 1 1 auto;
+  min-height: 0;
+  border-radius: calc(var(--cw) * 0.018);
+  padding: calc(var(--cw) * 0.036) calc(var(--cw) * 0.042);
+  overflow: hidden;
+  color: var(--plate-ink);
+  font-size: calc(var(--cw) * 0.0545);
+  line-height: 1.2;
+  background:
+    radial-gradient(120% 90% at 20% 0%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 60%),
+    linear-gradient(180deg, color-mix(in srgb, var(--plate) 96%, #fff), var(--plate) 55%,
+      color-mix(in srgb, var(--plate) 88%, #000) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+/* Textura de papel: fibras discretas, quase invisíveis mas tiram o "chapado". */
+.mtgc__text::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background:
+    repeating-linear-gradient(112deg, rgba(0, 0, 0, 0.035) 0 1px, rgba(0, 0, 0, 0) 1px 4px),
+    repeating-linear-gradient(24deg, rgba(0, 0, 0, 0.025) 0 1px, rgba(0, 0, 0, 0) 1px 6px);
+}
+
+.mtgc__rules {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--cw) * 0.026);
+}
+
+.mtgc__rulesLine {
+  margin: 0;
+}
+
+.mtgc__reminder {
+  font-style: italic;
+  opacity: 0.72;
+}
+
+.mtgc__flavorRule {
+  position: relative;
+  height: 1px;
+  margin: calc(var(--cw) * 0.032) 0;
+  border: 0;
+  background: linear-gradient(90deg, transparent, currentColor 18%, currentColor 82%, transparent);
+  opacity: 0.28;
+}
+
+.mtgc__flavor {
+  position: relative;
+  margin: 0;
+  font-style: italic;
+  opacity: 0.86;
+}
+
+/* --------------------------------------------------------------------- */
+/* Rodapé e quadro de P/T                                                */
+/* --------------------------------------------------------------------- */
+
+.mtgc__foot {
+  flex: 0 0 4.5%;
+}
+
+.mtgc__pt {
+  position: absolute;
+  z-index: 5;
+  right: calc(var(--cw) * 0.032);
+  bottom: calc(var(--cw) * 0.026);
+  min-width: calc(var(--cw) * 0.27);
+  padding: calc(var(--cw) * 0.014) calc(var(--cw) * 0.03);
+  border-radius: calc(var(--cw) * 0.02);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: calc(var(--cw) * 0.084);
+  line-height: 1;
+  color: var(--bar-ink);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--frame-light) 80%, #fff) 0%,
+    var(--frame-dark) 55%,
+    color-mix(in srgb, var(--frame-dark) 70%, #000) 100%
+  );
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 2px 4px rgba(0, 0, 0, 0.55);
+}
+
+.mtgc__ptValue {
+  position: relative;
+  z-index: 2;
+}
+
+/* Dano: a barra sobe pelo quadro na proporção do estrago. */
+.mtgc__ptDamage {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, rgba(224, 58, 42, 0.55), rgba(150, 18, 10, 0.95));
+  box-shadow: inset 0 1px 0 rgba(255, 160, 140, 0.8);
+}
+
+.mtgc--damaged .mtgc__pt {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 0 0 1px rgba(255, 90, 70, 0.9),
+    0 0 calc(var(--cw) * 0.05) rgba(224, 58, 42, 0.55),
+    0 2px 4px rgba(0, 0, 0, 0.55);
+}
+
+.mtgc--lethal .mtgc__ptValue {
+  color: #ffd9d2;
+}
+
+/* Chip vermelho com o dano marcado, colado acima do quadro. */
+.mtgc__damageChip {
+  position: absolute;
+  z-index: 6;
+  right: calc(var(--cw) * 0.032);
+  bottom: calc(var(--cw) * 0.135);
+  padding: calc(var(--cw) * 0.008) calc(var(--cw) * 0.026);
+  border-radius: 999px;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: calc(var(--cw) * 0.052);
+  line-height: 1;
+  color: #fff2ef;
+  background: linear-gradient(180deg, #f0523c, #9d1a0f);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+/* P/T impresso, apagado e riscado, ao lado do valor atual. */
+.mtgc__printedPt {
+  position: absolute;
+  z-index: 6;
+  right: calc(var(--cw) * 0.31);
+  bottom: calc(var(--cw) * 0.042);
+  padding: calc(var(--cw) * 0.006) calc(var(--cw) * 0.022);
+  border-radius: calc(var(--cw) * 0.014);
+  font-family: var(--display);
+  font-size: calc(var(--cw) * 0.05);
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.62);
+  text-decoration: line-through;
+  background: rgba(10, 8, 16, 0.62);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+.mtgc--buffed .mtgc__ptValue {
+  color: #fff3c4;
+  text-shadow:
+    0 0 calc(var(--cw) * 0.045) rgba(255, 214, 92, 0.95),
+    0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.mtgc--buffed .mtgc__pt {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 0 0 1px rgba(255, 214, 92, 0.85),
+    0 0 calc(var(--cw) * 0.055) rgba(255, 196, 60, 0.5),
+    0 2px 4px rgba(0, 0, 0, 0.55);
+}
+
+.mtgc--weakened .mtgc__ptValue {
+  color: #d9c2ff;
+}
+
+/* Lealdade de planeswalker: escudo no lugar do quadro de P/T. */
+.mtgc__loyalty {
+  position: absolute;
+  z-index: 5;
+  right: calc(var(--cw) * 0.055);
+  bottom: calc(var(--cw) * 0.012);
+  width: calc(var(--cw) * 0.2);
+  height: calc(var(--cw) * 0.22);
+  display: grid;
+  place-items: center;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: calc(var(--cw) * 0.082);
+  color: #f4efe6;
+  background: linear-gradient(180deg, #4a4550, #16121c);
+  clip-path: polygon(50% 0%, 100% 22%, 100% 66%, 50% 100%, 0% 66%, 0% 22%);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+/* --------------------------------------------------------------------- */
+/* Marcadores                                                            */
+/* --------------------------------------------------------------------- */
+
+.mtgc__counters {
+  position: absolute;
+  z-index: 6;
+  left: calc(var(--cw) * 0.038);
+  bottom: calc(var(--cw) * 0.032);
+  display: flex;
+  flex-direction: column-reverse;
+  gap: calc(var(--cw) * 0.014);
+  align-items: flex-start;
+}
+
+.mtgc__counter {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--cw) * 0.016);
+  padding: calc(var(--cw) * 0.011) calc(var(--cw) * 0.028);
+  border-radius: 999px;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: calc(var(--cw) * 0.052);
+  line-height: 1;
+  color: #0d0b12;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.45),
+    0 2px 4px rgba(0, 0, 0, 0.55);
+}
+
+.mtgc__counter--plus {
+  background: linear-gradient(180deg, #b7f0a8, #4ba33a);
+}
+.mtgc__counter--minus {
+  background: linear-gradient(180deg, #f5a79b, #b02a1a);
+  color: #fff1ee;
+}
+.mtgc__counter--loyalty {
+  background: linear-gradient(180deg, #cdd6e2, #6a7686);
+}
+.mtgc__counter--neutral {
+  background: linear-gradient(180deg, #ded7c4, #948a72);
+}
+
+.mtgc__counterCount {
+  padding-left: calc(var(--cw) * 0.014);
+  border-left: 1px solid rgba(0, 0, 0, 0.28);
+  opacity: 0.9;
+}
+
+/* --------------------------------------------------------------------- */
+/* Badges de estado sobre a arte                                         */
+/* --------------------------------------------------------------------- */
+
+.mtgc__badges {
+  position: absolute;
+  z-index: 6;
+  top: calc(var(--cw) * 0.105);
+  right: calc(var(--cw) * 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--cw) * 0.016);
+  align-items: flex-end;
+}
+
+.mtgc--compact .mtgc__badges {
+  top: calc(var(--cw) * 0.04);
+}
+
+.mtgc__badge {
+  display: grid;
+  place-items: center;
+  width: calc(var(--cw) * 0.13);
+  height: calc(var(--cw) * 0.13);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(30, 26, 40, 0.94), rgba(8, 6, 14, 0.94));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 2px 5px rgba(0, 0, 0, 0.6);
+}
+
+.mtgc__badge svg {
+  width: 66%;
+  height: 66%;
+  display: block;
+}
+
+.mtgc__badge--attack {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 0 0 1px var(--accent),
+    0 0 calc(var(--cw) * 0.06) color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.mtgc__badge--block {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 0 0 1px var(--accent);
+}
+
+.mtgc__badge--sick svg {
+  opacity: 0.85;
+}
+
+/* --------------------------------------------------------------------- */
+/* Estado: virada                                                        */
+/* --------------------------------------------------------------------- */
+
+.mtgc--tapped .mtgc__tilt {
+  transform: rotate(90deg) scale(0.94);
+}
+
+/*
+ * A luz não gira junto com a carta: a sombra é reescrita no eixo local para
+ * continuar caindo para baixo no mundo depois da rotação de 90 graus.
+ */
+.mtgc--tapped .mtgc__bezel {
+  box-shadow:
+    calc(var(--cw) * 0.026) 0 calc(var(--cw) * 0.06) rgba(3, 2, 8, 0.6),
+    calc(var(--cw) * 0.006) 0 calc(var(--cw) * 0.014) rgba(3, 2, 8, 0.5),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.mtgc--tapped .mtgc__frame {
+  filter: brightness(0.86) saturate(0.86);
+}
+
+/* --------------------------------------------------------------------- */
+/* Estado: enjoo de invocação                                            */
+/* --------------------------------------------------------------------- */
+
+.mtgc--sick .mtgc__frame {
+  filter: saturate(0.42) brightness(0.94);
+}
+
+.mtgc--sick.mtgc--tapped .mtgc__frame {
+  filter: saturate(0.38) brightness(0.82);
+}
+
+.mtgc__sickWash {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(200deg, rgba(150, 190, 235, 0.2), rgba(90, 110, 160, 0.1) 60%);
+  mix-blend-mode: screen;
+}
+
+/* --------------------------------------------------------------------- */
+/* Estado: combate e alvo                                                */
+/* --------------------------------------------------------------------- */
+
+.mtgc__glow,
+.mtgc__halo {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r);
+  pointer-events: none;
+}
+
+.mtgc--attacking .mtgc__glow {
+  box-shadow:
+    0 0 0 calc(var(--cw) * 0.016) var(--accent),
+    0 0 calc(var(--cw) * 0.16) color-mix(in srgb, var(--accent) 78%, transparent),
+    inset 0 0 calc(var(--cw) * 0.09) color-mix(in srgb, var(--accent) 45%, transparent);
+  animation: mtgc-attack-pulse 1.5s ease-in-out infinite;
+}
+
+.mtgc--blocking .mtgc__glow {
+  box-shadow:
+    0 0 0 calc(var(--cw) * 0.012) color-mix(in srgb, var(--accent) 85%, #fff),
+    0 0 calc(var(--cw) * 0.09) color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.mtgc--blocked .mtgc__glow {
+  box-shadow:
+    0 0 0 calc(var(--cw) * 0.01) rgba(220, 220, 232, 0.55),
+    inset 0 0 calc(var(--cw) * 0.08) rgba(0, 0, 0, 0.5);
+}
+
+.mtgc--target .mtgc__halo {
+  box-shadow:
+    0 0 0 calc(var(--cw) * 0.014) rgba(150, 240, 255, 0.95),
+    0 0 calc(var(--cw) * 0.2) rgba(110, 220, 255, 0.7);
+  animation: mtgc-halo 1.35s ease-in-out infinite;
+}
+
+@keyframes mtgc-attack-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes mtgc-halo {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.025);
+  }
+}
+
+/* --------------------------------------------------------------------- */
+/* Estado: ficha                                                         */
+/* --------------------------------------------------------------------- */
+
+/* Fichas não são cartas: hachura na moldura e canto dobrado no topo direito. */
+.mtgc--token .mtgc__frame::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    132deg,
+    rgba(255, 255, 255, 0.11) 0 calc(var(--cw) * 0.008),
+    rgba(0, 0, 0, 0.07) calc(var(--cw) * 0.008) calc(var(--cw) * 0.022)
+  );
+}
+
+.mtgc--token .mtgc__bezel {
+  padding: calc(var(--cw) * 0.026);
+  background:
+    radial-gradient(130% 90% at 50% -10%, #3a3446 0%, #14101c 55%, #0a0812 100%);
+}
+
+.mtgc__fold {
+  position: absolute;
+  z-index: 7;
+  top: 0;
+  right: 0;
+  width: calc(var(--cw) * 0.15);
+  height: calc(var(--cw) * 0.15);
+  clip-path: polygon(100% 0, 0 0, 100% 100%);
+  background: linear-gradient(225deg, rgba(255, 255, 255, 0.55), rgba(120, 118, 130, 0.85));
+  box-shadow: -1px 1px 3px rgba(0, 0, 0, 0.5);
+  border-top-right-radius: calc(var(--r) * 0.5);
+}
+
+.mtgc__tokenTag {
+  flex: 0 0 auto;
+  padding: calc(var(--cw) * 0.006) calc(var(--cw) * 0.024);
+  border-radius: calc(var(--cw) * 0.012);
+  font-size: calc(var(--cw) * 0.04);
+  letter-spacing: 0.1em;
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+}
+
+/* --------------------------------------------------------------------- */
+/* Modo compacto (micro e small)                                         */
+/* --------------------------------------------------------------------- */
+
+.mtgc--compact .mtgc__frame {
+  gap: calc(var(--cw) * 0.02);
+}
+
+.mtgc--compact .mtgc__title {
+  flex: 0 0 12%;
+}
+
+.mtgc--compact .mtgc__name {
+  font-size: calc(var(--cw) * 0.1);
+}
+
+.mtgc--micro .mtgc__frame {
+  padding: calc(var(--cw) * 0.03);
+}
+
+.mtgc--micro .mtgc__pt {
+  min-width: calc(var(--cw) * 0.42);
+  font-size: calc(var(--cw) * 0.15);
+  padding: calc(var(--cw) * 0.02) calc(var(--cw) * 0.03);
+}
+
+.mtgc--small .mtgc__pt {
+  min-width: calc(var(--cw) * 0.34);
+  font-size: calc(var(--cw) * 0.115);
+}
+
+/* --------------------------------------------------------------------- */
+/* Interação                                                             */
+/* --------------------------------------------------------------------- */
+
+.mtgc--interactive {
+  cursor: pointer;
+}
+
+.mtgc--interactive:hover .mtgc__tilt,
+.mtgc--interactive:focus-visible .mtgc__tilt {
+  transform: translateY(calc(var(--cw) * -0.04)) scale(1.04);
+}
+
+.mtgc--interactive.mtgc--tapped:hover .mtgc__tilt,
+.mtgc--interactive.mtgc--tapped:focus-visible .mtgc__tilt {
+  transform: rotate(90deg) scale(0.99);
+}
+
+.mtgc--interactive:focus-visible {
+  outline: none;
+}
+
+.mtgc--interactive:focus-visible .mtgc__halo {
+  box-shadow: 0 0 0 calc(var(--cw) * 0.016) #9fe8ff;
+}
+
+/* --------------------------------------------------------------------- */
+/* Arte                                                                  */
+/* --------------------------------------------------------------------- */
+
+.mtgc-art {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #0a0910;
+}
+
+.mtgc-art__img,
+.mtgc-art__fallback {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.mtgc-art__img {
+  opacity: 0;
+  transition: opacity 420ms ease;
+}
+
+.mtgc-art__img--ready {
+  opacity: 1;
+}
+
+/* Vinheta: cola a arte na moldura em vez de deixá-la flutuando. */
+.mtgc-art__vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% 40%, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.42) 100%),
+    linear-gradient(0deg, rgba(0, 0, 0, 0.28), rgba(0, 0, 0, 0) 38%);
+}
+
+.mtgc-art__shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 34%,
+    rgba(255, 255, 255, 0.16) 50%,
+    rgba(255, 255, 255, 0) 66%
+  );
+  background-size: 260% 100%;
+  animation: mtgc-shimmer 1.25s linear infinite;
+}
+
+@keyframes mtgc-shimmer {
+  from {
+    background-position: 140% 0;
+  }
+  to {
+    background-position: -60% 0;
+  }
+}
+
+/* --------------------------------------------------------------------- */
+/* Símbolos de mana                                                      */
+/* --------------------------------------------------------------------- */
+
+.mtgc-cost {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--sym) * 0.14);
+  flex: 0 0 auto;
+}
+
+.mtgc-sym {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: var(--sym);
+  height: var(--sym);
+  border-radius: 999px;
+  overflow: hidden;
+  flex: 0 0 auto;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-weight: 700;
+  font-size: calc(var(--sym) * 0.66);
+  line-height: 1;
+  color: #150e07;
+  box-shadow:
+    inset 0 calc(var(--sym) * 0.06) calc(var(--sym) * 0.09) rgba(255, 255, 255, 0.65),
+    inset 0 calc(var(--sym) * -0.09) calc(var(--sym) * 0.12) rgba(0, 0, 0, 0.32),
+    0 calc(var(--sym) * 0.04) calc(var(--sym) * 0.08) rgba(0, 0, 0, 0.5);
+  vertical-align: -0.12em;
+}
+
+.mtgc-sym__glyph {
+  position: relative;
+  width: 72%;
+  height: 72%;
+  display: block;
+  fill: #150e07;
+}
+
+.mtgc-sym__text {
+  position: relative;
+  transform: translateY(-2%);
+}
+
+/* Híbrido: um disco cortado na diagonal com um glifo em cada metade. */
+.mtgc-sym--split .mtgc-sym__half {
+  position: absolute;
+  inset: 0;
+}
+
+.mtgc-sym--split .mtgc-sym__half--a {
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+
+.mtgc-sym--split .mtgc-sym__half--b {
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+
+.mtgc-sym__mini {
+  position: absolute;
+  width: 42%;
+  height: 42%;
+  fill: #150e07;
+}
+
+.mtgc-sym__mini--a {
+  top: 9%;
+  left: 9%;
+}
+
+.mtgc-sym__mini--b {
+  bottom: 9%;
+  right: 9%;
+}
+
+.mtgc-sym__miniText {
+  position: absolute;
+  top: 6%;
+  left: 12%;
+  font-size: calc(var(--sym) * 0.44);
+  line-height: 1;
+}
+
+.mtgc-sym--tap,
+.mtgc-sym--untap {
+  background: linear-gradient(180deg, #dcd6cf, #a49a90);
+}
+
+.mtgc-sym--generic,
+.mtgc-sym--variable,
+.mtgc-sym--colorless,
+.mtgc-sym--snow {
+  background: linear-gradient(180deg, #d7cfcc, #b3a8a4);
+}
+
+.mtgc-sym--text {
+  width: auto;
+  min-width: var(--sym);
+  padding-inline: calc(var(--sym) * 0.18);
+  border-radius: 999px;
+  font-size: calc(var(--sym) * 0.5);
+  background: linear-gradient(180deg, #d7cfcc, #b3a8a4);
+}
+
+/* --------------------------------------------------------------------- */
+/* Verso da carta                                                        */
+/* --------------------------------------------------------------------- */
+
+.mtgc-back {
+  position: relative;
+  display: block;
+  width: var(--cw);
+  aspect-ratio: 5 / 7;
+  flex: 0 0 auto;
+  border-radius: calc(var(--cw) * 0.048);
+  overflow: hidden;
+  background: radial-gradient(120% 90% at 50% 0%, #241a14 0%, #0e0907 60%, #050303 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    inset 0 0 calc(var(--cw) * 0.12) rgba(0, 0, 0, 0.8),
+    0 calc(var(--cw) * 0.016) calc(var(--cw) * 0.045) rgba(3, 2, 8, 0.55);
+}
+
+.mtgc-back svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* --------------------------------------------------------------------- */
+/* Painel de zoom                                                        */
+/* --------------------------------------------------------------------- */
+
+.mtgc-detail {
+  position: fixed;
+  z-index: 90;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 14px;
+  max-width: 560px;
+  border-radius: 16px;
+  color: #ece8f4;
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  background: linear-gradient(180deg, rgba(26, 22, 36, 0.97), rgba(12, 10, 18, 0.97));
+  backdrop-filter: blur(10px);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 24px 60px rgba(0, 0, 0, 0.65);
+  pointer-events: none;
+  animation: mtgc-detail-in 180ms cubic-bezier(0.22, 0.9, 0.34, 1);
+}
+
+@keyframes mtgc-detail-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.mtgc-detail__side {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mtgc-detail__heading {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+
+.mtgc-detail__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mtgc-detail__chip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #d8d2e6;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.mtgc-detail__chip--accent {
+  color: #0d0b12;
+  background: var(--accent, #f2b544);
+}
+
+.mtgc-detail__keywords {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.mtgc-detail__keyword {
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: #b9b2ca;
+}
+
+.mtgc-detail__keywordName {
+  display: block;
+  font-weight: 650;
+  color: #ffe8a8;
+}
+
+.mtgc-detail__note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #9d95b2;
+}
+
+/* --------------------------------------------------------------------- */
+/* Movimento reduzido                                                    */
+/* --------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .mtgc__tilt,
+  .mtgc__bezel,
+  .mtgc__frame,
+  .mtgc-art__img {
+    transition-duration: 1ms;
+  }
+
+  .mtgc--attacking .mtgc__glow,
+  .mtgc--target .mtgc__halo,
+  .mtgc-art__shimmer,
+  .mtgc-detail {
+    animation: none;
+  }
+
+  /* Sem pulso, o halo precisa ficar cravado no estado mais visível. */
+  .mtgc--target .mtgc__halo {
+    opacity: 1;
+  }
+
+  .mtgc-art__shimmer {
+    background: rgba(255, 255, 255, 0.06);
+  }
+}

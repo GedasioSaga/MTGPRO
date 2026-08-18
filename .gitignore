@@ -6,3 +6,5 @@ web/dist/
 .claude-trail.md
 graphify-out/
 docs/bar/
+target-probe/
+target*/

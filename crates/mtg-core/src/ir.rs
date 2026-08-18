@@ -109,7 +109,7 @@ pub enum Filter {
     HasColor(Color),
     Colorless,
     Multicolored,
-    HasKeyword(Box<Keyword>),
+    HasKeyword(Keyword),
     HasCounter(CounterKind),
 
     Tapped,
@@ -221,7 +221,7 @@ pub enum Condition {
 // Palavras-chave
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Keyword {
     Flying,
     Reach,
