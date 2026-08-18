@@ -1,0 +1,12 @@
+[package]
+name = "mtg-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+smallvec.workspace = true
