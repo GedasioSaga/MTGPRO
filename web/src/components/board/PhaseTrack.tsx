@@ -7,7 +7,8 @@ import {
   STEP_SHORT_LABEL,
 } from '../../types/protocol'
 import type { PlayerId, PlayerView, Step } from '../../types/protocol'
-import { seatAccent, withAlpha } from './boardVisuals'
+import { withAlpha } from '../../design/color'
+import { seatAccent } from './boardVisuals'
 
 export interface PhaseTrackProps {
   turn: number

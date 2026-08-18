@@ -1,5 +1,5 @@
 import { motion } from 'motion/react'
-import { withAlpha } from './fxColors'
+import { withAlpha } from '../design/color'
 import { EASE, useFxMotion } from './fxMotion'
 import type { FxOf } from './fxTypes'
 

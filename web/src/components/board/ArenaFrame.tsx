@@ -3,7 +3,6 @@ import {
   MATERIAL_LEATHER,
   MATERIAL_METAL,
   MATERIAL_STONE,
-  MaterialDefs,
 } from '../../design/materials'
 
 /*
@@ -91,10 +90,6 @@ function MaterialVeil({
 export function ArenaFrame() {
   return (
     <>
-      {/* Biblioteca de materiais: monta solta, fora do `<defs>` da arena, para
-          os ids valerem no documento sem depender de aninhamento de `<svg>`. */}
-      <MaterialDefs />
-
       <svg className="arena-defs" aria-hidden="true" focusable="false">
         <defs>
           {/* Pedra iluminada de cima: face clara na aresta superior, escura na
@@ -140,7 +135,7 @@ export function ArenaFrame() {
             x2="0"
             y2="1000"
           >
-            <stop offset="0" stopColor="rgba(226,255,242,0.15)" />
+            <stop offset="0" stopColor="rgba(226,255,242,0.1)" />
             <stop offset="0.5" stopColor="rgba(150,214,182,0.05)" />
             <stop offset="1" stopColor="rgba(0,0,0,0.32)" />
           </linearGradient>
@@ -290,7 +285,7 @@ export function ArenaFrame() {
             <path
               d={TERRACE_BOTTOM_LIP}
               fill="none"
-              stroke="rgba(232,255,244,0.34)"
+              stroke="rgba(232,255,244,0.24)"
               strokeWidth="1.5"
               vectorEffect="non-scaling-stroke"
             />

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { BoardLayout } from './components/board/BoardLayout'
+import { MaterialDefs } from './design/materials'
 import { GameLog } from './components/hud/GameLog'
 import { Hud } from './components/hud/Hud'
 import { MatchSetup } from './components/hud/MatchSetup'
@@ -51,6 +52,10 @@ export default function App() {
 
   return (
     <div className="app-shell" data-active-player={activePlayer}>
+      {/* Biblioteca de filtros: ids globais, montada UMA vez e antes de todo
+          consumidor — `filter="url(#…)"` so resolve o que ja existe no DOM. */}
+      <MaterialDefs />
+
       <div className="app-shell__table table-felt" data-fx-shake>
         <BoardLayout />
       </div>

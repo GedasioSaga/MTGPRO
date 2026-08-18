@@ -5,6 +5,7 @@
  */
 import type { CSSProperties } from 'react'
 import type { CardView, Defender } from '../../types/protocol'
+import { hashString } from '../../design/color'
 
 // ---------------------------------------------------------------------------
 // Cores
@@ -587,15 +588,6 @@ export function keywordBadges(keywords: string[]): KeywordBadge[] {
 // ---------------------------------------------------------------------------
 // Arte procedural, usada quando o Scryfall não responde
 // ---------------------------------------------------------------------------
-
-export function hashString(value: string): number {
-  let hash = 2166136261
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index)
-    hash = Math.imul(hash, 16777619)
-  }
-  return hash >>> 0
-}
 
 /** Gerador determinístico, para a arte não tremer entre renders. */
 function makeRandom(seed: number): () => number {

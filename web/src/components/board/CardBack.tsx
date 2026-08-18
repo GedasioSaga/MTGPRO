@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { hashString } from './boardVisuals'
+import { hashString } from '../../design/color'
 
 export interface CardBackProps {
   /** Semente do padrão: cartas diferentes ganham verso levemente diferente. */

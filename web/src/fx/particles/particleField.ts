@@ -1,4 +1,4 @@
-import { withAlpha } from '../fxColors'
+import { withAlpha } from '../../design/color'
 import { glowSprite } from './glowSprite'
 import { spawnBurst } from './spawnBurst'
 import type { FxBurst, Particle } from './particleTypes'

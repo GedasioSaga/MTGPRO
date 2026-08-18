@@ -2,7 +2,8 @@ import { useId } from 'react'
 import clsx from 'clsx'
 import type { CSSProperties, ReactElement } from 'react'
 import type { CardSize } from './cardVisuals'
-import { CARD_SIZES, hashString } from './cardVisuals'
+import { hashString } from '../../design/color'
+import { CARD_SIZES } from './cardVisuals'
 import './card.css'
 
 export interface CardBackProps {

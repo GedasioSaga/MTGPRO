@@ -2,14 +2,13 @@ import clsx from 'clsx'
 import type { ReactNode } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import type { PlayerView } from '../../types/protocol'
+import { hashString, withAlpha } from '../../design/color'
 import {
   COLORLESS_HEX,
   MANA_HEX,
   cssVars,
-  hashString,
   initialsOf,
   seatAccent,
-  withAlpha,
 } from './boardVisuals'
 import { ExileIcon, GraveyardIcon, HandIcon, LibraryIcon, PoisonIcon } from './BoardIcons'
 

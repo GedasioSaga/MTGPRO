@@ -1,4 +1,4 @@
-import { withAlpha } from '../fxColors'
+import { withAlpha } from '../../design/color'
 
 /** Lado do sprite em px. 64 ja e maior que qualquer particula desenhada. */
 const SPRITE_PX = 64

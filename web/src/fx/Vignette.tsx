@@ -1,6 +1,7 @@
 import { motion } from 'motion/react'
 import type { CSSProperties } from 'react'
-import { FX_TONES, withAlpha } from './fxColors'
+import { withAlpha } from '../design/color'
+import { FX_TONES } from './fxColors'
 import { clamp, EASE, useFxMotion } from './fxMotion'
 import type { FxOf } from './fxTypes'
 

@@ -1,3 +1,4 @@
+import { hashString } from '../design/color'
 import type { PlayerId } from '../types/protocol'
 
 /** Bits do `ColorSet` do motor: WUBRG, nesta ordem (mana.rs `Color::index`). */
@@ -41,33 +42,7 @@ export const FX_TONES = {
   defeat: '#ff5a5a',
 } as const
 
-/** Hash estavel de string — fallback procedural quando falta arte ou cor. */
-export function hashString(value: string): number {
-  let h = 2166136261
-  for (let i = 0; i < value.length; i += 1) {
-    h ^= value.charCodeAt(i)
-    h = Math.imul(h, 16777619)
-  }
-  return h >>> 0
-}
-
 export function proceduralHue(seed: string): number {
   return hashString(seed) % 360
 }
 
-/** Converte hex para `rgba(...)` sem depender de biblioteca de cor. */
-export function withAlpha(hex: string, alpha: number): string {
-  const clean = hex.replace('#', '')
-  const full =
-    clean.length === 3
-      ? clean
-          .split('')
-          .map((c) => c + c)
-          .join('')
-      : clean
-  const value = Number.parseInt(full, 16)
-  const r = (value >> 16) & 255
-  const g = (value >> 8) & 255
-  const b = value & 255
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
-}

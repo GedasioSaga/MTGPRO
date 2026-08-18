@@ -5,7 +5,8 @@ import type {
   PlayerView,
   StackItemView,
 } from '../../types/protocol'
-import { seatAccent, withAlpha } from './boardVisuals'
+import { withAlpha } from '../../design/color'
+import { seatAccent } from './boardVisuals'
 
 export interface StackPanelProps {
   stack: StackItemView[]
