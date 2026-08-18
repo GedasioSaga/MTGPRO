@@ -224,10 +224,34 @@ pub fn matches(
     ev: &GameEvent,
     source: ObjectId,
 ) -> Option<TriggerContext> {
+    let mut ctx = match_condition(game, cond, ev, source)?;
+    attach_last_known(game, &mut ctx);
+    Some(ctx)
+}
+
+/// CR 603.6d — anexa o retrato do objeto do gatilho, e só quando ele já não
+/// está na zona em que estava no evento. Enquanto ele continua lá o estado
+/// corrente é a informação correta, e o contexto sai sem cópia alguma: nenhum
+/// gatilho de começo de passo, dano ou compra paga por isto.
+fn attach_last_known(game: &Game, ctx: &mut TriggerContext) {
+    let Some(obj) = ctx.trigger_object else { return };
+    let Some(last) = game.state.last_known.get(&obj) else { return };
+    let still_there = matches!(game.state.object(obj), Some(o) if o.zone == last.zone);
+    if !still_there {
+        ctx.last_known = Some(Box::new(last.clone()));
+    }
+}
+
+fn match_condition(
+    game: &Game,
+    cond: &TriggerCondition,
+    ev: &GameEvent,
+    source: ObjectId,
+) -> Option<TriggerContext> {
     use TriggerCondition as T;
     match (cond, ev) {
         // --- agregador ---
-        (T::Any(list), _) => list.iter().find_map(|c| matches(game, c, ev, source)),
+        (T::Any(list), _) => list.iter().find_map(|c| match_condition(game, c, ev, source)),
 
         // --- movimento de zona ---
         (T::EntersBattlefield(sel), GameEvent::EnteredBattlefield { object, controller }) => {
@@ -236,6 +260,7 @@ pub fn matches(
                 trigger_source: Some(source),
                 trigger_player: Some(*controller),
                 amount: 0,
+                last_known: None,
             })
         }
         (T::LeavesBattlefield(sel), GameEvent::LeftBattlefield { object, .. }) => {
@@ -248,6 +273,7 @@ pub fn matches(
                 // O controlador vem do evento, capturado antes da morte.
                 trigger_player: Some(*controller),
                 amount: 0,
+                last_known: None,
             })
         }
         (T::Sacrificed(sel), GameEvent::Sacrificed { object, controller }) => {
@@ -256,6 +282,7 @@ pub fn matches(
                 trigger_source: Some(source),
                 trigger_player: Some(*controller),
                 amount: 0,
+                last_known: None,
             })
         }
         (T::Exiled(sel), GameEvent::Exiled { object }) => {
@@ -269,6 +296,7 @@ pub fn matches(
                 trigger_source: Some(source),
                 trigger_player: Some(*controller),
                 amount: 0,
+                last_known: None,
             })
         }
         (T::AbilityActivated(sel), GameEvent::AbilityActivated { ability, controller }) => {
@@ -277,6 +305,7 @@ pub fn matches(
                 trigger_source: Some(source),
                 trigger_player: Some(*controller),
                 amount: 0,
+                last_known: None,
             })
         }
 
@@ -293,6 +322,7 @@ pub fn matches(
                     _ => None,
                 },
                 amount: 0,
+                last_known: None,
             })
         }
         (T::AttacksAlone(sel), GameEvent::AttackersDeclared { attackers }) => {
@@ -309,6 +339,7 @@ pub fn matches(
                 trigger_source: Some(*attacker),
                 trigger_player: None,
                 amount: 0,
+                last_known: None,
             }),
         (T::BecomesBlocked(sel), GameEvent::Blocked { attacker, blockers }) => {
             hits(game, *attacker, sel, source).then(|| TriggerContext {
@@ -316,6 +347,7 @@ pub fn matches(
                 trigger_source: blockers.first().copied(),
                 trigger_player: None,
                 amount: 0,
+                last_known: None,
             })
         }
 
@@ -328,6 +360,7 @@ pub fn matches(
             trigger_source: Some(*target),
             trigger_player: None,
             amount: *amount,
+            last_known: None,
         }),
         (
             T::DealsCombatDamageToPlayer(sel),
@@ -342,6 +375,7 @@ pub fn matches(
             trigger_source: Some(source),
             trigger_player: Some(*player),
             amount: *amount,
+            last_known: None,
         }),
         (T::DealtDamage(sel), GameEvent::DamageDealt { source: dealer, target, amount, .. }) => {
             hits(game, *target, sel, source).then(|| TriggerContext {
@@ -349,6 +383,7 @@ pub fn matches(
                 trigger_source: Some(*dealer),
                 trigger_player: None,
                 amount: *amount,
+                last_known: None,
             })
         }
 
@@ -367,6 +402,7 @@ pub fn matches(
             trigger_source: Some(source),
             trigger_player: None,
             amount: *amount,
+            last_known: None,
         }),
 
         // --- estrutura de turno (CR 603.2b) ---
@@ -419,6 +455,7 @@ fn object_ctx(object: ObjectId, source: ObjectId) -> TriggerContext {
         trigger_source: Some(source),
         trigger_player: None,
         amount: 0,
+        last_known: None,
     }
 }
 
@@ -429,6 +466,7 @@ fn step_ctx(game: &Game, who: &PlayerRef, source: ObjectId) -> Option<TriggerCon
         trigger_source: Some(source),
         trigger_player: Some(active),
         amount: 0,
+        last_known: None,
     })
 }
 
@@ -445,6 +483,7 @@ fn player_ctx(
         trigger_source: Some(source),
         trigger_player: Some(player),
         amount,
+        last_known: None,
     })
 }
 
@@ -493,10 +532,12 @@ fn player_hits(game: &Game, player: PlayerId, who: &PlayerRef, source: ObjectId)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::stack::testkit::{card, game_with};
-    use crate::ir::{Condition, Effect, Filter, Selector};
-    use crate::card::Ability;
-    use crate::types::CardType;
+    use crate::card::{Ability, CardDef};
+    use crate::engine::stack::testkit::{card, game_with, put_on_battlefield};
+    use crate::engine::{layers, turn};
+    use crate::ir::{Condition, Effect, Filter, ObjRef, PlayerRef, Selector, Value};
+    use crate::types::{CardType, CounterKind};
+    use crate::zone::ZoneId;
 
     fn dies_trigger_card() -> Vec<crate::card::CardDef> {
         let mut c = card(0, "Sentinela", vec![CardType::Creature]);
@@ -511,6 +552,88 @@ mod tests {
             text: "Quando morrer, nada acontece.".to_string(),
         })];
         vec![c]
+    }
+
+    /// Urso 2/2 que, ao morrer, ganha vida igual à própria resistência.
+    fn lki_dies_card() -> Vec<CardDef> {
+        let mut c = card(0, "Urso Rancoroso", vec![CardType::Creature]);
+        c.power = Some(2);
+        c.toughness = Some(2);
+        c.abilities = vec![Ability::Triggered(TriggeredAbility {
+            trigger: TriggerCondition::Dies(Selector::creatures()),
+            intervening_if: Condition::Always,
+            targets: Vec::new(),
+            effect: Effect::GainLife {
+                amount: Value::ToughnessOf(ObjRef::TriggerObject),
+                last_known: None,
+                player: PlayerRef::You,
+            },
+            optional: false,
+            once_per_turn: false,
+            triggers_from_graveyard: false,
+            text: "Quando morrer, ganhe vida igual à sua resistência.".to_string(),
+        })];
+        vec![c]
+    }
+
+    /// CR 603.6d — o gatilho de saída do campo lê a informação conhecida por
+    /// último: a 2/2 com dois marcadores +1/+1 morreu como 4/4, e é 4 que o
+    /// efeito enxerga, não a resistência impressa nem a do objeto já no
+    /// cemitério (que `reset_for_zone_change` zerou).
+    #[test]
+    fn morte_le_caracteristicas_da_ultima_existencia() {
+        let mut game = game_with(lki_dies_card());
+        let owner = PlayerId::P0;
+        let id = put_on_battlefield(&mut game, owner);
+        let Some(obj) = game.state.object_mut(id) else {
+            panic!("objeto de teste não existe")
+        };
+        obj.add_counter(CounterKind::PlusOnePlusOne, 2);
+
+        let Some(before) = layers::characteristics(&game, id) else {
+            panic!("características do permanente vivo não calcularam")
+        };
+        assert_eq!(before.toughness, 4, "pré-condição: 2/2 com dois marcadores é 4/4");
+
+        turn::move_object(&mut game, id, ZoneId::graveyard(owner));
+        collect(&mut game);
+
+        let Some(item) = game.state.pending_triggers.first() else {
+            panic!("gatilho de morte não disparou")
+        };
+        let ctx = EvalCtx {
+            source: Some(id),
+            controller: owner,
+            trigger: item.trigger_ctx.clone(),
+            ..Default::default()
+        };
+        assert_eq!(
+            query::eval_value(&game, &Value::ToughnessOf(ObjRef::TriggerObject), &ctx),
+            4,
+            "resistência da última existência é 4, não a impressa"
+        );
+        assert_eq!(
+            query::eval_value(&game, &Value::PowerOf(ObjRef::TriggerObject), &ctx),
+            4,
+            "poder da última existência é 4, não o impresso"
+        );
+        assert_eq!(
+            query::eval_value(
+                &game,
+                &Value::CountersOn(ObjRef::TriggerObject, CounterKind::PlusOnePlusOne),
+                &ctx
+            ),
+            2,
+            "os marcadores existiam no instante da morte"
+        );
+        assert!(
+            query::eval_condition(
+                &game,
+                &Condition::Matches(ObjRef::TriggerObject, Filter::PowerAtLeast(4)),
+                &ctx
+            ),
+            "o filtro também precisa enxergar a criatura como 4/4"
+        );
     }
 
     #[test]

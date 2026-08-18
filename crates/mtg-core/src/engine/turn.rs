@@ -13,7 +13,7 @@ use crate::action::{Action, ActionError, Request};
 use crate::card::CardDatabase;
 use crate::event::{GameEvent, LossReason, Step};
 use crate::ids::{IdGen, ObjectId, PlayerId};
-use crate::state::{GameOutcome, GameState, ObjectState, PlayerState};
+use crate::state::{GameOutcome, GameState, LastKnown, ObjectState, PlayerState};
 use crate::types::CounterKind;
 use crate::view::MatchEvent;
 use crate::zone::{Zone, ZoneId, ZoneKind};
@@ -127,6 +127,7 @@ pub fn initial_state(
         next_effect_id: 0,
         event_queue: Vec::new(),
         pending_triggers: Vec::new(),
+        last_known: BTreeMap::new(),
         log: Vec::new(),
     })
 }
@@ -832,6 +833,13 @@ fn move_object_inner(game: &mut Game, obj: ObjectId, to: ZoneId, force_top: bool
     let controller = snapshot.controller;
     let is_token = snapshot.is_token;
 
+    // CR 603.6d — o retrato tem que sair daqui, antes de `detach_all` soltar as
+    // auras e de `reset_for_zone_change` zerar marcador, dano e combate. Depois
+    // deste ponto a informação já não existe em lugar nenhum.
+    if from.kind == ZoneKind::Battlefield {
+        capture_last_known(game, obj, from);
+    }
+
     detach_all(game, obj);
 
     let turn = game.state.turn;
@@ -894,6 +902,50 @@ fn move_object_inner(game: &mut Game, obj: ObjectId, to: ZoneId, force_top: bool
         owner,
         reveal: !to.kind.is_hidden(),
     });
+}
+
+/// Grava a informação conhecida por último do objeto (CR 603.6d).
+///
+/// Só é chamada em saída do campo de batalha: é o único lugar onde o objeto
+/// perde características que um gatilho ainda pode querer ler. Uma entrada por
+/// objeto — a saída mais recente sobrescreve a anterior, então o mapa nunca
+/// passa de `objects.len()`, e quem lê confere a zona antes de acreditar.
+fn capture_last_known(game: &mut Game, obj: ObjectId, from: ZoneId) {
+    let Some(state) = game.state.object(obj) else { return };
+    let owner = state.owner;
+    let counters = state.counters.clone();
+    let tapped = state.tapped;
+    let damage = state.damage;
+    let is_token = state.is_token;
+    let summoning_sick = state.summoning_sick;
+    let combat = state.combat.clone();
+
+    // Passa pelas camadas: anthem, equipamento e mudança de tipo valiam no
+    // instante do evento e fazem parte do que foi conhecido por último.
+    let Some(ch) = layers::characteristics(game, obj) else { return };
+
+    game.state.last_known.insert(
+        obj,
+        LastKnown {
+            object: obj,
+            zone: from,
+            name: ch.name,
+            power: ch.power,
+            toughness: ch.toughness,
+            mana_value: ch.mana_value,
+            type_line: ch.type_line,
+            colors: ch.colors,
+            keywords: ch.keywords,
+            counters,
+            controller: ch.controller,
+            owner,
+            tapped,
+            damage,
+            is_token,
+            summoning_sick,
+            combat,
+        },
+    );
 }
 
 /// Solta auras/equipamentos ligados ao objeto e o solta do que ele equipava —

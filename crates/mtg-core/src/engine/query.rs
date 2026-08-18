@@ -9,14 +9,16 @@
 //! 2. Toda lista devolvida é determinística: ordenada por `ObjectId` e sem
 //!    repetição. Semente igual precisa dar partida igual, e a ordem em que os
 //!    alvos são enumerados entra na decisão do bot.
-use super::{layers, Game};
+use super::{layers, Characteristics, Game};
 use crate::action::TargetChoice;
 use crate::ids::{ObjectId, PlayerId};
+use crate::mana::ColorSet;
 use crate::ir::{
     Cmp, Condition, Filter, Keyword, ObjRef, PlayerRef, Selector, TargetKind, TargetSpec, Value,
     ZoneScope,
 };
-use crate::state::{StackItemKind, TriggerContext};
+use crate::state::{CombatState, LastKnown, ObjectState, StackItemKind, TriggerContext};
+use crate::types::{CounterKind, TypeLine};
 use crate::zone::{ZoneId, ZoneKind};
 
 /// Contexto de avaliação: quem é a fonte, quem controla, o que foi escolhido.
@@ -43,60 +45,182 @@ impl EvalCtx {
 // Filtros
 // ---------------------------------------------------------------------------
 
+/// Como um filtro lê o objeto: vivo (estado corrente + camadas) ou pelo retrato
+/// de última existência, quando ele já saiu da zona (CR 603.6d).
+enum ObjView<'a> {
+    Live { state: &'a ObjectState, ch: Characteristics },
+    Remembered(&'a LastKnown),
+}
+
+impl ObjView<'_> {
+    fn name(&self) -> &str {
+        match self {
+            ObjView::Live { ch, .. } => &ch.name,
+            ObjView::Remembered(l) => &l.name,
+        }
+    }
+    fn colors(&self) -> ColorSet {
+        match self {
+            ObjView::Live { ch, .. } => ch.colors,
+            ObjView::Remembered(l) => l.colors,
+        }
+    }
+    fn type_line(&self) -> &TypeLine {
+        match self {
+            ObjView::Live { ch, .. } => &ch.type_line,
+            ObjView::Remembered(l) => &l.type_line,
+        }
+    }
+    fn power(&self) -> i32 {
+        match self {
+            ObjView::Live { ch, .. } => ch.power,
+            ObjView::Remembered(l) => l.power,
+        }
+    }
+    fn toughness(&self) -> i32 {
+        match self {
+            ObjView::Live { ch, .. } => ch.toughness,
+            ObjView::Remembered(l) => l.toughness,
+        }
+    }
+    fn mana_value(&self) -> u32 {
+        match self {
+            ObjView::Live { ch, .. } => ch.mana_value,
+            ObjView::Remembered(l) => l.mana_value,
+        }
+    }
+    fn has_keyword(&self, k: &Keyword) -> bool {
+        match self {
+            ObjView::Live { ch, .. } => ch.has_keyword(k),
+            ObjView::Remembered(l) => l.has_keyword(k),
+        }
+    }
+    fn counter(&self, kind: &CounterKind) -> i32 {
+        match self {
+            ObjView::Live { state, .. } => state.counter(kind),
+            ObjView::Remembered(l) => l.counter(kind),
+        }
+    }
+    fn tapped(&self) -> bool {
+        match self {
+            ObjView::Live { state, .. } => state.tapped,
+            ObjView::Remembered(l) => l.tapped,
+        }
+    }
+    fn combat(&self) -> &CombatState {
+        match self {
+            ObjView::Live { state, .. } => &state.combat,
+            ObjView::Remembered(l) => &l.combat,
+        }
+    }
+    fn is_token(&self) -> bool {
+        match self {
+            ObjView::Live { state, .. } => state.is_token,
+            ObjView::Remembered(l) => l.is_token,
+        }
+    }
+    fn summoning_sick(&self) -> bool {
+        match self {
+            ObjView::Live { state, .. } => state.summoning_sick,
+            ObjView::Remembered(l) => l.summoning_sick,
+        }
+    }
+    fn controller(&self) -> PlayerId {
+        match self {
+            ObjView::Live { ch, .. } => ch.controller,
+            ObjView::Remembered(l) => l.controller,
+        }
+    }
+    fn owner(&self) -> PlayerId {
+        match self {
+            ObjView::Live { state, .. } => state.owner,
+            ObjView::Remembered(l) => l.owner,
+        }
+    }
+    fn is_live(&self) -> bool {
+        matches!(self, ObjView::Live { .. })
+    }
+}
+
 pub fn matches_filter(game: &Game, obj: ObjectId, filter: &Filter, ctx: &EvalCtx) -> bool {
+    matches_filter_at(game, obj, filter, ctx, None)
+}
+
+/// Igual a `matches_filter`, mas julga pelo retrato de última existência quando
+/// ele é fornecido (CR 603.6d): "se a criatura que morreu era vermelha" precisa
+/// enxergar a criatura como ela era, não o que sobrou dela no cemitério.
+pub fn matches_filter_at(
+    game: &Game,
+    obj: ObjectId,
+    filter: &Filter,
+    ctx: &EvalCtx,
+    last: Option<&LastKnown>,
+) -> bool {
     // Objeto que não existe não casa com nada, nem com `Any`: quem some do jogo
-    // some das listas (CR 400.7).
-    let Some(state) = game.state.object(obj) else { return false };
+    // some das listas (CR 400.7). Havendo retrato, quem responde é o retrato.
+    if last.is_none() && game.state.object(obj).is_none() {
+        return false;
+    }
 
     // Variantes estruturais antes de calcular as camadas: elas não precisam das
     // características, e recursar depois pagaria o custo duas vezes.
     match filter {
         Filter::Any => return true,
-        Filter::And(fs) => return fs.iter().all(|f| matches_filter(game, obj, f, ctx)),
-        Filter::Or(fs) => return fs.iter().any(|f| matches_filter(game, obj, f, ctx)),
-        Filter::Not(f) => return !matches_filter(game, obj, f, ctx),
+        Filter::And(fs) => return fs.iter().all(|f| matches_filter_at(game, obj, f, ctx, last)),
+        Filter::Or(fs) => return fs.iter().any(|f| matches_filter_at(game, obj, f, ctx, last)),
+        Filter::Not(f) => return !matches_filter_at(game, obj, f, ctx, last),
         _ => {}
     }
 
-    let Some(ch) = layers::characteristics(game, obj) else { return false };
+    let view = match last {
+        Some(l) => ObjView::Remembered(l),
+        None => {
+            let Some(state) = game.state.object(obj) else { return false };
+            let Some(ch) = layers::characteristics(game, obj) else { return false };
+            ObjView::Live { state, ch }
+        }
+    };
 
     match filter {
-        Filter::HasType(t) => ch.type_line.has_type(*t),
-        Filter::HasSubtype(s) => ch.type_line.has_subtype(s),
-        Filter::HasSupertype(s) => ch.type_line.has_supertype(*s),
-        Filter::HasName(n) => ch.name.eq_ignore_ascii_case(n),
-        Filter::HasColor(c) => ch.colors.contains(*c),
-        Filter::Colorless => ch.colors.is_colorless(),
-        Filter::Multicolored => ch.colors.is_multicolored(),
-        Filter::HasKeyword(k) => ch.has_keyword(k),
-        Filter::HasCounter(kind) => state.counter(kind) > 0,
+        Filter::HasType(t) => view.type_line().has_type(*t),
+        Filter::HasSubtype(s) => view.type_line().has_subtype(s),
+        Filter::HasSupertype(s) => view.type_line().has_supertype(*s),
+        Filter::HasName(n) => view.name().eq_ignore_ascii_case(n),
+        Filter::HasColor(c) => view.colors().contains(*c),
+        Filter::Colorless => view.colors().is_colorless(),
+        Filter::Multicolored => view.colors().is_multicolored(),
+        Filter::HasKeyword(k) => view.has_keyword(k),
+        Filter::HasCounter(kind) => view.counter(kind) > 0,
 
-        Filter::Tapped => state.tapped,
-        Filter::Untapped => !state.tapped,
-        Filter::Attacking => state.combat.is_attacking(),
-        Filter::Blocking => state.combat.is_blocking(),
+        Filter::Tapped => view.tapped(),
+        Filter::Untapped => !view.tapped(),
+        Filter::Attacking => view.combat().is_attacking(),
+        Filter::Blocking => view.combat().is_blocking(),
         // CR 509.1h — "bloqueada" continua valendo mesmo que o bloqueador saia.
-        Filter::Blocked => state.combat.is_attacking() && state.combat.was_blocked,
-        Filter::Unblocked => state.combat.is_attacking() && !state.combat.was_blocked,
-        Filter::Token => state.is_token,
-        Filter::NonToken => !state.is_token,
-        Filter::SummoningSick => state.summoning_sick,
+        Filter::Blocked => view.combat().is_attacking() && view.combat().was_blocked,
+        Filter::Unblocked => view.combat().is_attacking() && !view.combat().was_blocked,
+        Filter::Token => view.is_token(),
+        Filter::NonToken => !view.is_token(),
+        Filter::SummoningSick => view.summoning_sick(),
 
-        Filter::PowerAtLeast(n) => ch.power >= *n,
-        Filter::PowerAtMost(n) => ch.power <= *n,
-        Filter::ToughnessAtLeast(n) => ch.toughness >= *n,
-        Filter::ToughnessAtMost(n) => ch.toughness <= *n,
-        Filter::ManaValueAtLeast(n) => ch.mana_value >= *n,
-        Filter::ManaValueAtMost(n) => ch.mana_value <= *n,
-        Filter::ManaValueExactly(n) => ch.mana_value == *n,
+        Filter::PowerAtLeast(n) => view.power() >= *n,
+        Filter::PowerAtMost(n) => view.power() <= *n,
+        Filter::ToughnessAtLeast(n) => view.toughness() >= *n,
+        Filter::ToughnessAtMost(n) => view.toughness() <= *n,
+        Filter::ManaValueAtLeast(n) => view.mana_value() >= *n,
+        Filter::ManaValueAtMost(n) => view.mana_value() <= *n,
+        Filter::ManaValueExactly(n) => view.mana_value() == *n,
 
-        Filter::ControlledBy(p) => resolve_players(game, p, ctx).contains(&ch.controller),
-        Filter::OwnedBy(p) => resolve_players(game, p, ctx).contains(&state.owner),
+        Filter::ControlledBy(p) => resolve_players(game, p, ctx).contains(&view.controller()),
+        Filter::OwnedBy(p) => resolve_players(game, p, ctx).contains(&view.owner()),
         // "Isto" e "outra criatura" são relativos à fonte do efeito, não ao
         // objeto sendo testado — sem fonte, "outro" é trivialmente verdadeiro.
         Filter::IsSelf => ctx.source == Some(obj),
         Filter::IsOther => ctx.source != Some(obj),
-        Filter::Targetable => can_be_targeted(game, obj, ctx.source, ctx.controller),
+        // CR 115.6 — o que já saiu da zona não é alvo legal de coisa alguma.
+        Filter::Targetable => {
+            view.is_live() && can_be_targeted(game, obj, ctx.source, ctx.controller)
+        }
 
         // Estruturais já tratadas acima; repetir aqui só para o match ser total.
         Filter::Any | Filter::And(_) | Filter::Or(_) | Filter::Not(_) => true,
@@ -290,19 +414,26 @@ pub fn eval_value(game: &Game, v: &Value, ctx: &EvalCtx) -> i32 {
         Value::Count(sel) => clamp_len(gather(game, sel, ctx).len()),
         // Agregam quando a referência resolve para vários objetos ("poder total
         // das criaturas que você controla"); para referência única é o próprio.
-        Value::PowerOf(r) => sum_over(game, r, ctx, |game, o| {
-            layers::characteristics(game, o).map(|c| c.power).unwrap_or(0)
+        // CR 603.6d — com retrato de última existência, o valor sai dele: a 2/2
+        // que morreu com dois marcadores +1/+1 morreu como 4/4.
+        Value::PowerOf(r) => sum_over(game, r, ctx, |game, o, last| match last {
+            Some(l) => l.power,
+            None => layers::characteristics(game, o).map(|c| c.power).unwrap_or(0),
         }),
-        Value::ToughnessOf(r) => sum_over(game, r, ctx, |game, o| {
-            layers::characteristics(game, o).map(|c| c.toughness).unwrap_or(0)
+        Value::ToughnessOf(r) => sum_over(game, r, ctx, |game, o, last| match last {
+            Some(l) => l.toughness,
+            None => layers::characteristics(game, o).map(|c| c.toughness).unwrap_or(0),
         }),
-        Value::ManaValueOf(r) => sum_over(game, r, ctx, |game, o| {
-            layers::characteristics(game, o)
-                .map(|c| i32::try_from(c.mana_value).unwrap_or(i32::MAX))
-                .unwrap_or(0)
+        Value::ManaValueOf(r) => sum_over(game, r, ctx, |game, o, last| {
+            let mv = match last {
+                Some(l) => Some(l.mana_value),
+                None => layers::characteristics(game, o).map(|c| c.mana_value),
+            };
+            mv.map(|v| i32::try_from(v).unwrap_or(i32::MAX)).unwrap_or(0)
         }),
-        Value::CountersOn(r, kind) => sum_over(game, r, ctx, |game, o| {
-            game.state.object(o).map(|s| s.counter(kind)).unwrap_or(0)
+        Value::CountersOn(r, kind) => sum_over(game, r, ctx, |game, o, last| match last {
+            Some(l) => l.counter(kind),
+            None => game.state.object(o).map(|s| s.counter(kind)).unwrap_or(0),
         }),
         Value::LifeOf(p) => resolve_players(game, p, ctx)
             .into_iter()
@@ -331,11 +462,38 @@ fn sum_over(
     game: &Game,
     r: &ObjRef,
     ctx: &EvalCtx,
-    f: impl Fn(&Game, ObjectId) -> i32,
+    f: impl Fn(&Game, ObjectId, Option<&LastKnown>) -> i32,
 ) -> i32 {
     resolve_objects(game, r, ctx)
         .into_iter()
-        .fold(0i32, |acc, o| acc.saturating_add(f(game, o)))
+        .fold(0i32, |acc, o| {
+            acc.saturating_add(f(game, o, last_known_for(game, r, o, ctx)))
+        })
+}
+
+/// CR 603.6d — o retrato do objeto do gatilho, quando ele já não está na zona
+/// em que estava no instante do evento. Enquanto ele continua lá, devolve
+/// `None`: o estado corrente é a informação correta e mais barata.
+///
+/// Só `ObjRef::TriggerObject` tem retrato; as outras referências apontam para
+/// objetos que ninguém prometeu lembrar.
+fn last_known_for<'a>(
+    game: &Game,
+    r: &ObjRef,
+    obj: ObjectId,
+    ctx: &'a EvalCtx,
+) -> Option<&'a LastKnown> {
+    if !matches!(r, ObjRef::TriggerObject) {
+        return None;
+    }
+    let last = ctx.trigger.last_known.as_deref()?;
+    if last.object != obj {
+        return None;
+    }
+    match game.state.object(obj) {
+        Some(o) if o.zone == last.zone => None,
+        _ => Some(last),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -362,7 +520,12 @@ pub fn eval_condition(game: &Game, c: &Condition, ctx: &EvalCtx) -> bool {
         // quando não existe criatura alvo.
         Condition::Matches(r, filter) => {
             let objs = resolve_objects(game, r, ctx);
-            !objs.is_empty() && objs.iter().all(|o| matches_filter(game, *o, filter, ctx))
+            !objs.is_empty()
+                && objs.iter().all(|o| {
+                    // CR 603.6d — "se ela era uma criatura voadora" é julgado
+                    // pelo retrato quando o objeto já saiu da zona.
+                    matches_filter_at(game, *o, filter, ctx, last_known_for(game, r, *o, ctx))
+                })
         }
         Condition::IsYourTurn => game.state.active_player == ctx.controller,
         Condition::IsMainPhase => game.state.step.is_main(),

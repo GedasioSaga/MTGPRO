@@ -214,25 +214,19 @@
   z-index: 0;
   pointer-events: none;
   background-image:
-    radial-gradient(58% 30% at 50% 50%, rgba(206, 255, 228, 0.2), transparent 72%),
-    linear-gradient(180deg, rgba(255, 244, 214, 0.1), transparent 38%),
+    radial-gradient(40% 24% at 50% 50%, rgba(198, 255, 224, 0.17), transparent 74%),
+    linear-gradient(180deg, rgba(255, 244, 214, 0.07), transparent 32%),
     radial-gradient(
-      54% 38% at 50% 50%,
-      transparent 0 60.6%,
-      rgba(154, 230, 194, 0.115) 61% 62%,
-      transparent 62.6%
+      34% 26% at 50% 50%,
+      transparent 0 88%,
+      rgba(160, 232, 198, 0.09) 89% 91%,
+      transparent 92%
     ),
     radial-gradient(
-      72% 51% at 50% 50%,
-      transparent 0 70.6%,
-      rgba(154, 230, 194, 0.06) 71% 71.9%,
-      transparent 72.5%
-    ),
-    radial-gradient(
-      116% 86% at 50% 48%,
-      transparent 38%,
-      rgba(0, 0, 0, 0.44) 74%,
-      rgba(0, 0, 0, 0.74) 100%
+      80% 62% at 50% 50%,
+      transparent 26%,
+      rgba(0, 0, 0, 0.4) 66%,
+      rgba(0, 0, 0, 0.82) 100%
     );
 }
 
@@ -256,6 +250,10 @@
   display: grid;
   height: 100%;
   width: 100%;
+  /* A mesa é a tela inteira, mas a COMPOSIÇÃO tem largura útil: espalhar as
+     barras até 1920px deixa o centro rarefeito e quebra a leitura do combate. */
+  max-width: 1600px;
+  margin-inline: auto;
   padding: calc(12px * var(--board-scale, 1));
   padding-bottom: calc(12px * var(--board-scale, 1) + var(--playback-reserve));
   gap: var(--board-gap);
@@ -299,6 +297,7 @@
   grid-area: band;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--board-gap);
   min-height: 0;
 }
@@ -892,7 +891,8 @@
 
 .phase-track {
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
+  width: calc(1120px * var(--board-scale, 1));
   min-width: 0;
   align-items: center;
   gap: calc(9px * var(--board-scale, 1));

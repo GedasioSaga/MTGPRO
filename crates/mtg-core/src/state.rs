@@ -4,9 +4,9 @@ use crate::action::{Request, TargetChoice};
 use crate::ids::CardDefId;
 use crate::event::{Defender, GameEvent, LossReason, Phase, Step};
 use crate::ids::{AbilityRef, IdGen, ObjectId, PlayerId};
-use crate::ir::{Duration, StaticModRuntime, TokenSpec};
-use crate::mana::ManaPool;
-use crate::types::CounterKind;
+use crate::ir::{Duration, Keyword, StaticModRuntime, TokenSpec};
+use crate::mana::{ColorSet, ManaPool};
+use crate::types::{CounterKind, TypeLine};
 use crate::zone::{Zone, ZoneId, ZoneKind};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -172,6 +172,46 @@ impl StackItemKind {
     }
 }
 
+/// Retrato das características de um objeto no instante de um evento —
+/// informação conhecida por último (CR 608.2h, CR 603.6d, CR 113.7a).
+///
+/// Existe porque `ObjectState::reset_for_zone_change` apaga marcador, dano e
+/// combate assim que o objeto muda de zona, e as camadas (anthem, casca de
+/// equipamento, mudança de tipo) deixam de valer para um objeto fora do campo.
+/// Sem este retrato, "quando isto morrer, ganhe vida igual à sua resistência"
+/// leria a resistência impressa.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LastKnown {
+    pub object: ObjectId,
+    /// Zona em que o objeto estava quando o retrato foi tirado. Enquanto ele
+    /// continuar nela, o estado corrente é a verdade e o retrato é ignorado.
+    pub zone: ZoneId,
+    pub name: String,
+    pub power: i32,
+    pub toughness: i32,
+    pub mana_value: u32,
+    pub type_line: TypeLine,
+    pub colors: ColorSet,
+    pub keywords: Vec<Keyword>,
+    pub counters: BTreeMap<CounterKind, i32>,
+    pub controller: PlayerId,
+    pub owner: PlayerId,
+    pub tapped: bool,
+    pub damage: i32,
+    pub is_token: bool,
+    pub summoning_sick: bool,
+    pub combat: CombatState,
+}
+
+impl LastKnown {
+    pub fn counter(&self, kind: &CounterKind) -> i32 {
+        self.counters.get(kind).copied().unwrap_or(0)
+    }
+    pub fn has_keyword(&self, k: &Keyword) -> bool {
+        self.keywords.iter().any(|x| x == k)
+    }
+}
+
 /// Contexto capturado quando um gatilho dispara — as regras exigem que ele
 /// lembre o que aconteceu mesmo que o objeto já tenha sumido.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -180,6 +220,13 @@ pub struct TriggerContext {
     pub trigger_source: Option<ObjectId>,
     pub trigger_player: Option<PlayerId>,
     pub amount: i32,
+    /// CR 603.6d — retrato do `trigger_object` no instante do evento. Só é
+    /// preenchido quando o objeto já deixou a zona em que estava: enquanto ele
+    /// segue lá, ler o estado corrente é mais barato e igualmente correto, e o
+    /// contexto não paga cópia nenhuma. Em `Box` porque a maioria dos gatilhos
+    /// (começo de passo, dano, compra) nunca precisa dele e `StackItem` é
+    /// clonado a cada resolução.
+    pub last_known: Option<Box<LastKnown>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -313,6 +360,12 @@ pub struct GameState {
     pub event_queue: Vec<GameEvent>,
     /// Gatilhos que dispararam e esperam ir para a pilha.
     pub pending_triggers: Vec<StackItem>,
+    /// CR 603.6d — retrato de cada objeto no instante em que deixou o campo de
+    /// batalha, gravado por `turn::move_object` antes de `reset_for_zone_change`
+    /// destruir o estado. Uma entrada por objeto (a saída mais recente
+    /// sobrescreve a anterior), então o mapa é limitado por `objects.len()`.
+    #[serde(default)]
+    pub last_known: BTreeMap<ObjectId, LastKnown>,
     /// Log completo para replay e para a UI.
     pub log: Vec<LogEntry>,
 }
