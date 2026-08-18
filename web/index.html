@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Planar Duel — Match Simulator</title>
+    <meta
+      name="description"
+      content="Automated Magic: The Gathering duels, played out by bots on a tournament table."
+    />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#07090f" />
+
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0e15'/%3E%3Ccircle cx='16' cy='7.5' r='3.5' fill='%23f7f0d8'/%3E%3Ccircle cx='24.1' cy='13.4' r='3.5' fill='%234a9eff'/%3E%3Ccircle cx='21' cy='22.9' r='3.5' fill='%23a08fbe'/%3E%3Ccircle cx='11' cy='22.9' r='3.5' fill='%23e8503a'/%3E%3Ccircle cx='7.9' cy='13.4' r='3.5' fill='%233fa96a'/%3E%3C/svg%3E"
+    />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400..900&family=Inter:wght@400..700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Evita o flash branco antes do CSS principal chegar. -->
+    <style>
+      html {
+        background: #07090f;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
