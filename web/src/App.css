@@ -235,29 +235,39 @@
 }
 
 /* --------------------------------------------------------------------------
- * Tapete
+ * A mesa e os dois tapetes
  *
- * O `.board-grid` não é só uma grade: é o PLAYMAT, um objeto pousado no tampo.
- * Feltro mais claro que a mesa, costura tracejada por dentro da borda, sombra
- * projetada embaixo. É ele que dá superfície às cartas — sem ele elas flutuam
- * sobre um vazio verde.
+ * `.board-grid` é a MESA: um tampo que só empilha as bandas da partida — borda
+ * do oponente, mão dele, o tapete dele, a costura, o tapete de baixo, a mão de
+ * baixo, a borda de baixo e o rodapé de telemetria. Ela não decide mais onde
+ * uma carta cai.
+ *
+ * Quem decide isso é o TAPETE. Cada `.playmat-seat` é um bloco de contenção, e
+ * dentro dele `Playmat` imprime o contorno e `MatZone` ancora o conteúdo — os
+ * dois lendo a MESMA tabela normalizada (`playmatZones.ts`) e convertendo com a
+ * MESMA função. Carta e linha impressa coincidem por construção: não há duas
+ * medidas para divergir.
+ *
+ * Uma variável manda no tamanho de tudo: `--board-scale`, publicada por
+ * `BoardLayout`. A composição é desenhada para 1920x1080 e encolhe inteira, sem
+ * rolagem, até 1280x800.
  * ----------------------------------------------------------------------- */
 
 .board-grid {
-  /* Largura das cartas em cada zona. Uma linha muda a hierarquia inteira: o
-     que está em jogo TEM que ser maior do que o que está na mão. */
+  /* Larguras de referência das cartas. No tapete elas são teto, não regra: o
+     que manda lá é a ALTURA da zona impressa. */
   --card-field: calc(150px * var(--board-scale, 1));
   --card-land: calc(52px * var(--board-scale, 1));
-  --card-other: calc(60px * var(--board-scale, 1));
-  --card-hand-own: calc(72px * var(--board-scale, 1));
-  --card-hand-foe: calc(46px * var(--board-scale, 1));
+  --card-other: calc(58px * var(--board-scale, 1));
+  --card-hand-own: calc(62px * var(--board-scale, 1));
+  --card-hand-foe: calc(40px * var(--board-scale, 1));
 
-  --board-gap: calc(8px * var(--board-scale, 1));
-  --strip-h: calc(44px * var(--board-scale, 1));
-  --lands-h: calc(78px * var(--board-scale, 1));
-  --mat-round: calc(20px * var(--board-scale, 1));
-  /* Faixa livre embaixo para a PlaybackBar flutuante não comer o tapete. Ela
-     não acompanha `--board-scale` porque a própria barra também não acompanha. */
+  --board-gap: calc(7px * var(--board-scale, 1));
+  --strip-h: calc(32px * var(--board-scale, 1));
+  --mat-round: calc(13px * var(--board-scale, 1));
+  --table-round: calc(18px * var(--board-scale, 1));
+  /* Faixa livre embaixo para a PlaybackBar flutuante não comer a mesa. Ela não
+     acompanha `--board-scale` porque a própria barra também não acompanha. */
   --playback-reserve: 98px;
 
   position: relative;
@@ -265,129 +275,50 @@
   z-index: 1;
   display: grid;
   height: calc(100% - var(--playback-reserve));
-  /* A mesa é a tela inteira, mas o TAPETE tem largura útil: espalhar as faixas
-     até 1920px deixa o centro rarefeito e quebra a leitura do combate. A folga
-     mínima existe para o tampo aparecer dos dois lados mesmo em tela estreita —
-     sem ela o tapete encosta na borda e volta a ser fundo. */
-  width: min(1560px, calc(100% - 48px));
+  width: min(1560px, calc(100% - 40px));
   margin-inline: auto;
-  margin-block: calc(10px * var(--board-scale, 1));
-  padding-block: calc(10px * var(--board-scale, 1));
-  /* Folga lateral para o bisel externo da moldura aparecer inteiro. */
-  padding-inline: calc(20px * var(--board-scale, 1));
+  margin-block: calc(9px * var(--board-scale, 1));
+  padding: calc(9px * var(--board-scale, 1)) calc(13px * var(--board-scale, 1));
   gap: var(--board-gap);
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr) auto minmax(0, 1fr) auto auto auto;
   grid-template-areas:
     "foe-strip"
     "foe-hand"
-    "foe-field"
+    "foe-mat"
     "seam"
-    "own-field"
+    "own-mat"
     "own-hand"
     "own-strip"
     "footer";
 
-  border-radius: var(--mat-round);
-  background-color: #10281f;
-  background-image:
-    /* holofote alto sobre a linha de combate */
-    radial-gradient(92% 58% at 50% 50%, rgba(206, 255, 226, 0.15), transparent 80%),
-    radial-gradient(120% 54% at 50% -6%, rgba(255, 238, 198, 0.13), transparent 62%),
-    /* MATERIAL: relevo de fibra com luz vindo do topo, nao ruido chapado. A
-       trama corre na horizontal porque a frequencia do ruido e assimetrica. */
-    var(--mat-felt),
-    /* vinheta do próprio tapete: as quatro bordas caem meio tom */
-    radial-gradient(112% 88% at 50% 50%, transparent 42%, rgba(0, 0, 0, 0.5) 100%),
-    linear-gradient(178deg, #1c4033 0%, #143028 46%, #0b1e18 100%);
-  background-size:
-    auto,
-    auto,
-    var(--mat-felt-tile) var(--mat-felt-tile),
-    auto,
-    auto;
-  background-blend-mode: screen, screen, soft-light, multiply, normal;
+  border-radius: var(--table-round);
   box-shadow:
-    0 calc(26px * var(--board-scale, 1)) calc(64px * var(--board-scale, 1))
-      rgba(0, 0, 0, 0.7),
-    0 calc(2px * var(--board-scale, 1)) 0 rgba(255, 255, 255, 0.06),
-    inset 0 0 0 1px rgba(206, 255, 228, 0.09),
-    inset 0 0 calc(130px * var(--board-scale, 1)) rgba(0, 0, 0, 0.42);
-}
-
-/* Costura do tapete, como playmat de torneio. */
-.board-grid::before {
-  content: "";
-  position: absolute;
-  inset: calc(6px * var(--board-scale, 1));
-  z-index: 0;
-  pointer-events: none;
-  border-radius: calc(var(--mat-round) - 4px);
-  box-shadow: inset 0 0 calc(46px * var(--board-scale, 1)) rgba(0, 0, 0, 0.34);
-  opacity: 0.7;
+    0 calc(24px * var(--board-scale, 1)) calc(60px * var(--board-scale, 1))
+      rgba(0, 0, 0, 0.72),
+    0 calc(2px * var(--board-scale, 1)) 0 rgba(255, 255, 255, 0.05);
 }
 
 /* --------------------------------------------------------------------------
- * Arena
+ * O móvel
  *
- * A zona deixou de ser sinalizada (contorno = painel; nada = vazio) e passou a
- * NASCER da forma: `ArenaFrame` desenha um objeto de pedra atrás das cartas, e
- * cada camada é um item desta mesma grade. É por isso que patamar e fileira
- * batem sem medir nada em JS — a geometria do desenho e a das faixas são a
- * mesma grade. O piso cobre `foe-field → own-field`, simétrico em torno da
- * costura, então o eixo do desenho É a linha de combate por construção.
+ * `ArenaFrame` virou o TAMPO: couro escuro e um friso de metal na borda, e nada
+ * mais. Piso esculpido, patamares e nichos saíram — dois objetos com relevo
+ * próprio na mesma tela disputam a leitura, e nesta rodada o protagonista é o
+ * tapete. O tampo existe só para o mat ter no que estar apoiado.
  * ----------------------------------------------------------------------- */
 
-/* Só carrega filtros e gradientes; não ocupa lugar na grade. */
-.arena-defs {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
 .arena-layer {
+  position: absolute;
+  inset: 0;
   z-index: 0;
-  min-width: 0;
-  min-height: 0;
   pointer-events: none;
 }
 
-/* `overflow: visible` é o que deixa a moldura transbordar a faixa que ela
-   contorna — o anel de pedra é maior que o piso, essa é a graça. */
-.arena-layer > svg {
+.arena-layer__svg {
   display: block;
-  width: 100%;
   height: 100%;
-  overflow: visible;
-}
-
-/* O tampo: cobre o tapete inteiro, inclusive o padding. */
-.arena-layer--apron {
-  grid-row: 1 / -1;
-  grid-column: 1 / -1;
-  margin-block: calc(-10px * var(--board-scale, 1));
-  margin-inline: calc(-20px * var(--board-scale, 1));
-}
-
-.arena-layer--floor {
-  grid-column: 1 / -1;
-  grid-row: foe-field-start / own-field-end;
-}
-
-/* Os nichos moram na MESMA célula da faixa do jogador, atrás dela: é isso que
-   faz o retrato encaixar em vez de flutuar. */
-.arena-layer--niche {
-  grid-column: 1 / -1;
-}
-
-.arena-layer--niche-top {
-  grid-row: foe-strip-start / foe-strip-end;
-}
-
-.arena-layer--niche-bottom {
-  grid-row: own-strip-start / own-strip-end;
+  width: 100%;
 }
 
 .board-area {
@@ -395,68 +326,6 @@
   z-index: 1;
   min-width: 0;
   min-height: 0;
-}
-
-/* --------------------------------------------------------------------------
- * Arena
- *
- * `ArenaFrame` desenha o objeto fisico — moldura de pedra, patamares, nichos —
- * como filhos da PROPRIA grade. Aqui so mora a geometria: cada camada ocupa a
- * faixa da grade que ela sustenta, entao o desenho bate com as fileiras sem
- * ninguem medir nada em JS. Todas ficam em `z-index: 0`, abaixo das cartas.
- * ----------------------------------------------------------------------- */
-
-/* Biblioteca de filtros: existe no documento, nunca ocupa espaco nele. */
-.arena-defs,
-.material-defs {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-}
-
-.arena-layer {
-  position: relative;
-  z-index: 0;
-  min-width: 0;
-  min-height: 0;
-  pointer-events: none;
-}
-
-.arena-layer > svg {
-  position: absolute;
-  inset: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
-  /* A sombra projetada da moldura e o cartucho do nicho passam da caixa de
-     proposito: e o transbordo que faz uma pousar sobre a outra. */
-  overflow: visible;
-}
-
-/* A saia da arena: o tampo em volta, do topo do oponente ate a base do
-   jogador. O rodape de telemetria fica de fora — ele nao e parte do objeto. */
-.arena-layer--apron {
-  grid-row: foe-strip-start / own-strip-end;
-  grid-column: 1 / -1;
-  /* Sangra para dentro do padding do tapete: o tampo nao tem margem branca. */
-  margin: calc(-10px * var(--board-scale, 1)) calc(-20px * var(--board-scale, 1));
-}
-
-/* O piso e simetrico em torno da costura por CONSTRUCAO: ocupa exatamente o
-   intervalo `foe-field -> own-field`, e a costura e o meio desse intervalo. */
-.arena-layer--floor {
-  grid-row: foe-field-start / own-field-end;
-  grid-column: 1 / -1;
-}
-
-/* O nicho divide a linha com a `PlayerBar`: e a cavidade em que ela encaixa. */
-.arena-layer--niche-top {
-  grid-area: foe-strip;
-}
-
-.arena-layer--niche-bottom {
-  grid-area: own-strip;
 }
 
 .board-area--foe-strip {
@@ -471,41 +340,48 @@
 .board-area--own-hand {
   grid-area: own-hand;
 }
-.board-area--foe-field {
-  grid-area: foe-field;
+.board-area--mat-top {
+  grid-area: foe-mat;
 }
-.board-area--own-field {
-  grid-area: own-field;
-}
-
-/* As duas pilhas moram na MESMA faixa da mão, coladas na borda direita do
-   tapete: são zonas do jogo, não widgets de barra lateral. */
-.board-area--foe-zones,
-.board-area--own-zones {
-  grid-area: foe-hand;
-  z-index: 5;
-  justify-self: end;
-  align-self: center;
-  display: flex;
-  align-items: center;
-  gap: calc(6px * var(--board-scale, 1));
-  padding-inline: calc(6px * var(--board-scale, 1));
-}
-.board-area--own-zones {
-  grid-area: own-hand;
+.board-area--mat-bottom {
+  grid-area: own-mat;
 }
 
-/* A costura é a linha de meio-campo: onde os dois exércitos se encontram. */
+/* --------------------------------------------------------------------------
+ * O tapete
+ *
+ * Objeto pousado no tampo: cantos arredondados, aresta de luz em cima, sombra
+ * projetada embaixo. A arte e as linhas serigrafadas vêm de `Playmat`; aqui
+ * mora só a física do objeto e o bloco de contenção que todo mundo compartilha.
+ * ----------------------------------------------------------------------- */
+
+.playmat-seat {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--mat-round);
+  /* Nada de `overflow: hidden`: a folha aberta de uma pilha e a carta virada
+     precisam transbordar o tapete, como transbordam na mesa. O recorte da arte
+     é problema do `Playmat`, que recorta dentro do próprio contorno — e a
+     espessura do mat sobre o tampo também é sombra dele, não daqui. */
+}
+
+/* --------------------------------------------------------------------------
+ * A costura entre os dois tapetes
+ *
+ * Aqui não há mais desenho nenhum: o vão entre um mat e o outro é o TAMPO
+ * aparecendo, que é exatamente o que se vê numa mesa de verdade. Em combate a
+ * faixa abre para o placar de duelo pousar nela.
+ * ----------------------------------------------------------------------- */
+
 .board-area--seam {
   grid-area: seam;
-  height: calc(10px * var(--board-scale, 1));
+  z-index: 3;
+  height: calc(8px * var(--board-scale, 1));
   transition: height var(--duration-base) var(--ease-standard);
 }
 
-/* Em combate a costura deixa de ser linha e vira PLACAR: e ali, entre as duas
-   fileiras, que o dano de cada duelo e resolvido. */
 .board-grid[data-combat="true"] .board-area--seam {
-  height: calc(52px * var(--board-scale, 1));
+  height: calc(46px * var(--board-scale, 1));
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -513,72 +389,6 @@
     transition: none;
   }
 }
-
-/*
- * A costura e um VEIO DE PEDRA embutido no piso, nao um fio de luz solto.
- * O material vem de `--mat-stone` (turbulencia deslocada + brilho especular),
- * a rampa por cima da o volume — aresta de cima acesa, aresta de baixo na
- * sombra — e a mascara come as duas pontas, para a faixa morrer no piso em vez
- * de terminar num canto.
- */
-/* A hairline vive DENTRO do piso da arena: passar por cima da pedra riscava a
-   moldura de ponta a ponta. */
-.board-area--seam::before {
-  content: "";
-  position: absolute;
-  inset-inline: 12%;
-  top: 50%;
-  height: calc(13px * var(--board-scale, 1));
-  translate: 0 -50%;
-  pointer-events: none;
-  background-color: #14170f;
-  background-image:
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.2) 0,
-      rgba(255, 255, 255, 0.02) 34%,
-      rgba(0, 0, 0, 0.55) 100%
-    ),
-    var(--mat-stone);
-  background-size:
-    auto,
-    var(--mat-stone-tile) var(--mat-stone-tile);
-  background-position:
-    center,
-    center;
-  background-blend-mode: overlay, normal;
-  /* A pedra e o material mais claro da mesa. Sem recuo ela vira a manchete de
-     um tabuleiro vazio, e a costura e marca de campo, nao protagonista. */
-  opacity: 0.72;
-  mask-image: linear-gradient(90deg, transparent, #000 11%, #000 89%, transparent);
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 11%, #000 89%, transparent);
-  transition: opacity var(--duration-base) var(--ease-standard);
-}
-
-/* Em combate o veio continua — e o trilho onde os chips de duelo pousam —, mas
-   recua: quem manda ali passa a ser o placar. O losango de mesa some. */
-.board-grid[data-combat="true"] .board-area--seam::before {
-  opacity: 0.34;
-}
-
-.board-grid[data-combat="true"] .board-area--seam::after {
-  opacity: 0;
-}
-
-/* Losango no centro da costura: marca de mesa, e âncora do olho. */
-.board-area--seam::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: calc(11px * var(--board-scale, 1));
-  height: calc(11px * var(--board-scale, 1));
-  translate: -50% -50%;
-  rotate: 45deg;
-  border: 1px solid color-mix(in oklab, var(--color-felt-seam) 90%, white 30%);
-  background: rgba(10, 26, 20, 0.6);
-}
-
 /* --------------------------------------------------------------------------
  * Rodapé de motor
  *
@@ -601,6 +411,18 @@
 
 .board-area--footer:hover {
   opacity: 1;
+}
+
+/*
+ * A regua de fases se dimensiona por container query (`container-type:
+ * inline-size`, tipografia em `cqw`). Como item de um flex centrado ela
+ * encolhia ate a largura intrinseca, e aí a fonte encolhia junto — os sete
+ * marcos acabavam empilhados no mesmo ponto, ilegiveis. Dar base flexivel
+ * devolve a faixa inteira a ela; a pilha continua do tamanho do conteudo.
+ */
+.board-area--footer .phase-rail {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -635,7 +457,7 @@
 
 /* Sombra de contato: a elipse escura logo abaixo da borda de baixo da carta,
    que é o que o olho usa para decidir que existe um plano embaixo dela. */
-.board-zone .board-card-slot::after {
+.mat-zone .board-card-slot::after {
   content: "";
   position: absolute;
   z-index: -1;
@@ -661,8 +483,7 @@
  * lateral do slot. A folga abaixo devolve esse espaço à fileira em vez de
  * deixar a carta pisar na vizinha.
  */
-.board-field__creatures .board-card-slot[data-tapped="true"],
-.board-field__others .board-card-slot[data-tapped="true"] {
+.mat-row .board-card-slot[data-tapped="true"] {
   margin-inline: calc(var(--slot-natural) * var(--slot-factor) * 0.17);
 }
 
@@ -683,150 +504,77 @@
 }
 
 /* --------------------------------------------------------------------------
- * Campo de batalha
+ * Zonas impressas
  *
- * Cada metade do campo são DUAS zonas desenhadas no tapete: batalha (colada na
- * costura) e terrenos (na borda externa). As duas existem mesmo vazias — é
- * assim que a mesa continua legível antes da primeira carta cair.
+ * A zona não é desenhada aqui — ela já está SERIGRAFADA no tapete. `.mat-zone`
+ * é pura ancoragem: a caixa em porcentagem que `MatZone` recebe de
+ * `playmatZones`, sem borda, sem fundo e sem rótulo. Foi a oscilação entre
+ * "contorno" (lê como painel) e "nada" (lê como vazio) que travou as rodadas
+ * anteriores; a saída é que a linha exista no OBJETO e não na interface.
  * ----------------------------------------------------------------------- */
 
-.board-field {
-  display: flex;
-  flex-direction: column;
-  gap: calc(6px * var(--board-scale, 1));
-  height: 100%;
-  min-height: 0;
-}
-
-/* Espelho do lado de cima: só a ordem das zonas inverte, nunca a carta. */
-.board-field--top {
-  flex-direction: column-reverse;
-}
-
-/*
- * A zona NAO e uma caixa. Nao tem borda, nao tem rotulo, nao tem retangulo de
- * fundo: e um trecho da mesma superficie continua, distinguido so por LUZ.
- * A faixa de batalha recebe a luz alta e sobe meio tom; a de terrenos fica na
- * penumbra e recua. Toda marca aqui e ELIPSE com queda suave — elipse nunca
- * desenha canto, e canto e o que faz a tela ler como painel de controle.
- */
-.board-zone {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.board-zone::before {
-  content: "";
+.mat-zone {
   position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  /* O feather e o que impede a faixa de virar caixa: a diferenca de tom morre
-     antes de encostar na borda, entao nao existe aresta para o olho ler. */
-  mask-image:
-    linear-gradient(
-      180deg,
-      transparent 0%,
-      rgba(0, 0, 0, 0.72) 34%,
-      #000 50%,
-      rgba(0, 0, 0, 0.72) 66%,
-      transparent 100%
-    ),
-    linear-gradient(90deg, transparent 0%, #000 20%, #000 80%, transparent 100%);
-  mask-composite: intersect;
-  -webkit-mask-image:
-    linear-gradient(
-      180deg,
-      transparent 0%,
-      rgba(0, 0, 0, 0.72) 34%,
-      #000 50%,
-      rgba(0, 0, 0, 0.72) 66%,
-      transparent 100%
-    ),
-    linear-gradient(90deg, transparent 0%, #000 20%, #000 80%, transparent 100%);
-  -webkit-mask-composite: source-in;
-}
-
-.board-zone[data-zone="battle"] {
-  flex: 1 1 auto;
-}
-
-/* Elevacao: clareia do centro para fora, sem nunca tocar a borda da faixa. */
-.board-zone[data-zone="battle"]::before {
-  background:
-    radial-gradient(80% 100% at 50% 42%, rgba(228, 255, 242, 0.2), transparent 80%),
-    linear-gradient(180deg, rgba(255, 250, 226, 0.1), transparent 50%);
-}
-
-.board-zone[data-zone="lands"] {
-  flex: 0 0 auto;
-  height: var(--lands-h);
+  z-index: 1;
+  min-width: 0;
+  min-height: 0;
 }
 
 /*
- * Recuo em COURO: a faixa externa afunda e troca de material. Couro e celula
- * media (`turbulence`, nao `fractalNoise`) com luz rasante — poro grande, sem
- * a trama do feltro —, entao a diferenca entre batalha e terreno passa a ser
- * de MATERIAL, e nao de contorno. A mascara herdada de `.board-zone` continua
- * comendo as bordas, entao a faixa nunca fecha em caixa.
+ * Margem de pouso: a carta cai DENTRO da linha impressa, nunca em cima dela.
+ * Em porcentagem porque o recuo tem que encolher junto com o tapete — recuo em
+ * pixel fixo estoura a linha quando a tela aperta.
  */
-.board-zone[data-zone="lands"]::before {
-  background-color: rgba(30, 21, 13, 0.5);
-  background-image:
-    var(--mat-leather),
-    radial-gradient(
-      120% 150% at 50% 50%,
-      rgba(0, 0, 0, 0.58),
-      rgba(0, 0, 0, 0.2) 70%,
-      transparent 92%
-    );
-  background-size:
-    var(--mat-leather-tile) var(--mat-leather-tile),
-    auto;
-  background-blend-mode: soft-light, normal;
-}
-
-.board-zone__inner {
-  position: relative;
-  z-index: 1;
-  flex: 1 1 auto;
-  min-height: 0;
+.mat-zone__inner {
+  position: absolute;
+  inset: 5% 1%;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: calc(6px * var(--board-scale, 1)) calc(12px * var(--board-scale, 1));
-  overflow: hidden;
 }
 
-.board-field__creatures {
+.mat-zone--pile .mat-zone__inner {
+  inset: 7% 8%;
+}
+
+.mat-zone--life .mat-zone__inner {
+  inset: 10% 4%;
+}
+
+.mat-row {
   display: flex;
   height: 100%;
+  width: 100%;
   min-width: 0;
   align-items: center;
   justify-content: center;
-  gap: calc(10px * var(--board-scale, 1));
+  gap: calc(9px * var(--board-scale, 1));
 }
 
 /*
- * A criatura é medida pela ALTURA da zona, não por uma largura fixa: assim ela
- * ocupa a faixa inteira em qualquer tela e nunca transborda. O teto existe para
- * que duas criaturas numa mesa alta não virem cartazes.
+ * A criatura é medida pela ALTURA da zona impressa, não por uma largura fixa:
+ * ela ocupa a faixa que o tapete reservou para ela em qualquer tela, e nunca
+ * transborda a linha. O teto existe para que duas criaturas numa mesa alta não
+ * virem cartazes.
  */
-.board-zone[data-zone="battle"] .board-card-slot {
+.mat-zone--battlefield .board-card-slot {
   width: auto;
   height: 100%;
-  max-height: calc(212px * var(--board-scale, 1));
+  max-height: calc(196px * var(--board-scale, 1));
+}
+
+.mat-zone--lands .board-card-slot {
+  width: auto;
+  height: 92%;
 }
 
 /*
- * Criatura é o elemento mais nítido da mesa: sombra funda no feltro, e o resto
+ * Criatura é o elemento mais nítido da mesa: sombra funda no tapete, e o resto
  * do campo (terreno, encantamento) recua meio tom.
  */
-.board-field__creatures .board-card-slot {
+.mat-row .board-card-slot {
   filter:
-    drop-shadow(0 calc(18px * var(--board-scale, 1)) calc(20px * var(--board-scale, 1))
+    drop-shadow(0 calc(16px * var(--board-scale, 1)) calc(18px * var(--board-scale, 1))
       rgba(0, 0, 0, 0.8))
     drop-shadow(0 calc(2px * var(--board-scale, 1)) calc(3px * var(--board-scale, 1))
       rgba(0, 0, 0, 0.65));
@@ -836,25 +584,25 @@
   transition: transform var(--duration-base) var(--ease-standard);
 }
 
-/* Atacante avança para a linha; bloqueador segura a posição, mas acende. */
-.board-field--bottom .board-creature--attacking {
+/* Atacante avança para a costura; bloqueador segura a posição, mas acende. */
+.playmat-seat[data-side="bottom"] .board-creature--attacking {
   transform: translateY(calc(-5px * var(--board-scale, 1)));
 }
 
-.board-field--top .board-creature--attacking {
+.playmat-seat[data-side="top"] .board-creature--attacking {
   transform: translateY(calc(5px * var(--board-scale, 1)));
 }
 
-.board-field__creatures .board-creature--attacking {
+.mat-row .board-creature--attacking {
   filter:
-    drop-shadow(0 calc(13px * var(--board-scale, 1)) calc(17px * var(--board-scale, 1))
+    drop-shadow(0 calc(12px * var(--board-scale, 1)) calc(16px * var(--board-scale, 1))
       rgba(0, 0, 0, 0.68))
     drop-shadow(0 0 calc(16px * var(--board-scale, 1)) rgba(242, 104, 94, 0.5));
 }
 
-.board-field__creatures .board-creature--blocking {
+.mat-row .board-creature--blocking {
   filter:
-    drop-shadow(0 calc(13px * var(--board-scale, 1)) calc(17px * var(--board-scale, 1))
+    drop-shadow(0 calc(12px * var(--board-scale, 1)) calc(16px * var(--board-scale, 1))
       rgba(0, 0, 0, 0.68))
     drop-shadow(0 0 calc(16px * var(--board-scale, 1)) rgba(111, 156, 245, 0.5));
 }
@@ -868,16 +616,17 @@
 /* --------------------------------------------------------------------------
  * Raias de combate
  *
- * Em combate a fileira deixa de ser fila e vira COLUNAS. As duas metades da
- * mesa consomem a mesma lista de raias (`combatPlan.ts`), com a mesma largura,
- * entao o atacante cai exatamente embaixo de quem o bloqueou. Quem bloqueia
- * quem passa a se ler pela POSICAO, e nenhuma linha atravessa a tela.
+ * Em combate a fileira deixa de ser fila e vira COLUNAS. Os dois tapetes
+ * consomem a mesma lista de raias (`combatPlan.ts`), com a mesma largura, e as
+ * duas zonas CAMPO DE BATALHA são espelhadas em torno da costura — então o
+ * atacante cai exatamente embaixo de quem o bloqueou. Quem bloqueia quem se lê
+ * pela POSIÇÃO, e nenhuma linha atravessa a tela.
  * ----------------------------------------------------------------------- */
 
-.board-field__creatures--combat {
+.mat-row--combat {
   display: grid;
-  /* As duas colunas laterais sao iguais por construcao, entao o trilho central
-     cai no mesmo eixo nas duas metades da mesa E na costura. */
+  /* As duas colunas laterais são iguais por construção, então o trilho central
+     cai no mesmo eixo nos dois tapetes E na costura entre eles. */
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   width: 100%;
   height: 100%;
@@ -893,7 +642,7 @@
 
 .combat-cell {
   flex: 0 0 auto;
-  width: calc(var(--combat-col, 178px) * var(--slots, 1));
+  width: calc(var(--combat-col, 168px) * var(--slots, 1));
   height: 100%;
   display: flex;
   align-items: center;
@@ -901,9 +650,9 @@
   gap: calc(4px * var(--board-scale, 1));
 }
 
-/* Raia do arrombamento: sem ninguem na frente, o vao fica visivel de proposito.
-   Do lado do DEFENSOR a mesma raia existe e esta vazia — marca-la ali seria
-   desenhar um vao onde nao ha nada acontecendo. */
+/* Raia do arrombamento: sem ninguém na frente, o vão fica visível de propósito.
+   Do lado do DEFENSOR a mesma raia existe e está vazia — marcá-la ali seria
+   desenhar um vão onde nada está acontecendo. */
 .combat-cell--breach {
   position: relative;
 }
@@ -922,7 +671,7 @@
   pointer-events: none;
 }
 
-/* Quem nao esta em combate espera na reserva: menor, apagada e fora do eixo. */
+/* Quem não está em combate espera na reserva: menor, apagada e fora do eixo. */
 .combat-reserve {
   grid-column: 3;
   display: flex;
@@ -931,26 +680,46 @@
   align-items: center;
   justify-content: flex-start;
   gap: calc(6px * var(--board-scale, 1));
-  padding-left: calc(14px * var(--board-scale, 1));
+  padding-left: calc(12px * var(--board-scale, 1));
   overflow: hidden;
   opacity: 0.72;
   mask-image: linear-gradient(90deg, #000 78%, transparent 100%);
 }
 
-/* Especificidade a mais de proposito: a zona de batalha manda toda carta
-   ocupar 100% da altura, e a reserva precisa vencer essa regra para nao
-   competir de tamanho com quem esta lutando. */
-.board-zone[data-zone="battle"] .combat-reserve .board-card-slot {
-  height: 62%;
+/* Especificidade a mais de propósito: a zona de batalha manda toda carta ocupar
+   100% da altura, e a reserva precisa vencer essa regra para não competir de
+   tamanho com quem está lutando. */
+/*
+ * A reserva tem largura fixa e lista de tamanho livre, então uma hora ela
+ * estoura. Ela encolhe e se sobrepõe um pouco antes disso: três criaturas fora
+ * de combate cabem inteiras dentro da linha impressa, em vez de a terceira sair
+ * fatiada pela borda de recorte. Da quarta em diante a máscara ainda desfia a
+ * última — é a forma honesta de dizer "tem mais", e melhor que um corte seco.
+ */
+.mat-zone--battlefield .combat-reserve .board-card-slot {
+  height: 54%;
 }
 
+.combat-reserve .board-card-slot + .board-card-slot {
+  margin-left: calc(-12px * var(--board-scale, 1));
+}
 /* --------------------------------------------------------------------------
  * Placar de combate na costura
  * ----------------------------------------------------------------------- */
 
+/*
+ * A costura acompanha a faixa CAMPO DE BATALHA impressa, nao a largura do
+ * tapete. O trilho de criatura e centrado DENTRO da zona de batalha (que ocupa
+ * so a coluna esquerda do mat, porque a direita e a barra lateral de deck,
+ * exilio, vida e cemiterio); centrar a costura no tapete inteiro jogava o chip
+ * de duelo ~200px para a direita da coluna que ele descreve. Os numeros sao a
+ * mesma caixa de `playmatZones` (PAD_X + MAIN_W) ja com o recuo de
+ * `.mat-zone__inner`, entao os tres trilhos — de cima, da costura e de baixo —
+ * caem no mesmo eixo.
+ */
 .combat-seam {
   position: absolute;
-  inset: 0;
+  inset: 0 28.41% 0 2.11%;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
@@ -1039,38 +808,66 @@
   box-shadow: 0 0 calc(10px * var(--board-scale, 1)) rgba(232, 96, 79, 0.4);
 }
 
-.board-field__back {
+/* --------------------------------------------------------------------------
+ * Terrenos
+ *
+ * A faixa TERRENOS do tapete traz os cinco símbolos de mana serigrafados. As
+ * pilhas crescem a partir da borda EXTERNA do mat — do lado de quem está
+ * sentado —, então elas cobrem a serigrafia só na medida em que a mesa enche,
+ * como acontece na mesa de verdade.
+ * ----------------------------------------------------------------------- */
+
+/* Os terrenos ficam centrados na banda impressa. Encostados numa ponta eles
+   deixariam quatro quintos de TERRENOS vazio, que é o defeito que o contorno
+   deveria estar resolvendo. Centrado, o monte cobre os discos do meio e sobra
+   serigrafia nas duas pontas — que é como um mat usado se parece. */
+.mat-row--lands {
+  justify-content: center;
+  gap: calc(11px * var(--board-scale, 1));
+}
+
+.mat-lands__stack {
+  position: relative;
   display: flex;
-  flex: 1 1 auto;
-  height: 100%;
-  width: 100%;
-  align-items: center;
-  gap: calc(20px * var(--board-scale, 1));
-}
-
-.board-field__lands {
-  display: flex;
   height: 100%;
   align-items: center;
-  gap: calc(12px * var(--board-scale, 1));
-  padding-left: calc(88px * var(--board-scale, 1));
 }
 
-.board-field__others {
-  display: flex;
-  height: 100%;
-  align-items: center;
-  gap: calc(6px * var(--board-scale, 1));
-  margin-left: auto;
+.mat-lands__overlap {
+  margin-left: calc(var(--card-land) * -0.62);
 }
 
-/* Terreno e permanente de retaguarda também saem da altura da faixa. */
-.board-zone[data-zone="lands"] .board-card-slot {
-  width: auto;
-  height: 88%;
+.mat-lands__count {
+  position: absolute;
+  top: calc(-5px * var(--board-scale, 1));
+  right: calc(-5px * var(--board-scale, 1));
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  height: calc(17px * var(--board-scale, 1));
+  min-width: calc(17px * var(--board-scale, 1));
+  padding-inline: 4px;
+  border-radius: 999px;
+  background: #0d101a;
+  box-shadow: inset 0 0 0 1px var(--color-edge-strong);
+  color: var(--color-ink-strong);
+  font-size: calc(10.5px * var(--board-scale, 1));
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
-.board-field__attached {
+/* Encantamento, artefato, planeswalker: retaguarda. Ficam depois dos terrenos,
+   um pouco menores, porque não decidem o combate deste turno. */
+.mat-other {
+  opacity: 0.94;
+}
+
+.mat-zone--lands .mat-other.board-card-slot {
+  height: 84%;
+}
+
+.mat-attached {
   position: absolute;
   top: -4px;
   left: -4px;
@@ -1085,38 +882,6 @@
   font-weight: 700;
   pointer-events: none;
 }
-
-.board-lands__stack {
-  position: relative;
-  display: flex;
-  height: 100%;
-  align-items: center;
-}
-
-.board-lands__overlap {
-  margin-left: calc(var(--card-land) * -0.62);
-}
-
-.board-lands__count {
-  position: absolute;
-  top: calc(-6px * var(--board-scale, 1));
-  right: calc(-6px * var(--board-scale, 1));
-  z-index: 20;
-  display: grid;
-  place-items: center;
-  height: calc(18px * var(--board-scale, 1));
-  min-width: calc(18px * var(--board-scale, 1));
-  padding-inline: 4px;
-  border-radius: 999px;
-  background: #0d101a;
-  box-shadow: inset 0 0 0 1px var(--color-edge-strong);
-  color: var(--color-ink-strong);
-  font-size: calc(11px * var(--board-scale, 1));
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  pointer-events: none;
-}
-
 /* --------------------------------------------------------------------------
  * Mão
  * ----------------------------------------------------------------------- */
@@ -1129,14 +894,17 @@
   container-type: inline-size;
 }
 
+/* O leque joga as cartas das pontas para fora do eixo; sem esta folga elas
+   caem em cima da faixa do jogador e do rodapé. O recuo é a altura que a
+   inclinação consome, não margem decorativa. */
 .board-hand--own {
   align-items: flex-end;
-  padding-bottom: calc(2px * var(--board-scale, 1));
+  padding-bottom: calc(44px * var(--board-scale, 1));
 }
 
 .board-hand--foe {
   align-items: flex-start;
-  padding-top: calc(2px * var(--board-scale, 1));
+  padding-top: calc(30px * var(--board-scale, 1));
 }
 
 .board-hand--empty {
@@ -1148,56 +916,43 @@
 }
 
 /* --------------------------------------------------------------------------
- * Borda da mesa (faixa do jogador)
+ * Borda da mesa (faixa do jogador) e o quadro VIDA
  *
- * Quem senta na mesa senta numa BORDA: nome e vida vivem na aresta superior e
- * inferior do tapete, à altura de quem olha, e não numa coluna de HUD. Os
- * contadores ficam na cauda da faixa, pequenos e apagados.
+ * A faixa encolheu porque perdeu conteúdo, não porque ficou apertada: vida,
+ * deck, cemitério e exílio viraram ZONAS do tapete e foram morar nos quadros
+ * serigrafados. O que sobra aqui não é zona de jogo — é quem está jogando,
+ * se é a vez dele, quanta mana flutua e quantos terrenos já caíram. Por isso
+ * ela é uma régua fina na beira do tampo, e não um painel.
  * ----------------------------------------------------------------------- */
 
-/* A faixa NÃO tem fundo: o nicho de pedra da arena é o fundo dela. Painel
-   próprio aqui devolveria a caixa flutuante que o nicho veio resolver. */
 .player-strip {
   position: relative;
-  display: block;
+  display: flex;
   height: var(--strip-h);
-  padding-inline: calc(14px * var(--board-scale, 1));
-  border-radius: calc(24px * var(--board-scale, 1));
+  align-items: center;
+  gap: calc(9px * var(--board-scale, 1));
+  padding-inline: calc(8px * var(--board-scale, 1));
   border: 0;
   background: none;
 }
 
-/* Assento do turno acende a CAVIDADE, não uma borda: luz dentro da pedra. */
-.player-strip[data-active="true"] {
-  box-shadow:
-    inset 0 0 calc(44px * var(--board-scale, 1))
-      color-mix(in oklab, var(--seat) 24%, transparent),
-    inset 0 0 0 1px color-mix(in oklab, var(--seat) 26%, transparent);
+/* De quem é a vez se lê no fio de luz da própria borda, não numa etiqueta. */
+.player-strip[data-active="true"]::after {
+  content: "";
+  position: absolute;
+  inset-inline: calc(6px * var(--board-scale, 1));
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--seat), transparent);
+  opacity: 0.7;
+  pointer-events: none;
 }
 
-/*
- * O RETRATO fica no eixo central do tapete, e nao no canto.
- *
- * As duas colunas laterais sao `1fr` iguais, entao o avatar cai exatamente no
- * meio da faixa — que e o mesmo meio das raias de combate. E por isso que o
- * vetor de dano que passa desce quase reto em vez de cortar a mesa na
- * diagonal, que era o traco mais longo da tela.
- */
-.player-strip__core {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  height: 100%;
-  align-items: center;
-  gap: calc(14px * var(--board-scale, 1));
-  padding-inline: calc(14px * var(--board-scale, 1));
+.player-strip--top::after {
+  top: 0;
 }
 
-.player-strip__core > .player-strip__name-block {
-  justify-self: end;
-}
-
-.player-strip__core > .player-strip__life {
-  justify-self: start;
+.player-strip--bottom::after {
+  bottom: 0;
 }
 
 .player-strip__avatar-wrap {
@@ -1208,214 +963,135 @@
 .player-strip__avatar {
   display: grid;
   place-items: center;
-  width: calc(30px * var(--board-scale, 1));
-  height: calc(30px * var(--board-scale, 1));
+  height: calc(26px * var(--board-scale, 1));
+  width: calc(26px * var(--board-scale, 1));
   border-radius: 999px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
 }
 
 .player-strip__initials {
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.45);
-  padding: calc(2px * var(--board-scale, 1)) calc(5px * var(--board-scale, 1));
-  font-size: calc(11px * var(--board-scale, 1));
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
-}
-
-/* Alvo do vetor de dano. O traco tem que bater em ALGO que pareca um alvo:
-   sem o anel, a ponta da seta morre num disco de 30px sem funcao aparente. */
-.player-strip__avatar-wrap--hit {
-  scale: 1.18;
+  font-family: var(--font-display);
+  font-size: calc(10px * var(--board-scale, 1));
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #f2f6ff;
 }
 
 .player-strip__avatar-wrap--hit::after {
   content: "";
   position: absolute;
-  inset: calc(-7px * var(--board-scale, 1));
+  inset: calc(-4px * var(--board-scale, 1));
   border-radius: 999px;
-  border: 2px solid rgba(255, 90, 72, 0.9);
-  box-shadow:
-    0 0 calc(20px * var(--board-scale, 1)) rgba(255, 60, 42, 0.6),
-    inset 0 0 calc(12px * var(--board-scale, 1)) rgba(255, 60, 42, 0.4);
+  border: 1px solid rgba(242, 104, 94, 0.75);
+  animation: glow-pulse 1.1s var(--ease-in-out) infinite;
   pointer-events: none;
 }
 
 .player-strip__dot {
   position: absolute;
-  right: calc(-2px * var(--board-scale, 1));
-  bottom: calc(-2px * var(--board-scale, 1));
-  width: calc(10px * var(--board-scale, 1));
-  height: calc(10px * var(--board-scale, 1));
+  right: calc(-1px * var(--board-scale, 1));
+  bottom: calc(-1px * var(--board-scale, 1));
+  height: calc(7px * var(--board-scale, 1));
+  width: calc(7px * var(--board-scale, 1));
   border-radius: 999px;
-  box-shadow: 0 0 0 2px #0a0c14;
+  box-shadow: 0 0 0 2px rgba(6, 10, 8, 0.85);
 }
 
 .player-strip__name-block {
   display: flex;
   min-width: 0;
-  align-items: baseline;
-  gap: calc(8px * var(--board-scale, 1));
+  align-items: center;
+  gap: calc(7px * var(--board-scale, 1));
 }
 
 .player-strip__name {
-  margin: 0;
-  max-width: calc(230px * var(--board-scale, 1));
   overflow: hidden;
+  max-width: calc(220px * var(--board-scale, 1));
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-display);
-  font-size: calc(15px * var(--board-scale, 1));
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.92);
+  font-size: calc(12.5px * var(--board-scale, 1));
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-ink-strong);
 }
 
 .player-strip__tags {
   display: flex;
-  flex: 0 0 auto;
   align-items: center;
-  gap: 4px;
+  gap: calc(4px * var(--board-scale, 1));
 }
 
 .player-strip__badge {
-  border-radius: var(--radius-xs);
-  padding: 1px calc(5px * var(--board-scale, 1));
-  font-size: calc(9px * var(--board-scale, 1));
-  font-weight: 600;
-  letter-spacing: 0.09em;
+  border-radius: 999px;
+  padding: 1px calc(6px * var(--board-scale, 1));
+  font-size: calc(8.5px * var(--board-scale, 1));
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .player-strip__lost {
-  border: 1px solid rgba(248, 113, 113, 0.45);
-  background: rgba(239, 68, 68, 0.18);
-  border-radius: var(--radius-xs);
-  padding: 1px calc(5px * var(--board-scale, 1));
-  font-size: calc(9px * var(--board-scale, 1));
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: #fecaca;
-}
-
-/* Vida é a manchete da faixa: o único número grande da mesa. */
-/* Vida é a manchete, mas mora gravada no cartucho: sem borda e sem placa, só
-   a régua de vida correndo por baixo do número. */
-.player-strip__life {
-  position: relative;
-  display: flex;
-  flex: 0 0 auto;
-  align-items: baseline;
-  gap: calc(8px * var(--board-scale, 1));
-  padding: calc(2px * var(--board-scale, 1)) calc(12px * var(--board-scale, 1));
-  border-radius: calc(9px * var(--board-scale, 1));
-  overflow: hidden;
-  border: 0;
-  background: none;
-}
-
-.player-strip__life-bar {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  height: calc(2px * var(--board-scale, 1));
-  width: var(--life-fill);
   border-radius: 999px;
-  background: color-mix(in oklab, var(--life) 68%, transparent);
-  box-shadow: 0 0 calc(10px * var(--board-scale, 1))
-    color-mix(in oklab, var(--life) 40%, transparent);
-  pointer-events: none;
-}
-
-.player-strip__life-label {
-  position: relative;
-  font-size: calc(10px * var(--board-scale, 1));
-  font-weight: 600;
-  letter-spacing: var(--tracking-wide-caps);
+  padding: 1px calc(6px * var(--board-scale, 1));
+  background: rgba(242, 104, 94, 0.16);
+  color: #ff8f83;
+  font-size: calc(8.5px * var(--board-scale, 1));
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
-  color: color-mix(in oklab, var(--life) 72%, transparent);
 }
 
-.player-strip__life-value {
-  position: relative;
-  font-family: var(--font-display);
-  font-size: calc(30px * var(--board-scale, 1));
-  line-height: 1;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--life);
-  text-shadow: 0 0 calc(22px * var(--board-scale, 1))
-    color-mix(in oklab, var(--life) 55%, transparent);
-}
-
-/* Cauda da faixa: motor, não manchete. */
-/* Cauda de telemetria: flutua na borda direita para nao empurrar o retrato
-   para fora do eixo. */
 .player-strip__meters {
-  position: absolute;
-  right: calc(14px * var(--board-scale, 1));
-  top: 50%;
-  translate: 0 -50%;
   display: flex;
+  min-width: 0;
   align-items: center;
-  gap: calc(12px * var(--board-scale, 1));
+  gap: calc(10px * var(--board-scale, 1));
+  margin-left: auto;
 }
 
 .player-strip__mana {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: calc(3px * var(--board-scale, 1));
 }
 
 .player-strip__pip {
   display: grid;
   place-items: center;
-  width: calc(17px * var(--board-scale, 1));
-  height: calc(17px * var(--board-scale, 1));
+  height: calc(15px * var(--board-scale, 1));
+  min-width: calc(15px * var(--board-scale, 1));
   border-radius: 999px;
-  font-size: calc(10px * var(--board-scale, 1));
-  font-weight: 700;
+  color: #0b1016;
+  font-size: calc(9.5px * var(--board-scale, 1));
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
-  color: rgba(0, 0, 0, 0.75);
 }
 
 .player-strip__poison {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 3px;
   border-radius: 999px;
-  border: 1px solid rgba(163, 230, 53, 0.35);
-  background: rgba(132, 204, 22, 0.12);
-  padding: 1px calc(7px * var(--board-scale, 1));
-  font-size: calc(10px * var(--board-scale, 1));
-  font-weight: 600;
+  padding: 1px calc(6px * var(--board-scale, 1));
+  background: rgba(122, 196, 108, 0.14);
+  color: #9ad48b;
+  font-size: calc(9.5px * var(--board-scale, 1));
   font-variant-numeric: tabular-nums;
-  color: #d9f99d;
 }
 
 .player-strip__poison--lethal {
-  border-color: rgba(190, 242, 100, 0.6);
-  background: rgba(163, 230, 53, 0.25);
-  color: #ecfccb;
+  background: rgba(242, 104, 94, 0.18);
+  color: #ff8f83;
 }
 
 .player-strip__lands {
   display: flex;
   align-items: center;
-  gap: 3px;
-}
-
-.player-strip__lands-label {
-  margin-right: 3px;
-  font-size: calc(9px * var(--board-scale, 1));
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.28);
+  gap: calc(3px * var(--board-scale, 1));
 }
 
 .player-strip__land-pip {
-  width: calc(14px * var(--board-scale, 1));
-  height: 3px;
+  height: calc(4px * var(--board-scale, 1));
+  width: calc(11px * var(--board-scale, 1));
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.12);
 }
@@ -1424,33 +1100,73 @@
   background: var(--seat);
 }
 
-.player-strip__counts {
-  display: flex;
-  align-items: center;
-  gap: calc(8px * var(--board-scale, 1));
-  padding-left: calc(12px * var(--board-scale, 1));
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.34);
-}
-
 .player-strip__count {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: calc(4px * var(--board-scale, 1));
+  color: var(--color-ink-faint);
+  font-size: calc(10px * var(--board-scale, 1));
 }
 
 .player-strip__count-value {
-  font-size: calc(11px * var(--board-scale, 1));
-  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--color-ink-muted);
 }
 
-.player-strip__count--warn,
-.player-strip__count--warn .player-strip__count-value {
-  color: #fcd34d;
+/*
+ * O total de vida dentro do quadro VIDA impresso no tapete.
+ *
+ * Não tem caixa, não tem rótulo e não tem borda: a moldura já está serigrafada
+ * embaixo dele. Sobra o número, grande, e um traço de reserva que encolhe — é a
+ * leitura de "quanto ainda falta" sem precisar comparar com nada.
+ */
+.mat-life {
+  position: relative;
+  display: flex;
+  height: 100%;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(4px * var(--board-scale, 1));
 }
 
+.mat-life__value {
+  font-family: var(--font-display);
+  font-size: calc(40px * var(--board-scale, 1));
+  font-weight: 700;
+  line-height: 0.9;
+  font-variant-numeric: tabular-nums;
+  color: var(--life);
+  text-shadow:
+    0 calc(2px * var(--board-scale, 1)) calc(6px * var(--board-scale, 1)) rgba(0, 0, 0, 0.8),
+    0 0 calc(20px * var(--board-scale, 1)) color-mix(in oklab, var(--life) 45%, transparent);
+}
+
+.mat-life__bar {
+  position: relative;
+  height: calc(3px * var(--board-scale, 1));
+  width: 68%;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.mat-life__bar::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: var(--life-fill, 100%);
+  background: var(--life);
+  transition: width var(--duration-base) var(--ease-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mat-life__bar::after {
+    transition: none;
+  }
+}
 /* --------------------------------------------------------------------------
  * Barra do jogador (classes que PlayerBar espera encontrar)
  * ----------------------------------------------------------------------- */
@@ -1613,116 +1329,121 @@
 }
 
 /* --------------------------------------------------------------------------
- * Cemitério / exílio
+ * Pilhas fechadas nos quadros do tapete (deck, cemitério, exílio)
+ *
+ * O rótulo está IMPRESSO no mat, então não existe rótulo aqui: repetir a
+ * palavra dentro do quadro devolveria a caixa de interface que o tapete veio
+ * tirar. Sobra o que é dado vivo — espessura da pilha, carta do topo e
+ * contagem. A pilha preenche o quadro serigrafado e nada mais.
  * ----------------------------------------------------------------------- */
 
 .zone-pile {
   position: relative;
+  height: 100%;
+  width: 100%;
 }
 
-/* Empilhado (poço em cima, rótulo embaixo) para as duas zonas caberem lado a
-   lado na coluna sem transbordar para cima da mão. */
+/* Aberta, a folha passa por cima do tapete e das cartas dos dois lados. */
+.zone-pile[data-open="true"] {
+  z-index: 40;
+}
+
 .zone-pile__trigger {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: calc(4px * var(--board-scale, 1));
-  padding: calc(6px * var(--board-scale, 1));
-  border: 1px solid var(--color-edge-hair);
-  border-radius: var(--radius-md);
-  background: rgba(8, 11, 18, 0.55);
-  color: var(--color-ink-muted);
+  position: relative;
+  display: block;
+  height: 100%;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-ink-faint);
   cursor: pointer;
-  transition:
-    border-color var(--duration-fast) var(--ease-standard),
-    background-color var(--duration-fast) var(--ease-standard);
-}
-
-.zone-pile__trigger:hover:not(:disabled) {
-  border-color: var(--color-edge-strong);
-  background: rgba(18, 23, 34, 0.75);
 }
 
 .zone-pile__trigger:disabled {
   cursor: default;
-  opacity: 0.55;
+}
+
+.zone-pile__trigger:hover:not(:disabled) .zone-pile__well {
+  transform: translateY(calc(-2px * var(--board-scale, 1)));
 }
 
 .zone-pile__well {
   position: relative;
-  display: grid;
-  place-items: center;
-  width: calc(46px * var(--board-scale, 1));
-  height: calc(62px * var(--board-scale, 1));
-  border-radius: var(--radius-sm);
-  background: rgba(0, 0, 0, 0.45);
-  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6);
+  display: block;
+  height: 100%;
+  width: 100%;
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
-.zone-pile--exile .zone-pile__well {
-  box-shadow:
-    inset 0 2px 6px rgba(0, 0, 0, 0.6),
-    inset 0 0 0 1px rgba(148, 204, 255, 0.16);
+/* Tudo que empilha no quadro tem a forma de carta e é centralizado nele: assim
+   as camadas de espessura, o verso do deck e a carta do topo coincidem. */
+.zone-pile__layer,
+.zone-pile__back,
+.zone-pile .board-card-slot {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  height: 100%;
+  width: auto;
+  aspect-ratio: 5 / 7;
 }
 
 .zone-pile__layer {
-  position: absolute;
-  inset: calc(6px * var(--board-scale, 1));
-  border-radius: var(--radius-xs);
-  background: #1a1420;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06);
+  border-radius: 6%;
+  background: rgba(12, 16, 14, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
 }
 
 .zone-pile--exile .zone-pile__layer {
-  background: #141b26;
-}
-
-.zone-pile__top {
-  position: relative;
-  z-index: 5;
+  background: rgba(14, 16, 26, 0.9);
 }
 
 .zone-pile__icon {
-  position: relative;
-  z-index: 5;
-  color: var(--color-ink-faint);
-}
-
-.zone-pile__meta {
-  display: flex;
-  align-items: baseline;
-  gap: calc(6px * var(--board-scale, 1));
-}
-
-.zone-pile__label {
-  font-family: var(--font-display);
-  font-size: calc(8.5px * var(--board-scale, 1));
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  opacity: 0.28;
 }
 
 .zone-pile__count {
-  font-family: var(--font-display);
-  font-size: calc(15px * var(--board-scale, 1));
-  font-variant-numeric: tabular-nums;
+  position: absolute;
+  right: calc(-4px * var(--board-scale, 1));
+  bottom: calc(-4px * var(--board-scale, 1));
+  z-index: 25;
+  display: grid;
+  place-items: center;
+  height: calc(17px * var(--board-scale, 1));
+  min-width: calc(17px * var(--board-scale, 1));
+  padding-inline: 4px;
+  border-radius: 999px;
+  background: #0d101a;
+  box-shadow: inset 0 0 0 1px var(--color-edge-strong);
   color: var(--color-ink-strong);
+  font-size: calc(10.5px * var(--board-scale, 1));
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
+/* A folha aberta: sai do quadro e pousa sobre o tapete, do lado de dentro da
+   mesa, para não sair da tela quando a pilha está numa borda. */
 .zone-pile__sheet {
   position: absolute;
   right: 0;
-  z-index: 200;
-  width: calc(330px * var(--board-scale, 1));
-  max-height: 46vh;
+  z-index: 50;
+  width: calc(300px * var(--board-scale, 1));
+  max-height: calc(320px * var(--board-scale, 1));
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
+  gap: calc(6px * var(--board-scale, 1));
+  padding: calc(9px * var(--board-scale, 1));
   border-radius: var(--radius-lg);
-  background: color-mix(in oklab, var(--color-surface-overlay) 88%, transparent);
-  backdrop-filter: blur(14px) saturate(1.3);
-  border: 1px solid var(--color-edge);
+  border: 1px solid var(--color-edge-hair);
+  background: color-mix(in oklab, var(--color-surface-void) 92%, transparent);
   box-shadow: var(--shadow-e4);
+  backdrop-filter: blur(14px);
 }
 
 .zone-pile__sheet[data-side="top"] {
@@ -1738,7 +1459,7 @@
   align-items: center;
   justify-content: space-between;
   font-family: var(--font-display);
-  font-size: 11px;
+  font-size: calc(10px * var(--board-scale, 1));
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   color: var(--color-ink-muted);
@@ -1746,12 +1467,11 @@
 
 .zone-pile__close {
   border: 0;
-  background: transparent;
-  color: var(--color-ink-muted);
+  background: none;
+  color: var(--color-ink-faint);
   cursor: pointer;
   font-size: 12px;
   line-height: 1;
-  padding: 2px 4px;
 }
 
 .zone-pile__close:hover {
@@ -1759,13 +1479,18 @@
 }
 
 .zone-pile__grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  min-height: 0;
+  grid-template-columns: repeat(auto-fill, minmax(calc(56px * var(--board-scale, 1)), 1fr));
+  gap: calc(6px * var(--board-scale, 1));
   overflow-y: auto;
-  padding-right: 2px;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .zone-pile__well {
+    transition: none;
+  }
+}
 /* --------------------------------------------------------------------------
  * Trilha de fases
  * ----------------------------------------------------------------------- */

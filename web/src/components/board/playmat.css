@@ -1,0 +1,199 @@
+/* --------------------------------------------------------------------------
+ * PLAYMAT — o tapete de um jogador.
+ *
+ * Um objeto pousado no tampo, não um painel: feltro com arte impressa, linha
+ * serigrafada, borda costurada e sombra própria.
+ *
+ * CONTRATO COM QUEM MONTA A MESA: o mat fica em FLUXO e preenche o pai
+ * (`width/height: 100%`), então o pai precisa de altura definida — célula de
+ * grade serve. O mat não é `position: absolute` de propósito: sem ancestral
+ * posicionado ele escaparia para a tela inteira, e a falha silenciosa de um mat
+ * colapsado é muito mais barata que a de um mat cobrindo a mesa. As zonas
+ * (`MatZone`) pousam por cima como irmãs absolutas, o que exige o pai em
+ * `position: relative`.
+ *
+ * Nada aqui anima. O tapete é matéria parada: o que se move sobre ele são as
+ * cartas. Sem animação não há o que degradar em `prefers-reduced-motion`.
+ * ----------------------------------------------------------------------- */
+
+.playmat {
+  --playmat-round: calc(16px * var(--board-scale, 1));
+  /* Serigrafia pequena, mas nunca abaixo do limite de leitura: em 1280x800 o
+     `--board-scale` cai para ~0.66 e 12px viraria borrão. */
+  --playmat-label: max(8px, calc(12px * var(--board-scale, 1)));
+  /* Tinta fraca de proposito. A carta pousa POR CIMA da serigrafia, como no mat
+     de verdade, e a metade que sobra nao pode competir com o nome da carta: em
+     tinta forte o rotulo cortado le como palavra quebrada ("...ATALHA"), que
+     parece defeito. Fraco, ele volta a ser textura impressa. */
+  --playmat-ink: rgba(238, 248, 255, 0.3);
+
+  position: relative;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  /* Contém o `soft-light` da trama: sem isolar, o feltro sangraria para o
+     tampo que está atrás do mat. */
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: var(--playmat-round);
+  /* Decoração: as cartas moram acima e recebem os eventos. */
+  pointer-events: none;
+  background-color: #0b131a;
+  background-repeat: no-repeat;
+  background-size: cover;
+  box-shadow:
+    /* espessura do mat sobre a mesa */
+    0 calc(10px * var(--board-scale, 1)) calc(26px * var(--board-scale, 1)) rgba(0, 0, 0, 0.62),
+    0 calc(2px * var(--board-scale, 1)) calc(3px * var(--board-scale, 1)) rgba(0, 0, 0, 0.5),
+    /* debrum: a fita escura que serge a borda de um mat de verdade */
+    inset 0 0 0 calc(3px * var(--board-scale, 1)) rgba(8, 12, 16, 0.82),
+    inset 0 0 0 calc(4px * var(--board-scale, 1)) rgba(226, 244, 255, 0.07);
+}
+
+/* A arte escolhida pelo jogador. Escurecida e dessaturada porque ela é o CHÃO:
+   arte em força total disputa saturação com a carta que está por cima, e a
+   carta tem que ganhar sempre. Filtro estático, num elemento que nunca muda —
+   custa uma rasterização, não uma por frame. */
+.playmat__art {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  filter: saturate(0.6) brightness(0.66) contrast(1.05);
+}
+
+/*
+ * Véu: VINHETA, não blecaute.
+ *
+ * A primeira versão empilhava três atenuações sobre a arte — `brightness(0.56)`,
+ * um radial de 18–62% de preto e um linear de mais 34–50%. Sobrava ~27% da
+ * luminância original, e a foto conferiu: os dois tapetes ficaram do mesmo
+ * marrom escuro e a arte ESCOLHIDA PELO JOGADOR, que é a coisa nova desta
+ * rodada, não aparecia. Agora o centro fica quase limpo e o escurecimento vive
+ * nas bordas, onde ele fecha a composição sem apagar o motivo.
+ *
+ * A carta continua ganhando por outros meios: sombra projetada, elipse de
+ * contato e saturação plena contra um fundo dessaturado.
+ */
+.playmat__wash {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background-image:
+    radial-gradient(118% 94% at 50% 50%, rgba(0, 0, 0, 0.08) 30%, rgba(0, 0, 0, 0.7) 100%),
+    linear-gradient(180deg, rgba(6, 10, 14, 0.16), rgba(6, 10, 14, 0.3));
+}
+
+/* Trama do feltro. O mesmo ladrilho de material da mesa, em `soft-light`: o
+   ladrilho já vem centrado em cinza médio, então soma RELEVO sem clarear a arte
+   de baixo. É o que separa "imagem colada" de "imagem impressa em tecido". */
+.playmat__wash::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--mat-felt);
+  background-size: var(--mat-felt-tile) var(--mat-felt-tile);
+  mix-blend-mode: soft-light;
+  opacity: 0.5;
+}
+
+/* Linhas impressas. `currentColor` para que a tinta do mat seja um valor só. */
+.playmat__print {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  height: 100%;
+  color: #f2f8ff;
+}
+
+/* --------------------------------------------------------------------------
+ * Tipografia impressa
+ *
+ * O rótulo ocupa a caixa INTEIRA da zona e se alinha à aresta em que a
+ * serigrafia foi feita. Isso significa que espelhar o mat do oponente é trocar
+ * `--bottom` por `--top` e mais nada: a letra nunca gira.
+ * ----------------------------------------------------------------------- */
+
+.playmat__label {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  padding: calc(4px * var(--board-scale, 1)) 6px;
+  overflow: hidden;
+}
+
+.playmat__label--bottom {
+  align-items: flex-end;
+}
+
+.playmat__label--top {
+  align-items: flex-start;
+}
+
+.playmat__labelText {
+  font-family: var(--font-display);
+  font-size: var(--playmat-label);
+  font-weight: 600;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  /* A caixa alta com tracking já centraliza mal por causa do espaço final. */
+  text-indent: 0.2em;
+  white-space: nowrap;
+  color: var(--playmat-ink);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+}
+
+/* --------------------------------------------------------------------------
+ * Fileira de mana
+ *
+ * Os cinco discos WUBRG impressos na faixa de terrenos, como nas referências.
+ * O glifo é o mesmo de `ManaCost.tsx` — nenhum caminho novo foi desenhado —,
+ * mas aqui ele é TINTA e não ficha: disco vazado, contorno branco fino.
+ * ----------------------------------------------------------------------- */
+
+.playmat__pip {
+  position: absolute;
+  z-index: 3;
+  display: block;
+  /* O disco não pode achatar junto com o mat: a altura manda e a largura segue. */
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+}
+
+/*
+ * `ManaSymbol` pinta o disco por `style` inline (a cor oficial da cor), e estilo
+ * inline só cede para `!important`. Aqui o disco pleno é justamente o que não
+ * queremos: no tapete o símbolo é serigrafia, não peça.
+ */
+.playmat__pip .mtgc-sym {
+  width: 100%;
+  height: 100%;
+  background: none !important;
+  box-shadow: none;
+  border: 1px solid rgba(238, 248, 255, 0.3);
+  color: rgba(238, 248, 255, 0.34);
+}
+
+.playmat__pip .mtgc-sym__glyph {
+  width: 58%;
+  height: 58%;
+}
+
+/* Costura: o pesponto por dentro do debrum. Tracejado porque é ponto de
+   máquina, e é o detalhe que diz "tecido" antes de qualquer outra coisa. */
+.playmat::before {
+  content: '';
+  position: absolute;
+  z-index: 4;
+  inset: calc(7px * var(--board-scale, 1));
+  border: 1px dashed rgba(232, 246, 255, 0.16);
+  border-radius: calc(var(--playmat-round) - 6px);
+}

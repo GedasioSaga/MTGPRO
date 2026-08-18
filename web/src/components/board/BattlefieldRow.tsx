@@ -1,17 +1,16 @@
-import clsx from 'clsx'
-import type { ReactNode } from 'react'
 import { isCreature, isLand } from '../../types/protocol'
 import type { CardView, ObjectId, PlayerId } from '../../types/protocol'
 import { CardSlot } from './CardSlot'
 import { cssVars } from './boardVisuals'
+import { MatZone } from './MatZone'
+import type { Seat } from './playmatZones'
 import { EMPTY_COMBAT_PLAN } from './combatPlan'
 import type { CombatPlan } from './combatPlan'
 
 /*
- * Largura das cartas do campo. Vem de variável da mesa (`App.css`) em vez de
- * `CARD_SIZES`, porque o que manda no tamanho aqui é a ALTURA da faixa: quem
- * está em jogo tem que dominar quem está na mão, e essa proporção é decisão de
- * composição, não do catálogo de tamanhos.
+ * Larguras de fallback. Quem manda de verdade no tamanho é a ALTURA da zona
+ * impressa (ver `App.css`): a carta ocupa a faixa que o mat reservou para ela,
+ * então mat mais baixo dá carta menor sem ninguém tocar em constante.
  */
 const FIELD_WIDTH = 'var(--card-field)'
 const LAND_WIDTH = 'var(--card-land)'
@@ -19,7 +18,8 @@ const OTHER_WIDTH = 'var(--card-other)'
 
 export interface BattlefieldRowProps {
   player: PlayerId
-  side: 'top' | 'bottom'
+  /** Assento cujo mat recebe estas cartas. */
+  seat: Seat
   permanents: ObjectId[]
   cards: Record<ObjectId, CardView>
   /** Pareamento de combate. Fora de combate vem vazio e a fileira é uma fila só. */
@@ -32,14 +32,18 @@ interface LandGroup {
 }
 
 /**
- * Metade do campo de batalha de um jogador, desenhada como duas zonas da mesa:
- * a faixa de batalha, colada na linha central (é onde o combate acontece), e a
- * faixa de terrenos na borda externa. Nenhuma das duas é desenhada com linha:
- * a diferença entre elas é de luz e de altura, não de moldura.
+ * O que este jogador tem em jogo, pousado nas duas zonas impressas do mat dele:
+ * criaturas dentro de CAMPO DE BATALHA, terrenos e demais permanentes dentro de
+ * TERRENOS.
+ *
+ * A fileira não decide mais onde fica: o mat decide. Aqui só se decide o que
+ * vai em cada zona e em que ordem — inclusive a ordem das raias de combate, que
+ * é a mesma nas duas metades da mesa e é o que faz o atacante cair embaixo de
+ * quem o bloqueou.
  */
 export function BattlefieldRow({
   player,
-  side,
+  seat,
   permanents,
   cards,
   plan = EMPTY_COMBAT_PLAN,
@@ -61,76 +65,45 @@ export function BattlefieldRow({
   const landGroups = groupLands(lands)
 
   return (
-    <div
-      className={clsx(
-        'board-field',
-        side === 'top' ? 'board-field--top' : 'board-field--bottom',
-      )}
-      data-seat={player}
-    >
-      <Zone kind="battle" label="campo de batalha">
+    <>
+      <MatZone seat={seat} zone="battlefield" className="mat-zone--battlefield">
         {plan.active ? (
           <CombatLanes creatures={creatures} plan={plan} />
         ) : (
-          <div className="board-field__creatures">
+          <div className="mat-row" data-seat={player}>
             {creatures.map((card) => (
               <Creature key={card.id} card={card} plan={plan} />
             ))}
           </div>
         )}
-      </Zone>
+      </MatZone>
 
-      <Zone kind="lands" label="terrenos">
-        <div className="board-field__back">
-          <div className="board-field__lands">
-            {landGroups.map((group) => (
-              <LandStack key={group.key} group={group} cards={cards} />
-            ))}
-          </div>
-          <div className="board-field__others">
-            {others.map((card) => (
-              <CardSlot
-                key={card.id}
-                id={card.id}
-                card={card}
-                size="board"
-                width={OTHER_WIDTH}
-                tapped={card.tapped}
-                title={card.name ?? undefined}
-              />
-            ))}
-          </div>
+      <MatZone seat={seat} zone="lands" className="mat-zone--lands">
+        <div className="mat-row mat-row--lands" data-seat={player}>
+          {landGroups.map((group) => (
+            <LandStack key={group.key} group={group} cards={cards} />
+          ))}
+          {others.map((card) => (
+            <CardSlot
+              key={card.id}
+              id={card.id}
+              card={card}
+              size="board"
+              width={OTHER_WIDTH}
+              tapped={card.tapped}
+              title={card.name ?? undefined}
+              className="mat-other"
+            />
+          ))}
         </div>
-      </Zone>
-    </div>
-  )
-}
-
-/**
- * Trecho da mesa, não caixa. Não desenha moldura nem rótulo: quem separa a
- * zona é a LUZ (ver `.board-zone` em `App.css`) — a faixa de batalha sobe meio
- * tom, a de terrenos afunda. O nome da zona sobrevive só como `aria-label`,
- * para leitor de tela, que é onde ele de fato faz falta.
- */
-function Zone({
-  kind,
-  label,
-  children,
-}: {
-  kind: 'battle' | 'lands'
-  label: string
-  children: ReactNode
-}) {
-  return (
-    <section className="board-zone" data-zone={kind} aria-label={label}>
-      <div className="board-zone__inner">{children}</div>
-    </section>
+      </MatZone>
+    </>
   )
 }
 
 function LandStack({ group, cards }: { group: LandGroup; cards: Record<ObjectId, CardView> }) {
   return (
-    <div className="board-lands__stack">
+    <div className="mat-lands__stack">
       {group.ids.map((id, index) => {
         const card = cards[id]
         if (card === undefined) return null
@@ -143,13 +116,13 @@ function LandStack({ group, cards }: { group: LandGroup; cards: Record<ObjectId,
             width={LAND_WIDTH}
             tapped={card.tapped}
             title={card.name ?? undefined}
-            className={index === 0 ? undefined : 'board-lands__overlap'}
+            className={index === 0 ? undefined : 'mat-lands__overlap'}
             style={{ zIndex: index }}
           />
         )
       })}
       {group.ids.length > 1 ? (
-        <span className="board-lands__count">{group.ids.length}</span>
+        <span className="mat-lands__count">{group.ids.length}</span>
       ) : null}
     </div>
   )
@@ -170,7 +143,7 @@ function CombatLanes({ creatures, plan }: { creatures: CardView[]; plan: CombatP
   }
 
   return (
-    <div className="board-field__creatures board-field__creatures--combat">
+    <div className="mat-row mat-row--combat">
       <div className="combat-rail">
         {plan.lanes.map((lane, index) => (
           <div
@@ -221,7 +194,7 @@ function combatClass(card: CardView): string {
 function AttachmentBadge({ count }: { count: number }) {
   if (count === 0) return null
   return (
-    <span className="board-field__attached" title={`${count} anexo(s)`}>
+    <span className="mat-attached" title={`${count} anexo(s)`}>
       {count}
     </span>
   )

@@ -2,11 +2,14 @@ import { clsx } from 'clsx'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { fetchDecks } from '../../net/api'
+import { fetchCardCatalog, fetchDecks } from '../../net/api'
 import type { DeckInfo } from '../../net/api'
+import { MOCK_CARDS, toCardDef } from '../../mock/mockCards'
 import { useMatchStore } from '../../state/matchStore'
+import type { CardDef } from '../../types/protocol'
 import { Divider } from '../ui/Divider'
 import { IconButton } from '../ui/IconButton'
+import { PlaymatPicker } from './PlaymatPicker'
 
 /**
  * Os quatro decks de `crates/mtg-cards/src/decks.rs`, com o id no formato que o
@@ -15,11 +18,14 @@ import { IconButton } from '../ui/IconButton'
  * do ar e a partida vai cair no replay de demonstração.
  */
 const FALLBACK_DECKS: readonly DeckInfo[] = [
-  { id: 'goblin-onslaught', name: 'Goblin Onslaught' },
-  { id: 'azorius-control', name: 'Azorius Control' },
-  { id: 'selesnya-valor', name: 'Selesnya Valor' },
-  { id: 'gruul-stampede', name: 'Gruul Stampede' },
+  { id: 'goblin-onslaught', name: 'Goblin Onslaught', colorIdentity: ['R'] },
+  { id: 'azorius-control', name: 'Azorius Control', colorIdentity: ['W', 'U'] },
+  { id: 'selesnya-valor', name: 'Selesnya Valor', colorIdentity: ['W', 'G'] },
+  { id: 'gruul-stampede', name: 'Gruul Stampede', colorIdentity: ['R', 'G'] },
 ]
+
+/** Catálogo de reserva quando `GET /api/cards` não responde. */
+const FALLBACK_CATALOG: readonly CardDef[] = Object.values(MOCK_CARDS).map(toCardDef)
 
 type BotKind = 'random' | 'heuristic' | 'greedy'
 
@@ -54,6 +60,7 @@ export function MatchSetup() {
   const reduceMotion = useReducedMotion()
 
   const [decks, setDecks] = useState<readonly DeckInfo[]>(FALLBACK_DECKS)
+  const [catalog, setCatalog] = useState<readonly CardDef[]>(FALLBACK_CATALOG)
   const [live, setLive] = useState(false)
   const [deckA, setDeckA] = useState(FALLBACK_DECKS[0].id)
   const [deckB, setDeckB] = useState(FALLBACK_DECKS[1].id)
@@ -80,7 +87,20 @@ export function MatchSetup() {
       }
     }
 
+    // O catálogo só alimenta as miniaturas do tapete: falhar aqui não pode
+    // impedir a escolha dos baralhos, então vai numa promessa separada.
+    const loadCatalog = async (): Promise<void> => {
+      try {
+        const cards = await fetchCardCatalog(controller.signal)
+        if (cancelled || cards.length === 0) return
+        setCatalog(cards)
+      } catch {
+        // Fica o catálogo embutido.
+      }
+    }
+
     void load()
+    void loadCatalog()
     return () => {
       cancelled = true
       controller.abort()
@@ -119,7 +139,7 @@ export function MatchSetup() {
           <motion.form
             onSubmit={handleSubmit}
             aria-label="Configuração da partida"
-            className="glass relative w-full max-w-[1040px] rounded-2xl px-8 py-7 sm:px-10"
+            className="glass relative w-full max-w-[1040px] rounded-2xl px-8 py-7 sm:px-10 [@media(max-height:900px)]:py-5"
             initial={reduceMotion ? false : { opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={rise(0.04)}
@@ -134,6 +154,7 @@ export function MatchSetup() {
                 onDeck={setDeckA}
                 bot={botA}
                 onBot={setBotA}
+                catalog={catalog}
                 delay={0.1}
                 reduceMotion={reduceMotion === true}
               />
@@ -145,6 +166,7 @@ export function MatchSetup() {
                 onDeck={setDeckB}
                 bot={botB}
                 onBot={setBotB}
+                catalog={catalog}
                 delay={0.16}
                 reduceMotion={reduceMotion === true}
               />
@@ -232,6 +254,7 @@ interface SeatColumnProps {
   onDeck: (id: string) => void
   bot: BotKind
   onBot: (kind: BotKind) => void
+  catalog: readonly CardDef[]
   delay: number
   reduceMotion: boolean
 }
@@ -241,7 +264,8 @@ interface SeatColumnProps {
  * `design/theme.css`), então tudo dentro da coluna herda a cor certa sem que
  * um único componente filho saiba de qual lado está.
  */
-function SeatColumn({ seat, decks, deck, onDeck, bot, onBot, delay, reduceMotion }: SeatColumnProps) {
+function SeatColumn({ seat, decks, deck, onDeck, bot, onBot, catalog, delay, reduceMotion }: SeatColumnProps) {
+  const selectedDeck = decks.find((entry) => entry.id === deck) ?? decks[0]
   return (
     <motion.fieldset
       data-seat={seat}
@@ -259,7 +283,7 @@ function SeatColumn({ seat, decks, deck, onDeck, bot, onBot, delay, reduceMotion
         <span className="caps text-hud text-ink-muted">Jogador {seat + 1}</span>
       </div>
 
-      <div className="metal-well mt-3 max-h-[214px] overflow-y-auto rounded-lg p-1.5" role="radiogroup" aria-label={`Baralho do jogador ${seat + 1}`}>
+      <div className="metal-well mt-3 max-h-[168px] [@media(max-height:900px)]:max-h-[128px] overflow-y-auto rounded-lg p-1.5" role="radiogroup" aria-label={`Baralho do jogador ${seat + 1}`}>
         {decks.map((entry) => (
           <DeckRow
             key={entry.id}
@@ -283,10 +307,12 @@ function SeatColumn({ seat, decks, deck, onDeck, bot, onBot, delay, reduceMotion
             </Segment>
           ))}
         </div>
-        <p className="mt-2 min-h-8 text-[12px] leading-4 text-ink-faint">
+        <p className="mt-2 text-[12px] leading-4 text-ink-faint">
           {BOTS.find((option) => option.kind === bot)?.blurb}
         </p>
       </div>
+
+      <PlaymatPicker seat={seat} deck={selectedDeck} catalog={catalog} />
     </motion.fieldset>
   )
 }

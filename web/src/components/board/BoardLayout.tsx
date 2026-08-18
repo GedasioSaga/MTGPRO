@@ -1,36 +1,49 @@
 import { useMemo } from 'react'
 import { useMatchStore } from '../../state/matchStore'
-import type { PlayerView } from '../../types/protocol'
+import { usePlaymatStore } from '../../state/playmatStore'
+import type { CardView, GameView, ObjectId, PlayerView } from '../../types/protocol'
 import { ArenaFrame } from './ArenaFrame'
 import { BattlefieldRow } from './BattlefieldRow'
+import { LibraryIcon } from './BoardIcons'
 import { ExilePile } from './ExilePile'
 import { GraveyardPile } from './GraveyardPile'
 import { HandRow } from './HandRow'
+import { MatZone, asSeat } from './MatZone'
 import { PhaseTrack } from './PhaseTrack'
-import { PlayerBar } from './PlayerBar'
+import { PlayerBar, PlayerLife } from './PlayerBar'
+import { Playmat } from './Playmat'
 import { StackPanel } from './StackPanel'
 import { TargetArrows } from './TargetArrows'
 import { CombatSeam } from './CombatSeam'
+import { ZonePile } from './ZonePile'
 import { buildCombatPlan, totalSlots } from './combatPlan'
+import type { CombatPlan } from './combatPlan'
 import { cssVars, useBoardScale } from './boardVisuals'
 
 /** Largura de uma coluna de combate a 1920x1080, antes de `--board-scale`. */
-const LANE_WIDTH = 178
-/** Faixa útil do tapete para as raias caberem sem espremer as bordas. */
-const RAIL_BUDGET = 1180
+const LANE_WIDTH = 168
+/** Largura útil da zona CAMPO DE BATALHA impressa, para as raias caberem nela. */
+const RAIL_BUDGET = 1000
 
 /**
- * A mesa inteira.
+ * A mesa: um tampo com DOIS PLAYMATS apoiados nele, um por jogador.
  *
- * Do topo para a base: borda do oponente (nome + vida), mão dele, o campo
- * dele, a costura central, o campo de baixo, a mão de baixo, a borda de baixo
- * e o rodapé de telemetria (fases + pilha). Cada campo é um par de zonas
- * DESENHADAS na mesa — batalha e terrenos —, visíveis mesmo vazias, porque
- * mesa sem zona marcada é fundo, não tabuleiro.
+ * O tabuleiro deixou de ser uma grade de caixas e virou o objeto físico que se
+ * usa numa partida de verdade. As zonas não são mais sinalizadas pela interface
+ * — elas estão SERIGRAFADAS no tapete, e cada jogador escolhe a arte do dele.
+ * Isso resolve os dois becos das rodadas anteriores de uma vez: linha impressa
+ * não lê como painel de controle, porque não é interface, é o mat; e a arte do
+ * mat preenche a mesa sem precisar de asset pintado próprio.
  *
- * O espelhamento do lado de cima é na ORDEM das fileiras, nunca em rotação de
- * carta. O tamanho de tudo sai de `--board-scale` (ver `useBoardScale`), então
- * 1920x1080 e 1280x800 são a mesma composição em dois tamanhos.
+ * Consequência de arquitetura: quem manda na posição da carta passou a ser a
+ * geometria de `playmatZones`, não o grid do CSS. O grid só empilha as bandas
+ * (borda, mão, mat, costura, mat, mão, borda); dentro do mat, cada carta é
+ * ancorada na mesma caixa normalizada de onde `Playmat` tira o contorno — então
+ * carta e linha impressa coincidem por construção, sem medição.
+ *
+ * O espelhamento do lado de cima é na GEOMETRIA do mat, nunca em rotação de
+ * elemento: o tapete do oponente está girado 180° como na mesa, mas o texto
+ * continua em pé, porque quem assiste lê a tela sempre na mesma orientação.
  */
 export function BoardLayout() {
   const view = useMatchStore((s) => s.view)
@@ -73,9 +86,8 @@ export function BoardLayout() {
         '--combat-col': `calc(${lane}px * var(--board-scale, 1))`,
       })}
     >
-      {/* A arena é o objeto físico atrás de tudo. Ela mora na MESMA grade das
-          fileiras, então cada patamar cai exatamente sobre a faixa que ele
-          sustenta, sem medição em JS. */}
+      {/* O móvel embaixo dos dois tapetes. Discreto de propósito: o objeto que
+          o olho deve encontrar primeiro agora é o mat. */}
       <ArenaFrame />
 
       <div className="board-area board-area--foe-strip" data-seat={top.id}>
@@ -92,44 +104,13 @@ export function BoardLayout() {
         />
       </div>
 
-      <div className="board-area board-area--foe-zones">
-        <ExilePile
-          ids={view.exiles[top.id] ?? []}
-          cards={cards}
-          count={top.exileCount}
-          side="top"
-        />
-        <GraveyardPile
-          ids={view.graveyards[top.id] ?? []}
-          cards={cards}
-          count={top.graveyardCount}
-          side="top"
-        />
-      </div>
-
-      <div className="board-area board-area--foe-field" data-seat={top.id}>
-        <BattlefieldRow
-          player={top.id}
-          side="top"
-          permanents={view.battlefield[top.id] ?? []}
-          cards={cards}
-          plan={plan}
-        />
-      </div>
+      <SeatMat player={top} side="top" view={view} cards={cards} plan={plan} />
 
       <div className="board-area board-area--seam" aria-hidden="true">
         <CombatSeam plan={plan} cards={cards} attackerSide={attackerSide} />
       </div>
 
-      <div className="board-area board-area--own-field" data-seat={bottom.id}>
-        <BattlefieldRow
-          player={bottom.id}
-          side="bottom"
-          permanents={view.battlefield[bottom.id] ?? []}
-          cards={cards}
-          plan={plan}
-        />
-      </div>
+      <SeatMat player={bottom} side="bottom" view={view} cards={cards} plan={plan} />
 
       <div className="board-area board-area--own-hand">
         <HandRow
@@ -138,21 +119,6 @@ export function BoardLayout() {
           cards={cards}
           side="bottom"
           count={bottom.handCount}
-        />
-      </div>
-
-      <div className="board-area board-area--own-zones">
-        <GraveyardPile
-          ids={view.graveyards[bottom.id] ?? []}
-          cards={cards}
-          count={bottom.graveyardCount}
-          side="bottom"
-        />
-        <ExilePile
-          ids={view.exiles[bottom.id] ?? []}
-          cards={cards}
-          count={bottom.exileCount}
-          side="bottom"
         />
       </div>
 
@@ -173,6 +139,78 @@ export function BoardLayout() {
       </div>
 
       <TargetArrows view={view} plan={plan} />
+    </div>
+  )
+}
+
+interface SeatMatProps {
+  player: PlayerView
+  side: 'top' | 'bottom'
+  view: GameView
+  cards: Record<ObjectId, CardView>
+  plan: CombatPlan
+}
+
+/**
+ * Um tapete e tudo que pousa nele.
+ *
+ * `Playmat` imprime as linhas; os filhos seguintes são as cartas de verdade,
+ * ancoradas nas mesmas caixas. O tapete é o bloco de contenção dos dois, e é
+ * essa coincidência — e não um número copiado — que garante o alinhamento.
+ */
+function SeatMat({ player, side, view, cards, plan }: SeatMatProps) {
+  const seat = asSeat(player.id)
+  // A arte é escolha do jogador na tela de abertura; o tapete só a consome.
+  const artUrl = usePlaymatStore((s) => s.art[seat])
+  const deckColors = usePlaymatStore((s) => s.tint[seat])
+
+  return (
+    <div className={`board-area board-area--mat board-area--mat-${side}`}>
+      <div className="playmat-seat" data-seat={player.id} data-side={side}>
+        <Playmat seat={seat} artUrl={artUrl} deckColors={deckColors} />
+
+        <BattlefieldRow
+          player={player.id}
+          seat={seat}
+          permanents={view.battlefield[player.id] ?? []}
+          cards={cards}
+          plan={plan}
+        />
+
+        <MatZone seat={seat} zone="library" className="mat-zone--pile">
+          <ZonePile
+            label="deck"
+            ids={[]}
+            cards={cards}
+            count={player.libraryCount}
+            tone="library"
+            side={side}
+            icon={<LibraryIcon className="size-5" />}
+          />
+        </MatZone>
+
+        <MatZone seat={seat} zone="graveyard" className="mat-zone--pile">
+          <GraveyardPile
+            ids={view.graveyards[player.id] ?? []}
+            cards={cards}
+            count={player.graveyardCount}
+            side={side}
+          />
+        </MatZone>
+
+        <MatZone seat={seat} zone="exile" className="mat-zone--pile">
+          <ExilePile
+            ids={view.exiles[player.id] ?? []}
+            cards={cards}
+            count={player.exileCount}
+            side={side}
+          />
+        </MatZone>
+
+        <MatZone seat={seat} zone="life" className="mat-zone--life">
+          <PlayerLife player={player} />
+        </MatZone>
+      </div>
     </div>
   )
 }

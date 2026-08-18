@@ -9,6 +9,36 @@ export const MATCH_SOCKET_URL: string = API_BASE.replace(/^http/, 'ws') + '/ws/m
 export interface DeckInfo {
   id: string
   name: string
+  /**
+   * Identidade de cor em letras WUBRG. Opcional porque só o servidor a manda
+   * (`DeckSummary.colors`) — as listas embutidas de fallback podem omitir.
+   */
+  colorIdentity?: readonly string[]
+}
+
+/** `Color` do motor chega por extenso; a UI trabalha com a letra. */
+const COLOR_LETTER: Readonly<Record<string, string>> = {
+  white: 'W',
+  blue: 'U',
+  black: 'B',
+  red: 'R',
+  green: 'G',
+  w: 'W',
+  u: 'U',
+  b: 'B',
+  r: 'R',
+  g: 'G',
+}
+
+function normalizeColors(value: unknown): readonly string[] | undefined {
+  const raw: unknown[] = typeof value === 'string' ? [...value] : Array.isArray(value) ? value : []
+  const letters: string[] = []
+  for (const item of raw) {
+    if (typeof item !== 'string') continue
+    const letter = COLOR_LETTER[item.toLowerCase()]
+    if (letter !== undefined && !letters.includes(letter)) letters.push(letter)
+  }
+  return letters.length > 0 ? letters : undefined
 }
 
 const EMPTY_TYPE_LINE: TypeLine = { supertypes: [], types: [], subtypes: [] }
@@ -37,7 +67,7 @@ export async function fetchDecks(signal?: AbortSignal): Promise<DeckInfo[]> {
     const id = typeof record.id === 'string' ? record.id : null
     if (id === null) continue
     const name = typeof record.name === 'string' ? record.name : prettifyDeckId(id)
-    decks.push({ id, name })
+    decks.push({ id, name, colorIdentity: normalizeColors(record.colors) })
   }
   return decks
 }

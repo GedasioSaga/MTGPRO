@@ -1,16 +1,9 @@
 import clsx from 'clsx'
-import type { ReactNode } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import type { PlayerView } from '../../types/protocol'
 import { hashString, withAlpha } from '../../design/color'
-import {
-  COLORLESS_HEX,
-  MANA_HEX,
-  cssVars,
-  initialsOf,
-  seatAccent,
-} from './boardVisuals'
-import { ExileIcon, GraveyardIcon, HandIcon, LibraryIcon, PoisonIcon } from './BoardIcons'
+import { COLORLESS_HEX, MANA_HEX, cssVars, initialsOf, seatAccent } from './boardVisuals'
+import { HandIcon, PoisonIcon } from './BoardIcons'
 
 const STARTING_LIFE = 20
 const LETHAL_POISON = 10
@@ -23,17 +16,16 @@ export interface PlayerBarProps {
 }
 
 /**
- * Borda da mesa de um jogador.
+ * Faixa fina do jogador, FORA do tapete.
  *
- * Deixou de ser coluna lateral: quem senta na mesa senta numa BORDA, então
- * nome, retrato e vida vivem na faixa superior (oponente) e inferior (jogador
- * de baixo), à altura de quem olha. Os contadores de zona ficam na cauda da
- * faixa, pequenos e apagados — são consulta, não manchete.
+ * O que é zona de jogo mudou de endereço: vida, deck, cemitério e exílio agora
+ * moram nos quadros serigrafados do mat. Aqui fica só o que não é zona — quem
+ * está jogando, se é a vez dele, quanta mana flutua e quantos terrenos já
+ * caíram. Por isso a faixa perdeu altura: ela é a beira da mesa, não um HUD.
  */
 export function PlayerBar({ player, side, underFire = 0 }: PlayerBarProps) {
   const accent = seatAccent(player.id)
   const reduceMotion = useReducedMotion()
-  const critical = player.life <= 5 && !player.hasLost
 
   return (
     <aside
@@ -42,18 +34,15 @@ export function PlayerBar({ player, side, underFire = 0 }: PlayerBarProps) {
       style={cssVars({ '--seat': accent, '--seat-soft': withAlpha(accent, 0.2) })}
       aria-label={`${player.name}: ${player.life} de vida`}
     >
-      {/* Núcleo centralizado: retrato e vida ficam no eixo do tapete, que é
-          para onde o vetor de dano aponta. Nome no canto obriga o vetor a
-          atravessar a mesa na diagonal. */}
-      <div className="player-strip__core">
-        <Portrait player={player} accent={accent} underFire={underFire} />
+      <Portrait player={player} accent={accent} underFire={underFire} />
 
-        <LifeReadout
-          player={player}
-          accent={accent}
-          critical={critical}
-          pulse={critical && !reduceMotion}
-        />
+      <div className="player-strip__name-block">
+        <p className="player-strip__name">{player.name}</p>
+        <div className="player-strip__tags">
+          {player.isActive ? <Badge accent={accent}>turno</Badge> : null}
+          {player.hasPriority ? <Badge accent={accent}>prioridade</Badge> : null}
+          {player.hasLost ? <span className="player-strip__lost">derrotado</span> : null}
+        </div>
       </div>
 
       <div className="player-strip__meters">
@@ -80,27 +69,43 @@ export function PlayerBar({ player, side, underFire = 0 }: PlayerBarProps) {
 
         <LandGauge player={player} />
 
-        <div className="player-strip__counts">
-          <CountTile label="Mão" value={player.handCount} icon={<HandIcon className="size-3.5" />} />
-          <CountTile
-            label="Biblioteca"
-            value={player.libraryCount}
-            icon={<LibraryIcon className="size-3.5" />}
-            warn={player.libraryCount <= 3}
-          />
-          <CountTile
-            label="Cemitério"
-            value={player.graveyardCount}
-            icon={<GraveyardIcon className="size-3.5" />}
-          />
-          <CountTile
-            label="Exílio"
-            value={player.exileCount}
-            icon={<ExileIcon className="size-3.5" />}
-          />
+        <div className="player-strip__count" title={`Mão: ${player.handCount}`}>
+          <span aria-hidden="true">
+            <HandIcon className="size-3.5" />
+          </span>
+          <span className="player-strip__count-value">{player.handCount}</span>
+          <span className="sr-only">cartas na mão</span>
         </div>
       </div>
     </aside>
+  )
+}
+
+/**
+ * Total de vida pousado no quadro VIDA impresso no mat.
+ *
+ * É o mesmo nó que a camada de efeitos e as setas de alvo procuram
+ * (`data-fx-player`, `data-player-id`): o dano passa a apontar para o lugar da
+ * mesa onde a vida está escrita, e não para uma caixa flutuante na borda.
+ */
+export function PlayerLife({ player }: { player: PlayerView }) {
+  const accent = seatAccent(player.id)
+  const reduceMotion = useReducedMotion()
+  const critical = player.life <= 5 && !player.hasLost
+  const ratio = Math.max(0, Math.min(1, player.life / STARTING_LIFE))
+  const color = critical ? '#f2685e' : accent
+
+  return (
+    <div
+      data-player-id={player.id}
+      data-fx-player={player.id}
+      className={clsx('mat-life', critical && !reduceMotion && 'board-life-pulse')}
+      style={cssVars({ '--life': color, '--life-fill': `${ratio * 100}%` })}
+      aria-label={`${player.life} de vida`}
+    >
+      <span className="mat-life__value">{player.life}</span>
+      <span className="mat-life__bar" aria-hidden="true" />
+    </div>
   )
 }
 
@@ -116,40 +121,32 @@ function Portrait({
   const hash = hashString(player.name)
 
   return (
-    <>
-      <div className="player-strip__name-block">
-        <p className="player-strip__name">{player.name}</p>
-        <div className="player-strip__tags">
-          {player.isActive ? <Badge accent={accent}>turno</Badge> : null}
-          {player.hasPriority ? <Badge accent={accent}>prioridade</Badge> : null}
-          {player.hasLost ? <span className="player-strip__lost">derrotado</span> : null}
-        </div>
-      </div>
-
+    <div
+      className={clsx(
+        'player-strip__avatar-wrap',
+        underFire > 0 && 'player-strip__avatar-wrap--hit',
+      )}
+      data-player-portrait={player.id}
+    >
       <div
-        className={clsx('player-strip__avatar-wrap', underFire > 0 && 'player-strip__avatar-wrap--hit')}
-        data-player-portrait={player.id}
+        className="player-strip__avatar"
+        style={{
+          background: `conic-gradient(from ${hash % 360}deg, ${withAlpha(accent, 0.85)}, #1a1f2e 45%, ${withAlpha(accent, 0.5)} 78%, #1a1f2e)`,
+          boxShadow: player.isActive
+            ? `0 0 0 2px ${withAlpha(accent, 0.75)}, 0 0 22px ${withAlpha(accent, 0.35)}`
+            : 'none',
+        }}
       >
-        <div
-          className="player-strip__avatar"
-          style={{
-            background: `conic-gradient(from ${hash % 360}deg, ${withAlpha(accent, 0.85)}, #1a1f2e 45%, ${withAlpha(accent, 0.5)} 78%, #1a1f2e)`,
-            boxShadow: player.isActive
-              ? `0 0 0 2px ${withAlpha(accent, 0.75)}, 0 0 22px ${withAlpha(accent, 0.35)}`
-              : 'none',
-          }}
-        >
-          <span className="player-strip__initials">{initialsOf(player.name)}</span>
-        </div>
-        {player.hasPriority ? (
-          <span
-            className="player-strip__dot board-priority-dot"
-            style={{ background: accent }}
-            title="Tem prioridade"
-          />
-        ) : null}
+        <span className="player-strip__initials">{initialsOf(player.name)}</span>
       </div>
-    </>
+      {player.hasPriority ? (
+        <span
+          className="player-strip__dot board-priority-dot"
+          style={{ background: accent }}
+          title="Tem prioridade"
+        />
+      ) : null}
+    </div>
   )
 }
 
@@ -165,60 +162,6 @@ function Badge({ accent, children }: { accent: string; children: string }) {
     >
       {children}
     </span>
-  )
-}
-
-function LifeReadout({
-  player,
-  accent,
-  critical,
-  pulse,
-}: {
-  player: PlayerView
-  accent: string
-  critical: boolean
-  pulse: boolean
-}) {
-  const ratio = Math.max(0, Math.min(1, player.life / STARTING_LIFE))
-  const color = critical ? '#f2685e' : accent
-
-  return (
-    <div
-      data-player-id={player.id}
-      data-fx-player={player.id}
-      className={clsx('player-strip__life', pulse && 'board-life-pulse')}
-      style={cssVars({
-        '--life': color,
-        '--life-fill': `${ratio * 100}%`,
-      })}
-    >
-      <span className="player-strip__life-label">vida</span>
-      <span className="player-strip__life-value">{player.life}</span>
-      <span className="player-strip__life-bar" aria-hidden="true" />
-    </div>
-  )
-}
-
-function CountTile({
-  label,
-  value,
-  icon,
-  warn,
-}: {
-  label: string
-  value: number
-  icon: ReactNode
-  warn?: boolean
-}) {
-  return (
-    <div
-      className={clsx('player-strip__count', warn && 'player-strip__count--warn')}
-      title={`${label}: ${value}`}
-    >
-      <span aria-hidden="true">{icon}</span>
-      <span className="player-strip__count-value">{value}</span>
-      <span className="sr-only">{label}</span>
-    </div>
   )
 }
 
@@ -251,8 +194,10 @@ function ManaPool({ player }: { player: PlayerView }) {
 function LandGauge({ player }: { player: PlayerView }) {
   const max = Math.max(1, player.maxLandsPerTurn)
   return (
-    <div className="player-strip__lands" title={`Terrenos jogados: ${player.landsPlayedThisTurn}/${max}`}>
-      <span className="player-strip__lands-label">terreno</span>
+    <div
+      className="player-strip__lands"
+      title={`Terrenos jogados: ${player.landsPlayedThisTurn}/${max}`}
+    >
       {Array.from({ length: max }, (_, index) => (
         <span
           key={index}

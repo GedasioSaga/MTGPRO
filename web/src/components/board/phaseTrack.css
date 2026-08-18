@@ -1,0 +1,317 @@
+/*
+ * Regua de fases da costura central.
+ *
+ * Nao e barra de progresso: e uma faixa de metal escovado EMBUTIDA na mesa, com
+ * os sete marcos gravados. Por isso o relevo vem de sombra interna (o poco) e o
+ * marco aceso e um refletor dentro do poco — nao um retangulo pintado por cima.
+ *
+ * Todo dimensionamento sai de --rail-h, entao um numero so escala tipografia,
+ * espacamento e altura juntos.
+ */
+
+.phase-rail {
+  --rail-h: 34px;
+  --rail-pad: calc(var(--rail-h) * 0.3);
+
+  container-type: inline-size;
+  container-name: phase-rail;
+
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: var(--rail-pad);
+  min-height: var(--rail-h);
+  padding: 0 var(--rail-pad);
+  isolation: isolate;
+
+  font-family: var(--font-display);
+  font-size: clamp(8.5px, 0.62cqw + 4.2px, 12.5px);
+  letter-spacing: 0.16em;
+  line-height: 1;
+  color: var(--color-ink-muted);
+  -webkit-font-smoothing: antialiased;
+
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  background-color: var(--color-surface-metal);
+  background-image:
+    var(--mat-brushed),
+    linear-gradient(
+      180deg,
+      var(--color-surface-raised) 0%,
+      var(--color-surface-metal) 46%,
+      #10141d 100%
+    );
+  background-size:
+    var(--mat-brushed-tile) var(--mat-brushed-tile),
+    auto;
+  background-blend-mode: soft-light, normal;
+  box-shadow:
+    inset 0 1px 0 var(--color-edge-gloss),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.6),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.3),
+    0 12px 30px -18px rgba(0, 0, 0, 0.95);
+}
+
+/*
+ * Veu na cor do jogador ativo. Fica no ::before e nao no background para poder
+ * trocar de cor sem reassar o ladrilho de metal a cada turno.
+ */
+.phase-rail::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(180deg, var(--rail-accent-veil) 0%, transparent 62%);
+  transition: background 320ms var(--ease-standard);
+}
+
+/* --- cartucho do turno -------------------------------------------------- */
+
+.phase-rail__turn {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--rail-h) * 0.14);
+  flex: 0 0 auto;
+  padding-right: var(--rail-pad);
+  border-right: 1px solid rgba(0, 0, 0, 0.5);
+  box-shadow: 1px 0 0 var(--color-edge-hair);
+}
+
+.phase-rail__turn-word {
+  font-family: var(--font-sans);
+  font-size: 0.78em;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+}
+
+.phase-rail__turn-number {
+  font-size: 1.28em;
+  letter-spacing: 0.02em;
+  color: var(--color-ink-strong);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+}
+
+/* Cunha gravada apontando para o lado de quem esta jogando. */
+.phase-rail__turn-arrow {
+  width: 0;
+  height: 0;
+  border-left: calc(var(--rail-h) * 0.13) solid transparent;
+  border-right: calc(var(--rail-h) * 0.13) solid transparent;
+  filter: drop-shadow(0 0 4px var(--rail-accent-glow));
+}
+
+.phase-rail[data-seat='0'] .phase-rail__turn-arrow {
+  border-top: calc(var(--rail-h) * 0.17) solid var(--rail-accent);
+}
+
+.phase-rail[data-seat='1'] .phase-rail__turn-arrow {
+  border-bottom: calc(var(--rail-h) * 0.17) solid var(--rail-accent);
+}
+
+/* --- marcos ------------------------------------------------------------- */
+
+.phase-rail__marks {
+  display: grid;
+  /* Combate reserva a largura das tres batidas SEMPRE: e o que garante que a
+     expansao aconteca no lugar, sem empurrar os outros seis marcos. */
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr))
+    minmax(0, 2.6fr)
+    repeat(2, minmax(0, 1fr));
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.phase-rail__mark {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--rail-h) * 0.18);
+  min-width: 0;
+  height: 100%;
+  padding: 0 calc(var(--rail-h) * 0.1);
+  white-space: nowrap;
+  transition:
+    color 260ms var(--ease-standard),
+    opacity 260ms var(--ease-standard);
+}
+
+/* Traco gravado entre marcos: sulco escuro mais brilho de 1px, nunca uma linha so. */
+.phase-rail__mark + .phase-rail__mark::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 26%;
+  bottom: 26%;
+  border-left: 1px solid rgba(0, 0, 0, 0.45);
+  box-shadow: 1px 0 0 var(--color-edge-hair);
+}
+
+.phase-rail__mark[data-state='next'] {
+  color: var(--color-ink-faint);
+  opacity: 0.4;
+}
+
+.phase-rail__mark[data-state='done'] {
+  color: var(--color-ink-muted);
+  opacity: 0.7;
+}
+
+.phase-rail__mark[data-state='now'] {
+  color: var(--rail-accent-bright);
+  opacity: 1;
+}
+
+/*
+ * Refletor do marco atual. Existe em todos e so acende no atual, porque
+ * transicao de opacidade num elemento que ja esta no DOM e a unica forma de
+ * fazer a luz atravessar a regua sem reflow.
+ */
+.phase-rail__lit {
+  position: absolute;
+  inset: 8% 2%;
+  z-index: -1;
+  border-radius: 999px;
+  opacity: 0;
+  background:
+    radial-gradient(ellipse at 50% 120%, var(--rail-accent-glow) 0%, transparent 72%),
+    var(--rail-accent-wash);
+  box-shadow:
+    inset 0 0 0 1px var(--rail-accent-veil),
+    inset 0 -1px 0 var(--rail-accent-glow);
+  transition: opacity 280ms var(--ease-standard);
+}
+
+.phase-rail__mark[data-state='now'] .phase-rail__lit {
+  opacity: 1;
+}
+
+.phase-rail__name {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.phase-rail__mark[data-state='now'] .phase-rail__name {
+  text-shadow: 0 0 10px var(--rail-accent-glow);
+}
+
+.phase-rail__name-short {
+  display: none;
+}
+
+/* --- batidas do combate ------------------------------------------------- */
+
+.phase-rail__combat {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--rail-h) * 0.08);
+  padding: calc(var(--rail-h) * 0.09) calc(var(--rail-h) * 0.16);
+}
+
+/*
+ * O poco que "abre" sob as batidas. Quem escala e o poco, nunca o texto:
+ * escalar glifo achata a letra e denuncia a animacao.
+ */
+.phase-rail__combat::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  opacity: 0;
+  transform: scaleX(0.62);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.2));
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.8),
+    inset 0 -1px 0 var(--color-edge-hair);
+  transition:
+    opacity 260ms var(--ease-standard),
+    transform 260ms var(--ease-out);
+}
+
+.phase-rail__combat[data-open='true']::before {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.phase-rail__sub {
+  /* Largura travada: as tres batidas tem tres letras e o marco nunca respira. */
+  min-width: 3.4ch;
+  text-align: center;
+  font-family: var(--font-sans);
+  font-size: 0.76em;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--color-ink-faint);
+  opacity: 0.28;
+  transition:
+    color 220ms var(--ease-standard),
+    opacity 220ms var(--ease-standard),
+    transform 220ms var(--ease-out);
+}
+
+.phase-rail__sub[data-state='next'] {
+  opacity: 0.4;
+}
+
+.phase-rail__sub[data-state='done'] {
+  color: var(--color-ink-muted);
+  opacity: 0.75;
+}
+
+.phase-rail__sub[data-state='now'] {
+  color: var(--rail-accent-bright);
+  opacity: 1;
+  transform: scale(1.14);
+  text-shadow: 0 0 8px var(--rail-accent-glow);
+}
+
+/* --- regua estreita ----------------------------------------------------- */
+
+/*
+ * Abaixo desta largura o rotulo longo viraria "MAIN…". Trocar pela abreviacao
+ * de tres letras preserva a palavra; reticencia destroi.
+ */
+@container phase-rail (max-width: 660px) {
+  .phase-rail {
+    letter-spacing: 0.1em;
+  }
+
+  .phase-rail__name-long {
+    display: none;
+  }
+
+  .phase-rail__name-short {
+    display: inline;
+  }
+
+  .phase-rail__turn-word {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phase-rail::before,
+  .phase-rail__mark,
+  .phase-rail__lit,
+  .phase-rail__combat::before,
+  .phase-rail__sub {
+    transition: none;
+  }
+
+  .phase-rail__combat::before {
+    transform: none;
+  }
+
+  .phase-rail__sub[data-state='now'] {
+    transform: none;
+  }
+}

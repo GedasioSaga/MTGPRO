@@ -3,9 +3,10 @@ import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import type { CardView, ObjectId } from '../../types/protocol'
+import { CardBack } from './CardBack'
 import { CardSlot } from './CardSlot'
 
-export type ZoneTone = 'grave' | 'exile'
+export type ZoneTone = 'grave' | 'exile' | 'library'
 
 export interface ZonePileProps {
   label: string
@@ -23,15 +24,22 @@ export interface ZonePileProps {
 const DEPTH_LAYERS = 3
 
 /**
- * Pilha de zona fechada (cemitério, exílio). Fechada ela é só espessura e
- * número — abrir é ação deliberada, porque em partida automática o conteúdo
- * quase nunca importa, mas quando importa importa inteiro.
+ * Pilha pousada no quadro impresso do mat (DECK, CEMITÉRIO, EXÍLIO).
+ *
+ * O rótulo não aparece aqui: ele está IMPRESSO no tapete, e repetir a palavra
+ * dentro do quadro devolveria a caixa de interface que o mat veio tirar. Sobra
+ * o que é dado vivo — espessura da pilha, carta do topo e contagem. Abrir é
+ * ação deliberada: em partida automática o conteúdo quase nunca importa, mas
+ * quando importa importa inteiro.
  */
 export function ZonePile({ label, ids, cards, count, tone, icon, side }: ZonePileProps) {
   const [open, setOpen] = useState(false)
   const reduceMotion = useReducedMotion()
   const sheetId = useId()
   const empty = count === 0
+  // O deck é fechado por definição: não há o que abrir sem revelar informação
+  // que o jogo esconde.
+  const browsable = tone !== 'library' && !empty
 
   useEffect(() => {
     if (!open) return
@@ -43,8 +51,8 @@ export function ZonePile({ label, ids, cards, count, tone, icon, side }: ZonePil
   }, [open])
 
   useEffect(() => {
-    if (empty) setOpen(false)
-  }, [empty])
+    if (!browsable) setOpen(false)
+  }, [browsable])
 
   const topId = ids.length > 0 ? ids[ids.length - 1] : null
   const topCard = topId === null ? null : (cards[topId] ?? null)
@@ -58,7 +66,7 @@ export function ZonePile({ label, ids, cards, count, tone, icon, side }: ZonePil
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-controls={sheetId}
-        disabled={empty}
+        disabled={!browsable}
         title={`${label}: ${count} carta(s)`}
       >
         <span className="zone-pile__well">
@@ -70,24 +78,12 @@ export function ZonePile({ label, ids, cards, count, tone, icon, side }: ZonePil
               aria-hidden="true"
             />
           ))}
-          {topCard === null ? (
-            <span className="zone-pile__icon" aria-hidden="true">
-              {icon}
-            </span>
-          ) : (
-            <CardSlot
-              id={topCard.id}
-              card={topCard}
-              size="small"
-              scale={0.58}
-              className="zone-pile__top"
-            />
-          )}
+          <PileFace tone={tone} card={topCard} icon={icon} label={label} empty={empty} />
         </span>
-        <span className="zone-pile__meta">
-          <span className="zone-pile__label">{label}</span>
-          <span className="zone-pile__count">{count}</span>
+        <span className="zone-pile__count" aria-hidden="true">
+          {count}
         </span>
+        <span className="sr-only">{`${label}: ${count} cartas`}</span>
       </button>
 
       <AnimatePresence>
@@ -117,9 +113,7 @@ export function ZonePile({ label, ids, cards, count, tone, icon, side }: ZonePil
             <div className="zone-pile__grid">
               {[...ids].reverse().map((id) => {
                 const card = cards[id] ?? null
-                return (
-                  <CardSlot key={id} id={id} card={card} size="small" scale={0.92} />
-                )
+                return <CardSlot key={id} id={id} card={card} size="small" scale={0.92} />
               })}
             </div>
           </motion.div>
@@ -127,4 +121,38 @@ export function ZonePile({ label, ids, cards, count, tone, icon, side }: ZonePil
       </AnimatePresence>
     </div>
   )
+}
+
+/** Topo da pilha: verso no deck, carta virada para cima no resto, vazio marca o quadro. */
+function PileFace({
+  tone,
+  card,
+  icon,
+  label,
+  empty,
+}: {
+  tone: ZoneTone
+  card: CardView | null
+  icon: ReactNode
+  label: string
+  empty: boolean
+}) {
+  if (empty) {
+    return (
+      <span className="zone-pile__icon" aria-hidden="true">
+        {icon}
+      </span>
+    )
+  }
+  if (tone === 'library') {
+    return <CardBack seed={label} className="zone-pile__back" />
+  }
+  if (card === null) {
+    return (
+      <span className="zone-pile__icon" aria-hidden="true">
+        {icon}
+      </span>
+    )
+  }
+  return <CardSlot id={card.id} card={card} size="small" scale={0.58} className="zone-pile__top" />
 }
