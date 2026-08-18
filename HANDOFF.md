@@ -86,13 +86,15 @@ veredito binario; um unico maior gap; builder recebe so o gap.
 |---|---|---|---|---|
 | 1 | A | perdemos | paineis de telemetria comem 40% da largura; o jogo virou moldura do proprio HUD | **fechado** |
 | 2 | B | perdemos | nao existe tabuleiro: cartas flutuam sobre vazio verde, sem superficie, sombra ou zonas demarcadas | **fechado** |
-| 3 | A | perdemos | cartas em jogo sao placas ilegiveis: caixa de regras branca vazia, arte espremida | em ataque (rodada 4) |
+| 3 | A | perdemos | cartas em jogo sao placas ilegiveis: caixa de regras branca vazia, arte espremida | **fechado** |
+| 4 | B | perdemos | cinco setas finas de combate cruzando meia tela; nao se le quem morre | **fechado** |
+| 5 | A | perdemos | tabuleiro e malha de caixas chapadas sem luz; o elemento de maior contraste e uma seta de anotacao | em ataque (rodada 6) |
 
 O gap MUDOU entre 1 e 2 — o da rodada 1 foi de fato fechado (o critic novo nem
 menciona paineis laterais). Nao e seca. **Seca** seria o mesmo gap apontado duas
 rodadas seguidas sem progresso; ai o protocolo manda parar e reportar o delta.
 
-Tres derrotas seguidas, com o gap MUDANDO a cada rodada (paineis -> mesa
+Cinco derrotas, com o gap MUDANDO a cada rodada (paineis -> mesa
 inexistente -> carta ilegivel). Isso e progresso real: cada gap nomeado foi de
 fato fechado. Nao e seca. Referencia honesta: no experimento original de Shumer
 o artefato NUNCA venceu a bar; o loop parou porque o humano parou. Reportar o
@@ -104,11 +106,17 @@ o turno 4, com tabuleiro quase vazio, contra um Arena em combate cheio. Isso med
 feita no turno ~12, com criaturas em campo, e o critic recebe ordem explicita de
 julgar o desenho e ignorar o estado do jogo.
 
-Rodada 4 em execucao ataca a miniatura de carta em campo: orientada a arte
-(nome no topo, arte na metade superior, P/T em selo escuro), sem caixa de regras
-em branco, com sombra e leve perspectiva. Texto completo so no hover. Carta
-virada continua girando 90 graus — o problema nunca foi a rotacao, foi o conteudo
-ilegivel dentro dela.
+**ALERTA DE OSCILACAO (rodada 5).** O gap voltou ao terreno da rodada 2 (material
+do tabuleiro) e o critic pediu para DESFAZER o que a rodada 3 fez: as molduras e
+os rotulos `CAMPO DE BATALHA`/`TERRENOS`, adicionados para "demarcar zonas", sao
+agora apontados como a causa do ar de painel de controle. A rodada 6 aplica a
+instrucao oposta: arena unica sem contorno, zona sinalizada por elevacao e
+tonalidade, sombra dando peso.
+
+Isso ainda NAO e seca pela letra do protocolo — o gap da rodada 4 (cartas
+ilegiveis) foi fechado entre as duas. Mas e o aviso que antecede a seca. **Regra
+para a proxima rodada: se o gap voltar a girar em torno de material de mesa sem
+fechar, parar e reportar o delta honesto** em vez de insistir.
 
 ## Camada Lua (adicionada 18/08, a pedido)
 
