@@ -167,49 +167,60 @@ function SeatMat({ player, side, view, cards, plan }: SeatMatProps) {
   return (
     <div className={`board-area board-area--mat board-area--mat-${side}`}>
       <div className="playmat-seat" data-seat={player.id} data-side={side}>
-        <Playmat seat={seat} artUrl={artUrl} deckColors={deckColors} />
+        {/* DOIS planos com a MESMA inclinação, e não um só.
+            Num contexto 3D único o tapete e as cartas se cruzam em
+            profundidade, e a metade do feltro que vem para a frente do
+            observador passa a ser pintada POR CIMA das criaturas — medido: a
+            faixa de batalha de baixo sumia inteira atrás do mat. Separando em
+            dois irmãos achatados, a ordem de pintura volta a ser o `z-index`,
+            que é determinístico. */}
+        <div className="mat-plane mat-plane--print">
+          <Playmat seat={seat} artUrl={artUrl} deckColors={deckColors} />
+        </div>
 
-        <BattlefieldRow
-          player={player.id}
-          seat={seat}
-          permanents={view.battlefield[player.id] ?? []}
-          cards={cards}
-          plan={plan}
-        />
-
-        <MatZone seat={seat} zone="library" className="mat-zone--pile">
-          <ZonePile
-            label="deck"
-            ids={[]}
+        <div className="mat-plane mat-plane--live">
+          <BattlefieldRow
+            player={player.id}
+            seat={seat}
+            permanents={view.battlefield[player.id] ?? []}
             cards={cards}
-            count={player.libraryCount}
-            tone="library"
-            side={side}
-            icon={<LibraryIcon className="size-5" />}
+            plan={plan}
           />
-        </MatZone>
 
-        <MatZone seat={seat} zone="graveyard" className="mat-zone--pile">
-          <GraveyardPile
-            ids={view.graveyards[player.id] ?? []}
-            cards={cards}
-            count={player.graveyardCount}
-            side={side}
-          />
-        </MatZone>
+          <MatZone seat={seat} zone="library" className="mat-zone--pile">
+            <ZonePile
+              label="deck"
+              ids={[]}
+              cards={cards}
+              count={player.libraryCount}
+              tone="library"
+              side={side}
+              icon={<LibraryIcon className="size-5" />}
+            />
+          </MatZone>
 
-        <MatZone seat={seat} zone="exile" className="mat-zone--pile">
-          <ExilePile
-            ids={view.exiles[player.id] ?? []}
-            cards={cards}
-            count={player.exileCount}
-            side={side}
-          />
-        </MatZone>
+          <MatZone seat={seat} zone="graveyard" className="mat-zone--pile">
+            <GraveyardPile
+              ids={view.graveyards[player.id] ?? []}
+              cards={cards}
+              count={player.graveyardCount}
+              side={side}
+            />
+          </MatZone>
 
-        <MatZone seat={seat} zone="life" className="mat-zone--life">
-          <PlayerLife player={player} />
-        </MatZone>
+          <MatZone seat={seat} zone="exile" className="mat-zone--pile">
+            <ExilePile
+              ids={view.exiles[player.id] ?? []}
+              cards={cards}
+              count={player.exileCount}
+              side={side}
+            />
+          </MatZone>
+
+          <MatZone seat={seat} zone="life" className="mat-zone--life">
+            <PlayerLife player={player} />
+          </MatZone>
+        </div>
       </div>
     </div>
   )

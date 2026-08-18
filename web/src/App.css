@@ -261,7 +261,7 @@
 .board-grid {
   /* Larguras de referência das cartas. No tapete elas são teto, não regra: o
      que manda lá é a ALTURA da zona impressa. */
-  --card-field: calc(150px * var(--board-scale, 1));
+  --card-field: calc(178px * var(--board-scale, 1));
   --card-land: calc(52px * var(--board-scale, 1));
   --card-other: calc(58px * var(--board-scale, 1));
   --card-hand-own: calc(62px * var(--board-scale, 1));
@@ -271,9 +271,14 @@
   --strip-h: calc(32px * var(--board-scale, 1));
   --mat-round: calc(13px * var(--board-scale, 1));
   --table-round: calc(18px * var(--board-scale, 1));
-  /* Faixa livre embaixo para a PlaybackBar flutuante não comer a mesa. Ela não
-     acompanha `--board-scale` porque a própria barra também não acompanha. */
-  --playback-reserve: 98px;
+  /* Faixa livre embaixo para a doca de reprodução RECOLHIDA. Era 98px quando a
+     barra inteira flutuava ali; agora só a pastilha fechada precisa caber, e os
+     52px devolvidos foram inteiros para a altura das cartas em jogo. */
+  --playback-reserve: 46px;
+
+  /* Ângulo do tampo. Um número só manda na inclinação do tapete e na
+     contra-rotação de tudo que está apoiado nele — ver `.mat-plane`. */
+  --mat-tilt: 16deg;
 
   position: relative;
   /* Acima da luz de arena (`.app-shell__table::after`), que é `z-index: 0`. */
@@ -371,16 +376,79 @@
    * ("...DE BATALHA", DECK atras do baralho) e um rotulo cortado nao identifica
    * zona nenhuma, que e a unica coisa que ele faz.
    */
-  --mat-label: max(8px, calc(12px * var(--board-scale, 1)));
-  --mat-label-band: calc(var(--mat-label) + 9px * var(--board-scale, 1));
+  --mat-label: max(7px, calc(10px * var(--board-scale, 1)));
+  --mat-label-band: calc(var(--mat-label) + 6px * var(--board-scale, 1));
 
   position: absolute;
   inset: 0;
   border-radius: var(--mat-round);
+  /* A distância do olho ao tampo. Curta demais e o tapete vira túnel; longa
+     demais e a inclinação some. */
+  perspective: calc(1450px * var(--board-scale, 1));
   /* Nada de `overflow: hidden`: a folha aberta de uma pilha e a carta virada
      precisam transbordar o tapete, como transbordam na mesa. O recorte da arte
      é problema do `Playmat`, que recorta dentro do próprio contorno — e a
      espessura do mat sobre o tampo também é sombra dele, não daqui. */
+}
+
+/* --------------------------------------------------------------------------
+ * A INCLINAÇÃO — a mesa vista de quem está sentado nela
+ *
+ * O tabuleiro era visto de cima, e visto de cima ele é um diagrama. Aqui o
+ * tampo gira em `rotateX` dentro de uma `perspective`: a borda distante fica
+ * mais estreita, a próxima mais larga, e o feltro impresso encurta junto.
+ *
+ * A DOBRADIÇA de cada tapete é a aresta da COSTURA — a que os dois dividem no
+ * meio da tela. Ali z = 0 nos dois, então os dois mats têm exatamente a mesma
+ * largura onde se encontram: a silhueta é UM trapézio, sem degrau no meio. Foi
+ * a única escolha de pivô testada que não produz uma cintura no meio da mesa.
+ *
+ * O que está apoiado no tapete fica DE PÉ (`.mat-zone` contra-rotaciona), senão
+ * o nome da carta seria lido em fuga. E as duas faixas de batalha ancoram essa
+ * contra-rotação NA DOBRADIÇA, não no próprio centro: rotação inversa em torno
+ * do mesmo ponto cancela a do pai matriz por matriz, então elas voltam à
+ * posição e ao tamanho exatos de antes da inclinação. É isso — e não medição —
+ * que mantém atacante e bloqueador na mesma coluna depois da perspectiva.
+ * ----------------------------------------------------------------------- */
+
+.mat-plane {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--mat-tilt));
+}
+
+/* A serigrafia deita no tampo; as cartas ficam de pé sobre ele. Dois planos
+   irmãos e achatados em vez de um contexto 3D compartilhado — assim quem pinta
+   na frente é o `z-index`, e não o sorteio de profundidade. */
+.mat-plane--print {
+  z-index: 0;
+  transform-style: flat;
+}
+
+.mat-plane--live {
+  z-index: 1;
+  pointer-events: none;
+}
+
+.mat-plane--live .mat-zone {
+  pointer-events: auto;
+}
+
+.playmat-seat[data-side="top"] {
+  perspective-origin: 50% 100%;
+}
+
+.playmat-seat[data-side="bottom"] {
+  perspective-origin: 50% 0%;
+}
+
+.playmat-seat[data-side="top"] .mat-plane {
+  transform-origin: 50% 100%;
+}
+
+.playmat-seat[data-side="bottom"] .mat-plane {
+  transform-origin: 50% 0%;
 }
 
 /* --------------------------------------------------------------------------
@@ -514,6 +582,19 @@
   pointer-events: none;
 }
 
+/*
+ * O halo gira com a carta virada.
+ *
+ * A carta gira 90° dentro do slot (`card.css`), o halo não girava, e sobrava um
+ * retângulo aceso EM PÉ ao redor de uma carta deitada — que é justamente a
+ * leitura de "contorno de seleção" que esta rodada existe para apagar. Os
+ * números são os mesmos de `.mtgc--tapped .mtgc__tilt`.
+ */
+.board-card-slot[data-tapped="true"] .board-card-slot__ring,
+.board-card-slot[data-tapped="true"] .board-card-slot__sick {
+  transform: rotate(90deg) scale(0.94);
+}
+
 .board-card-slot__sick {
   position: absolute;
   inset: 0;
@@ -538,6 +619,11 @@
   z-index: 1;
   min-width: 0;
   min-height: 0;
+  /* De pé sobre o tapete inclinado. O `transform-origin` vem de `MatZone`:
+     centro próprio nas zonas que seguem a perspectiva, dobradiça da mesa nas
+     duas faixas de batalha — que é o que devolve a elas a posição exata de
+     antes da inclinação, e com ela o pareamento de combate por coluna. */
+  transform: rotateX(calc(-1 * var(--mat-tilt)));
 }
 
 /*
@@ -595,10 +681,13 @@
  * transborda a linha. O teto existe para que duas criaturas numa mesa alta não
  * virem cartazes.
  */
+/* O teto subiu com o espaço que as faixas mortas devolveram: a criatura em
+   campo precisa de LARGURA para o nome inteiro caber na placa, e largura aqui é
+   consequência da altura (a carta é 5/7). */
 .mat-zone--battlefield .board-card-slot {
   width: auto;
   height: 100%;
-  max-height: calc(196px * var(--board-scale, 1));
+  max-height: calc(244px * var(--board-scale, 1));
 }
 
 .mat-zone--lands .board-card-slot {
@@ -627,29 +716,47 @@
   transition: transform var(--duration-base) var(--ease-standard);
 }
 
-/* Atacante avança para a costura; bloqueador segura a posição, mas acende. */
+/*
+ * Quem ataca está LEVANTADO da mesa, não selecionado.
+ *
+ * O sinal é físico: a carta sobe, a sombra abaixo dela se afasta e abre, e o
+ * papel acende. Nada de moldura colorida — contorno é o que um navegador
+ * desenha em volta de um campo em foco, e era exatamente o que fazia a mesa ler
+ * como formulário.
+ */
 .playmat-seat[data-side="bottom"] .board-creature--attacking {
-  transform: translateY(calc(-5px * var(--board-scale, 1)));
+  transform: translateY(calc(-11px * var(--board-scale, 1)));
 }
 
 .playmat-seat[data-side="top"] .board-creature--attacking {
-  transform: translateY(calc(5px * var(--board-scale, 1)));
+  transform: translateY(calc(11px * var(--board-scale, 1)));
 }
 
 .mat-row .board-creature--attacking {
   filter:
-    saturate(1.24) brightness(1.22) contrast(1.06)
-    drop-shadow(0 calc(12px * var(--board-scale, 1)) calc(16px * var(--board-scale, 1))
-      rgba(0, 0, 0, 0.68))
-    drop-shadow(0 0 calc(18px * var(--board-scale, 1)) rgba(242, 104, 94, 0.62));
+    saturate(1.2) brightness(1.24) contrast(1.05)
+    drop-shadow(0 calc(26px * var(--board-scale, 1)) calc(22px * var(--board-scale, 1))
+      rgba(0, 0, 0, 0.72))
+    drop-shadow(0 0 calc(22px * var(--board-scale, 1)) rgba(255, 230, 196, 0.34));
 }
 
+/* A elipse de contato acompanha a elevação: mais longe da carta e mais aberta,
+   que é o que o olho usa para medir altura. */
+.mat-zone .board-creature--attacking.board-card-slot::after {
+  left: -16%;
+  right: -16%;
+  bottom: calc(-24px * var(--board-scale, 1));
+  height: calc(34px * var(--board-scale, 1));
+  background: radial-gradient(50% 50% at 50% 50%, rgba(0, 0, 0, 0.82), transparent 70%);
+}
+
+/* Bloqueador segura a posição e apenas acende: ele não avançou, aparou. */
 .mat-row .board-creature--blocking {
   filter:
-    saturate(1.24) brightness(1.22) contrast(1.06)
-    drop-shadow(0 calc(12px * var(--board-scale, 1)) calc(16px * var(--board-scale, 1))
-      rgba(0, 0, 0, 0.68))
-    drop-shadow(0 0 calc(18px * var(--board-scale, 1)) rgba(111, 156, 245, 0.62));
+    saturate(1.16) brightness(1.16) contrast(1.05)
+    drop-shadow(0 calc(15px * var(--board-scale, 1)) calc(17px * var(--board-scale, 1))
+      rgba(0, 0, 0, 0.7))
+    drop-shadow(0 0 calc(20px * var(--board-scale, 1)) rgba(220, 236, 255, 0.28));
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -964,12 +1071,12 @@
    inclinação consome, não margem decorativa. */
 .board-hand--own {
   align-items: flex-end;
-  padding-bottom: calc(44px * var(--board-scale, 1));
+  padding-bottom: calc(16px * var(--board-scale, 1));
 }
 
 .board-hand--foe {
   align-items: flex-start;
-  padding-top: calc(30px * var(--board-scale, 1));
+  padding-top: calc(8px * var(--board-scale, 1));
 }
 
 .board-hand--empty {
@@ -1553,6 +1660,109 @@
 
 @media (prefers-reduced-motion: reduce) {
   .zone-pile__well {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * Doca de reprodução
+ *
+ * Fechada, é uma pastilha do tamanho do que ela informa: pausado ou rodando,
+ * turno e velocidade. Aberta — ponteiro em cima, ou foco de teclado dentro —
+ * ela sobe por cima da mesa com os controles inteiros. Os atalhos não dependem
+ * de nada disso: eles vivem na janela.
+ * ----------------------------------------------------------------------- */
+
+.playback-dock {
+  position: relative;
+}
+
+.playback-dock__tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 11px;
+  border: 1px solid var(--color-edge-hair);
+  border-radius: 999px;
+  background: rgba(10, 13, 21, 0.62);
+  color: var(--color-ink-faint);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard);
+}
+
+.playback-dock__tab:hover,
+.playback-dock__tab:focus-visible {
+  border-color: var(--color-edge-strong);
+  color: var(--color-ink-strong);
+}
+
+.playback-dock__glyph {
+  display: block;
+  width: 11px;
+  height: 11px;
+  color: var(--color-accent, #d6b26e);
+}
+
+.playback-dock__glyph svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.playback-dock__turn,
+.playback-dock__speed {
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  letter-spacing: var(--tracking-caps);
+  font-variant-numeric: tabular-nums;
+}
+
+.playback-dock__speed {
+  color: var(--color-ink-muted);
+}
+
+/* O painel inteiro: fora do fluxo, ancorado no canto, e invisível até ser
+   pedido. `visibility` junto com a opacidade para ele não continuar tabulável
+   enquanto está fechado. */
+.playback-dock__panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  width: 470px;
+  max-width: calc(100vw - 32px);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(6px);
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    transform var(--duration-base) var(--ease-standard),
+    visibility 0s linear var(--duration-base);
+}
+
+.playback-dock:hover .playback-dock__panel,
+.playback-dock:focus-within .playback-dock__panel,
+.playback-dock[data-open="true"] .playback-dock__panel {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition-delay: 0s;
+}
+
+/* Com o painel aberto a pastilha sai da frente: ela é o resumo do que já está
+   inteiro logo acima. */
+.playback-dock:hover .playback-dock__tab,
+.playback-dock:focus-within .playback-dock__tab,
+.playback-dock[data-open="true"] .playback-dock__tab {
+  opacity: 0.35;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .playback-dock__tab,
+  .playback-dock__panel {
     transition: none;
   }
 }

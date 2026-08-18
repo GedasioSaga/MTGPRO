@@ -743,30 +743,38 @@
   pointer-events: none;
 }
 
+/*
+ * Combate se sinaliza com LUZ, não com moldura.
+ *
+ * Todo estado aqui começava por `0 0 0 Npx <cor>`, que é uma linha sólida
+ * grudada na borda — exatamente o desenho que um navegador faz em volta de um
+ * campo em foco. Numa mesa com seis cartas acesas ao mesmo tempo, o tabuleiro
+ * inteiro passava a ler como formulário selecionado. Sobrou só o halo: sem
+ * raio zero, sem aresta, e com o pico de luminância no papel e não fora dele.
+ */
 .mtgc--attacking .mtgc__glow {
   box-shadow:
-    0 0 0 calc(var(--cw) * 0.016) var(--accent),
-    0 0 calc(var(--cw) * 0.16) color-mix(in srgb, var(--accent) 78%, transparent),
-    inset 0 0 calc(var(--cw) * 0.09) color-mix(in srgb, var(--accent) 45%, transparent);
+    0 0 calc(var(--cw) * 0.3) calc(var(--cw) * 0.055)
+      color-mix(in srgb, var(--accent) 34%, transparent),
+    inset 0 0 calc(var(--cw) * 0.14) rgba(255, 236, 205, 0.24);
   animation: mtgc-attack-pulse 1.5s ease-in-out infinite;
 }
 
 .mtgc--blocking .mtgc__glow {
   box-shadow:
-    0 0 0 calc(var(--cw) * 0.012) color-mix(in srgb, var(--accent) 85%, #fff),
-    0 0 calc(var(--cw) * 0.09) color-mix(in srgb, var(--accent) 55%, transparent);
+    0 0 calc(var(--cw) * 0.22) calc(var(--cw) * 0.038)
+      color-mix(in srgb, var(--accent) 26%, transparent),
+    inset 0 0 calc(var(--cw) * 0.12) rgba(226, 240, 255, 0.16);
 }
 
+/* Quem foi barrado escurece por dentro: a informação é que ele NÃO passa, e
+   escuridão diz isso melhor que mais uma luz na mesa. */
 .mtgc--blocked .mtgc__glow {
-  box-shadow:
-    0 0 0 calc(var(--cw) * 0.01) rgba(220, 220, 232, 0.55),
-    inset 0 0 calc(var(--cw) * 0.08) rgba(0, 0, 0, 0.5);
+  box-shadow: inset 0 0 calc(var(--cw) * 0.1) rgba(0, 0, 0, 0.55);
 }
 
 .mtgc--target .mtgc__halo {
-  box-shadow:
-    0 0 0 calc(var(--cw) * 0.014) rgba(150, 240, 255, 0.95),
-    0 0 calc(var(--cw) * 0.2) rgba(110, 220, 255, 0.7);
+  box-shadow: 0 0 calc(var(--cw) * 0.24) calc(var(--cw) * 0.04) rgba(120, 220, 255, 0.5);
   animation: mtgc-halo 1.35s ease-in-out infinite;
 }
 
@@ -1360,7 +1368,7 @@
 
 /* Numa pilha de terreno a carta é estreita demais para o corpo padrão; lá o
    nome ganha proporcionalmente mais corpo, senão vira risco cinza. */
-@container (width < 74px) {
+@container (width < 66px) {
   .mtgc--board .mtgc__title {
     flex: 0 0 19%;
   }

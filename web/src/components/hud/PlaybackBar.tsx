@@ -1,5 +1,5 @@
 import { clsx } from 'clsx'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { IconButton } from '../ui/IconButton'
 import { Panel } from '../ui/Panel'
@@ -18,11 +18,18 @@ const SPEED_STEPS = [
 const INSTANT_SPEED = 8
 
 /**
- * Barra de transporte da partida: pausar, avancar um evento, escolher
- * velocidade, e ver onde o turno esta na sequencia de passos. Le e escreve
- * direto em `matchStore` — nao tem estado proprio alem dos atalhos.
+ * Transporte da partida, RECOLHIDO.
+ *
+ * A barra inteira flutuando na base disputava o protagonismo com o jogo: era o
+ * segundo objeto mais claro da tela, e o jogo é o primeiro. Agora ela vive
+ * numa pastilha no canto — estado atual e nada mais — e só abre no ponteiro ou
+ * no foco de teclado. Os atalhos continuam iguais e continuam presos à janela,
+ * então pausar não depende de a barra estar aberta.
+ *
+ * Le e escreve direto em `matchStore`; o unico estado local e o de aberta.
  */
 export function PlaybackBar() {
+  const [pinned, setPinned] = useState(false)
   const playing = useMatchStore((s) => s.playing)
   const speed = useMatchStore((s) => s.speed)
   const connection = useMatchStore((s) => s.connection)
@@ -64,13 +71,32 @@ export function PlaybackBar() {
   const stepIndex = view ? Math.max(0, STEP_SEQUENCE.indexOf(view.step)) : 0
   const progress = STEP_SEQUENCE.length <= 1 ? 0 : stepIndex / (STEP_SEQUENCE.length - 1)
 
+  const speedLabel = SPEED_STEPS.find((option) => option.value === speed)?.label ?? '⚡'
+
   return (
-    <Panel
-      elevation="floating"
-      material="metal"
-      className="flex flex-col gap-2.5 rounded-xl px-4 py-3"
-      aria-label="Controles de reprodução"
-    >
+    <div className="playback-dock" data-open={pinned ? 'true' : 'false'}>
+      <button
+        type="button"
+        className="playback-dock__tab"
+        aria-expanded={pinned}
+        aria-controls="playback-panel"
+        title="Controles de reprodução"
+        onClick={() => setPinned((value) => !value)}
+      >
+        <span className="playback-dock__glyph" aria-hidden="true">
+          {playing ? <PlayIcon /> : <PauseIcon />}
+        </span>
+        <span className="playback-dock__turn">T{view?.turn ?? 0}</span>
+        <span className="playback-dock__speed">{speedLabel}</span>
+      </button>
+
+      <Panel
+        id="playback-panel"
+        elevation="floating"
+        material="metal"
+        className="playback-dock__panel flex flex-col gap-2.5 rounded-xl px-4 py-3"
+        aria-label="Controles de reprodução"
+      >
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-1.5">
           <IconButton
@@ -114,7 +140,8 @@ export function PlaybackBar() {
         <span><Kbd>→</Kbd> avança</span>
         <span><Kbd>1–4</Kbd> velocidade</span>
       </p>
-    </Panel>
+      </Panel>
+    </div>
   )
 }
 

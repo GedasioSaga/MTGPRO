@@ -363,7 +363,9 @@ function nameFit(
   const base = size === 'board' ? 12 : 15
   const budget = Math.max(8, base - symbols)
   const length = name?.length ?? 0
-  const fit = length <= budget ? 1 : Math.max(0.55, budget / length)
+  // Piso baixo de propósito: nome inteiro em corpo pequeno se lê; nome cortado
+  // em corpo grande não se lê, e "Wall of Blosso…" é assinatura de protótipo.
+  const fit = length <= budget ? 1 : Math.max(0.5, budget / length)
   return { '--name-fit': fit.toFixed(3) }
 }
 

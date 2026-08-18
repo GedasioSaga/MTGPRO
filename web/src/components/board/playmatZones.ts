@@ -70,14 +70,17 @@ export const PLAYMAT_VIEWBOX = 1000
    muito mais larga que alta: a mesma fração nos dois eixos daria uma margem
    superior grossa e uma lateral invisível. */
 const PAD_X = 0.014
-const PAD_Y = 0.05
+const PAD_Y = 0.034
 const GUTTER_X = 0.012
 const GUTTER_Y = 0.026
 
 /** Onde a coluna lateral (deck, exílio, vida, cemitério) começa. */
 const SIDEBAR_X = 0.735
-/** Divisa entre a faixa de batalha e a de terrenos. */
-const BAND_SPLIT = 0.615
+/** Divisa entre a faixa de batalha e a de terrenos.
+ *  A batalha ficou com a fatia maior porque é lá que o nome da carta precisa
+ *  caber inteiro: a carta é 5/7, então largura de leitura só vem de altura de
+ *  faixa. O terreno aguenta ser menor — ele é identificado pela arte. */
+const BAND_SPLIT = 0.7
 
 const MAIN_W = SIDEBAR_X - GUTTER_X - PAD_X
 const SIDE_COL_W = (1 - PAD_X - SIDEBAR_X - GUTTER_X) / 2
@@ -248,4 +251,51 @@ export function rectStyle(rect: NormRect): CSSProperties {
     width: pct(rect.w),
     height: pct(rect.h),
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * INCLINAÇÃO DA MESA
+ *
+ * O tapete deixou de ser visto de cima e passou a ser visto em ÂNGULO: cada mat
+ * gira em `rotateX` dentro de uma `perspective`, e a borda distante fica mais
+ * estreita que a próxima. Chapado, o tabuleiro lia como diagrama; inclinado,
+ * lê como um objeto apoiado numa mesa.
+ *
+ * A DOBRADIÇA é a borda da COSTURA — a aresta que os dois mats compartilham no
+ * meio da tela. Ali z = 0 nos dois assentos, então os dois tapetes têm
+ * exatamente a mesma largura onde se encontram e a silhueta é um trapézio
+ * contínuo, sem degrau. É a única escolha de pivô que não produz uma cintura no
+ * meio da mesa.
+ *
+ * CONSEQUÊNCIA QUE PRECISA SER NEUTRALIZADA. Com o pivô na costura, as duas
+ * faixas CAMPO DE BATALHA ficam em profundidades OPOSTAS (uma à frente, outra
+ * atrás do plano da tela), e a projeção perspectiva multiplica o x de cada uma
+ * por um fator diferente. Isso desalinharia as colunas de combate — que é o
+ * único jeito de ler quem bloqueia quem nesta mesa.
+ *
+ * A saída é aritmética, não empírica. A transformação do pai é uma rotação em
+ * torno do pivô; se o filho aplicar a rotação INVERSA com o `transform-origin`
+ * NO MESMO PIVÔ, as duas se cancelam exatamente — matriz por matriz — e o filho
+ * volta a cair na posição, no tamanho e na profundidade que teria sem
+ * inclinação nenhuma. `pivotOriginY` devolve esse ponto na caixa da própria
+ * zona, e é o que `MatZone` usa nas zonas "presas" (as duas de batalha).
+ *
+ * As demais zonas ancoram no próprio centro: elas SEGUEM a perspectiva, e é daí
+ * que vem a leitura de profundidade — o mat do oponente fica visivelmente menor
+ * que o de quem assiste.
+ * ------------------------------------------------------------------------ */
+
+/** Aresta do mat que encosta na costura, em coordenada normalizada. */
+export function seamEdgeY(seat: Seat): 0 | 1 {
+  return seat === 0 ? 0 : 1
+}
+
+/**
+ * A dobradiça vista de dentro da caixa da zona, em porcentagem da altura dela.
+ * Sai fora do intervalo 0–100% de propósito: a costura quase nunca está dentro
+ * da zona, e `transform-origin` aceita valor negativo ou acima de 100%.
+ */
+export function pivotOriginY(seat: Seat, id: PlaymatZoneId): string {
+  const rect = playmatRect(seat, id)
+  return pct((seamEdgeY(seat) - rect.y) / rect.h)
 }

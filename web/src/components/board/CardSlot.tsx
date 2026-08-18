@@ -98,21 +98,31 @@ export function CardSlot({
   )
 }
 
-/** Ataque, bloqueio e alvo legal precisam ser lidos num relance, sem hover. */
+/**
+ * Realce de combate: LUZ, não contorno.
+ *
+ * O `0 0 0 2px` de antes era literalmente o que um navegador desenha ao redor
+ * de um campo em foco, e a mesa inteira lia como formulário selecionado. Aqui
+ * sobra só o halo difuso na cor do papel, com um traço de temperatura para
+ * separar quem bate de quem apara: a carta parece ACESA, e quem está atacando
+ * também está LEVANTADA da mesa (a elevação mora em `App.css`).
+ *
+ * Morrer continua sendo vermelho e continua vencendo os dois — mas em brilho,
+ * não em moldura; a caveira já diz o resto.
+ */
 function ringFor(card: CardView | null, doomed: boolean): string | null {
   if (card === null) return null
-  // Morrer é a informação mais cara da mesa: ela vence ataque e bloqueio.
   if (doomed) {
-    return '0 0 0 3px rgba(255,72,60,0.95), 0 0 26px rgba(255,40,30,0.55)'
+    return '0 0 30px 9px rgba(255, 84, 60, 0.34)'
   }
   if (card.attacking !== null) {
-    return '0 0 0 2px rgba(242,104,94,0.85), 0 0 22px rgba(242,104,94,0.45)'
+    return '0 0 34px 11px rgba(255, 226, 184, 0.24)'
   }
   if (card.blocking.length > 0) {
-    return '0 0 0 2px rgba(111,156,245,0.85), 0 0 22px rgba(111,156,245,0.4)'
+    return '0 0 30px 9px rgba(214, 232, 255, 0.2)'
   }
   if (card.isLegalTarget) {
-    return '0 0 0 2px rgba(232,169,76,0.7), 0 0 18px rgba(232,169,76,0.35)'
+    return '0 0 24px 6px rgba(240, 206, 140, 0.18)'
   }
   return null
 }

@@ -107,6 +107,11 @@ function medallion(rect: NormRect): { cx: number; cy: number; rx: number; ry: nu
   }
 }
 
+/** Só os quadros da coluna lateral levam serigrafia de rótulo. */
+function isSlotZone(zone: PlaymatZone): boolean {
+  return zone.id !== 'battlefield' && zone.id !== 'lands'
+}
+
 function ZonePrint({ zone }: { zone: PlaymatZone }): ReactElement {
   const main = zone.id === 'battlefield' || zone.id === 'lands'
   return (
@@ -178,12 +183,15 @@ export function Playmat({
       {/* Tipografia e símbolos ficam em HTML, fora do SVG esticado: dentro dele
           a letra deformaria junto com o viewBox. É também o que permite girar a
           geometria do assento 1 sem virar o rótulo de cabeça para baixo. */}
-      {zones.map((zone) => (
+      {/* As duas BANDAS não recebem rótulo. `CAMPO DE BATALHA` e `TERRENOS` em
+          caixa alta liam como etiqueta de formulário, e com o tapete impresso e
+          a posição fixa a zona já se ensina sozinha. Os quatro quadros da
+          coluna ficam: eles passam a partida inteira vazios, e sem rótulo um
+          quadro vazio é um buraco, não uma zona. */}
+      {zones.filter(isSlotZone).map((zone) => (
         <span
           key={zone.id}
-          className={`playmat__label playmat__label--${zone.labelAnchor} playmat__label--${
-            zone.id === 'battlefield' || zone.id === 'lands' ? 'band' : 'slot'
-          }`}
+          className={`playmat__label playmat__label--${zone.labelAnchor}`}
           style={rectStyle(zone.rect)}
         >
           <span className="playmat__labelText">{zone.label}</span>

@@ -66,7 +66,7 @@ export function BattlefieldRow({
 
   return (
     <>
-      <MatZone seat={seat} zone="battlefield" className="mat-zone--battlefield">
+      <MatZone seat={seat} zone="battlefield" className="mat-zone--battlefield" pinned>
         {plan.active ? (
           <CombatLanes creatures={creatures} plan={plan} />
         ) : (
