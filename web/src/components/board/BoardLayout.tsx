@@ -13,10 +13,12 @@ import { cssVars, useBoardScale } from './boardVisuals'
 /**
  * A mesa inteira.
  *
- * Grade de áreas nomeadas: assento 0 embaixo, assento 1 em cima e espelhado,
- * como em qualquer mesa de verdade. O tamanho de tudo sai de `--board-scale`
- * (ver `useBoardScale`), então 1920x1080 e 1280x800 são a mesma composição em
- * dois tamanhos — nenhuma área rola, nenhuma some.
+ * Grade de áreas nomeadas em cinco faixas: oponente (barra, mão, zonas), campo
+ * do oponente, faixa central fina (fases + pilha), campo de baixo e barra de
+ * baixo. O espelhamento do lado de cima é na ORDEM das fileiras, nunca em
+ * rotação de carta. O tamanho de tudo sai de `--board-scale` (ver
+ * `useBoardScale`), então 1920x1080 e 1280x800 são a mesma composição em dois
+ * tamanhos — nenhuma área rola, nenhuma some.
  */
 export function BoardLayout() {
   const view = useMatchStore((s) => s.view)
@@ -75,16 +77,13 @@ export function BoardLayout() {
         />
       </div>
 
-      <div className="board-area board-area--phase">
+      <div className="board-area board-area--band">
         <PhaseTrack
           turn={view.turn}
           step={view.step}
           activePlayer={view.activePlayer}
           players={view.players}
         />
-      </div>
-
-      <div className="board-area board-area--stack">
         <StackPanel stack={view.stack} cards={cards} players={view.players} />
       </div>
 

@@ -1,24 +1,120 @@
 /*
- * Geometria da mesa.
+ * Geometria da moldura e da mesa.
  *
- * Uma variável manda em tudo: `--board-scale`, publicada por `BoardLayout` a
- * partir do viewport. A composição é desenhada para 1920x1080 e encolhe inteira
- * — por isso não há breakpoint nenhum aqui, e por isso 1280x800 continua sendo
- * a mesma mesa, sem rolagem e sem área escondida.
+ * Duas grades encaixadas, nenhuma sobreposição:
+ *   1. `.app-shell` divide a janela em três colunas — registro, mesa, leitura.
+ *      As laterais são COLUNAS, não overlays; recolher devolve largura à mesa.
+ *   2. `.board-grid` divide a mesa em cinco faixas, do oponente (topo) ao
+ *      jogador de baixo, com a faixa fina de fases + pilha no meio.
+ *
+ * Uma variável manda no tamanho de tudo: `--board-scale`, publicada por
+ * `BoardLayout` a partir do viewport. A composição é desenhada para 1920x1080 e
+ * encolhe inteira, então 1280x800 é a mesma mesa em outro tamanho, sem rolagem.
  */
 
 .app-shell {
-  position: relative;
-  height: 100%;
+  --rail-log: clamp(232px, 17vw, 312px);
+  --rail-stats: clamp(248px, 18vw, 320px);
+  --rail-collapsed: 30px;
+
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "log table stats";
+  height: 100dvh;
   width: 100%;
   overflow: hidden;
 }
 
 .app-shell__table {
-  position: absolute;
-  inset: calc(10px * var(--board-scale, 1));
+  grid-area: table;
+  position: relative;
+  margin: calc(8px * var(--board-scale, 1));
   border-radius: var(--radius-2xl);
   overflow: hidden;
+}
+
+/* --------------------------------------------------------------------------
+ * Colunas laterais (registro e leitura)
+ * ----------------------------------------------------------------------- */
+
+.app-rail {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 8px;
+  width: var(--rail-collapsed);
+  transition: width var(--duration-base) var(--ease-standard);
+}
+
+.app-rail[data-side="left"] {
+  grid-area: log;
+}
+
+.app-rail[data-side="right"] {
+  grid-area: stats;
+}
+
+.app-rail[data-side="left"][data-open="true"] {
+  width: var(--rail-log);
+}
+
+.app-rail[data-side="right"][data-open="true"] {
+  width: var(--rail-stats);
+}
+
+.app-rail__toggle {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid var(--color-edge-hair);
+  border-radius: var(--radius-sm);
+  background: rgba(10, 13, 21, 0.6);
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.app-rail__toggle:hover {
+  border-color: var(--color-edge-strong);
+  color: var(--color-ink-strong);
+}
+
+.app-rail[data-open="false"] .app-rail__toggle-text {
+  display: none;
+}
+
+.app-rail__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  border: 1px solid var(--color-edge-hair);
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklab, var(--color-surface-base) 78%, transparent);
+  box-shadow: var(--shadow-e2);
+  overflow: hidden;
+}
+
+/* O painel de leitura já traz a própria moldura: a coluna não repete a dela. */
+.app-rail[data-side="right"] .app-rail__body {
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.app-rail__card {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* --------------------------------------------------------------------------
@@ -26,24 +122,32 @@
  * ----------------------------------------------------------------------- */
 
 .board-grid {
-  --rail-left: calc(236px * var(--board-scale, 1));
-  --rail-right: calc(272px * var(--board-scale, 1));
+  /* A barra do jogador e as pilhas de zona têm largura mínima própria: abaixo
+     dela o número de vida e os contadores começam a ser cortados. */
+  --rail-bar: clamp(200px, calc(224px * var(--board-scale, 1)), 224px);
+  --rail-zones: clamp(150px, calc(184px * var(--board-scale, 1)), 184px);
   --board-gap: calc(10px * var(--board-scale, 1));
+  /* Faixa livre embaixo para a PlaybackBar flutuante não comer a mão. Ela não
+     acompanha `--board-scale` porque a própria barra também não acompanha. */
+  --playback-reserve: 112px;
 
   position: relative;
   display: grid;
   height: 100%;
   width: 100%;
   padding: calc(12px * var(--board-scale, 1));
+  padding-bottom: calc(12px * var(--board-scale, 1) + var(--playback-reserve));
   gap: var(--board-gap);
-  grid-template-columns: var(--rail-left) minmax(0, 1fr) var(--rail-right);
+  grid-template-columns: var(--rail-bar) minmax(0, 1fr) var(--rail-zones);
   grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  /* A barra ocupa duas faixas de propósito: a coluna dela é vertical, e sem o
+     span a faixa 'auto' cresceria até a altura da barra e comeria o campo. */
   grid-template-areas:
-    "foe-bar foe-hand  foe-zones"
-    "foe-bar foe-field stack"
-    "phase   phase     stack"
-    "own-bar own-field stack"
-    "own-bar own-hand  own-zones";
+    "foe-bar   foe-hand  foe-zones"
+    "foe-bar   foe-field foe-field"
+    "band      band      band"
+    "own-bar   own-field own-field"
+    "own-bar   own-hand  own-zones";
 }
 
 .board-area {
@@ -70,14 +174,11 @@
 .board-area--own-field {
   grid-area: own-field;
 }
-.board-area--phase {
-  grid-area: phase;
+.board-area--band {
+  grid-area: band;
   display: flex;
   align-items: center;
-}
-.board-area--stack {
-  grid-area: stack;
-  display: flex;
+  gap: var(--board-gap);
   min-height: 0;
 }
 .board-area--foe-zones,
@@ -85,17 +186,16 @@
   grid-area: foe-zones;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: calc(10px * var(--board-scale, 1));
-  padding-inline: calc(6px * var(--board-scale, 1));
+  justify-content: flex-end;
+  gap: calc(6px * var(--board-scale, 1));
 }
 .board-area--own-zones {
   grid-area: own-zones;
 }
 
-/* As duas metades do campo dividem o mesmo eixo; a linha central é a costura. */
-.board-area--foe-field::after,
-.board-area--own-field::before {
+/* A faixa central é a costura entre as duas metades do campo. */
+.board-area--band::before,
+.board-area--band::after {
   content: "";
   position: absolute;
   inset-inline: 4%;
@@ -109,11 +209,11 @@
     transparent
   );
 }
-.board-area--foe-field::after {
-  bottom: 0;
-}
-.board-area--own-field::before {
+.board-area--band::before {
   top: 0;
+}
+.board-area--band::after {
+  bottom: 0;
 }
 
 /* --------------------------------------------------------------------------
@@ -140,8 +240,14 @@
   transition: transform var(--duration-base) var(--ease-standard);
 }
 
-.board-card-slot__pivot--tapped {
-  transform: rotate(90deg) scale(0.78);
+/*
+ * A carta virada gira dentro dela mesma (`card.css`), e ao girar transborda a
+ * lateral do slot. A folga abaixo devolve esse espaço à fileira em vez de
+ * deixar a carta pisar na vizinha.
+ */
+.board-field__creatures .board-card-slot[data-tapped="true"],
+.board-field__others .board-card-slot[data-tapped="true"] {
+  margin-inline: calc(var(--slot-natural) * var(--slot-factor) * 0.17);
 }
 
 .board-card-slot__ring {
@@ -167,13 +273,13 @@
 .board-field {
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  gap: calc(10px * var(--board-scale, 1));
+  gap: calc(8px * var(--board-scale, 1));
   height: 100%;
   min-height: 0;
-  padding-inline: calc(20px * var(--board-scale, 1));
+  padding-inline: calc(16px * var(--board-scale, 1));
 }
 
+/* Espelho do lado de cima: só a ordem das fileiras inverte, nunca a carta. */
 .board-field--top {
   flex-direction: column-reverse;
 }
@@ -183,10 +289,16 @@
   flex: 1 1 auto;
   min-height: 0;
   flex-wrap: wrap;
-  align-content: center;
-  align-items: center;
+  align-content: flex-start;
+  align-items: flex-start;
   justify-content: center;
   gap: calc(9px * var(--board-scale, 1));
+}
+
+/* Criatura combate na costura: os dois lados encostam na faixa central. */
+.board-field--top .board-field__creatures {
+  align-content: flex-end;
+  align-items: flex-end;
 }
 
 .board-field__empty {
@@ -276,6 +388,8 @@
   display: flex;
   height: 100%;
   justify-content: center;
+  /* Referência de `100cqw` para o recuo do leque (ver `HandRow`). */
+  container-type: inline-size;
 }
 
 .board-hand--own {
@@ -324,12 +438,13 @@
 
 .stack-panel {
   display: flex;
-  flex: 1 1 auto;
-  min-height: 0;
-  flex-direction: column;
-  gap: calc(8px * var(--board-scale, 1));
-  padding: calc(10px * var(--board-scale, 1));
-  border-radius: var(--radius-lg);
+  flex: 0 1 auto;
+  max-width: 32%;
+  min-width: 0;
+  align-items: center;
+  gap: calc(10px * var(--board-scale, 1));
+  padding: calc(5px * var(--board-scale, 1)) calc(12px * var(--board-scale, 1));
+  border-radius: 999px;
   background: color-mix(in oklab, var(--color-surface-base) 74%, transparent);
   border: 1px solid var(--color-edge-hair);
   box-shadow: var(--shadow-e2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -338,8 +453,9 @@
 
 .stack-panel__head {
   display: flex;
+  flex: 0 0 auto;
   align-items: baseline;
-  justify-content: space-between;
+  gap: 6px;
 }
 
 .stack-panel__title {
@@ -360,16 +476,17 @@
 .stack-panel__body {
   display: flex;
   flex: 1 1 auto;
-  min-height: 0;
-  flex-direction: column;
+  min-width: 0;
+  align-items: center;
   gap: calc(6px * var(--board-scale, 1));
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
 }
 
 .stack-panel__empty {
-  margin: auto 0;
-  text-align: center;
+  margin: 0;
+  white-space: nowrap;
   font-size: calc(11px * var(--board-scale, 1));
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
@@ -379,8 +496,11 @@
 .stack-item {
   position: relative;
   display: flex;
-  gap: calc(8px * var(--board-scale, 1));
-  padding: calc(8px * var(--board-scale, 1)) calc(10px * var(--board-scale, 1));
+  flex: 0 0 auto;
+  max-width: calc(178px * var(--board-scale, 1));
+  align-items: center;
+  gap: calc(7px * var(--board-scale, 1));
+  padding: calc(4px * var(--board-scale, 1)) calc(9px * var(--board-scale, 1));
   border: 1px solid;
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-e2);
@@ -392,6 +512,7 @@
 
 .stack-item__seat {
   width: 3px;
+  align-self: stretch;
   border-radius: 999px;
   flex: 0 0 auto;
 }
@@ -425,19 +546,18 @@
   color: var(--color-ink-faint);
 }
 
+/* Na faixa fina cabe a identidade do item, não o texto dele: quem quer o texto
+   inteiro tem o registro à esquerda. */
 .stack-item__text {
-  font-size: calc(11px * var(--board-scale, 1));
-  line-height: 1.35;
-  color: var(--color-ink);
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  display: none;
 }
 
 .stack-item__targets {
   display: flex;
   gap: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: calc(10.5px * var(--board-scale, 1));
   color: var(--color-ink-muted);
 }
@@ -450,10 +570,13 @@
   position: relative;
 }
 
+/* Empilhado (poço em cima, rótulo embaixo) para as duas zonas caberem lado a
+   lado na coluna sem transbordar para cima da mão. */
 .zone-pile__trigger {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: calc(8px * var(--board-scale, 1));
+  gap: calc(4px * var(--board-scale, 1));
   padding: calc(6px * var(--board-scale, 1));
   border: 1px solid var(--color-edge-hair);
   border-radius: var(--radius-md);
@@ -517,9 +640,8 @@
 
 .zone-pile__meta {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+  align-items: baseline;
+  gap: calc(6px * var(--board-scale, 1));
 }
 
 .zone-pile__label {
@@ -600,10 +722,11 @@
 
 .phase-track {
   display: flex;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   align-items: center;
-  gap: calc(14px * var(--board-scale, 1));
-  padding: calc(5px * var(--board-scale, 1)) calc(14px * var(--board-scale, 1));
+  gap: calc(9px * var(--board-scale, 1));
+  padding: calc(5px * var(--board-scale, 1)) calc(10px * var(--board-scale, 1));
   border-radius: 999px;
   border: 1px solid var(--color-edge-hair);
   background: linear-gradient(180deg, rgba(28, 35, 50, 0.78), rgba(10, 13, 21, 0.86));
@@ -635,7 +758,7 @@
 .phase-track__turn-player {
   font-size: calc(12px * var(--board-scale, 1));
   font-weight: 600;
-  max-width: calc(160px * var(--board-scale, 1));
+  max-width: calc(118px * var(--board-scale, 1));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -691,19 +814,25 @@
 .phase-step__label {
   position: relative;
   z-index: 1;
+  max-width: 100%;
   font-family: var(--font-display);
   font-size: calc(9.5px * var(--board-scale, 1));
   letter-spacing: 0.1em;
   white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .phase-track__now {
-  flex: 0 0 auto;
-  min-width: calc(120px * var(--board-scale, 1));
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: calc(150px * var(--board-scale, 1));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: right;
   font-family: var(--font-display);
-  font-size: calc(12px * var(--board-scale, 1));
+  font-size: calc(10.5px * var(--board-scale, 1));
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
 }
@@ -778,5 +907,46 @@
 
   .board-card-slot__pivot {
     transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * Banner de turno
+ *
+ * O efeito mora em `src/fx`; aqui só o tamanho. Ele é aviso de passagem sobre
+ * a mesa: estreito, translúcido e fora do caminho da leitura das cartas.
+ * ----------------------------------------------------------------------- */
+
+.fx-banner {
+  max-width: min(30vw, 380px);
+  padding: 0.4rem 1.6rem 0.4rem 1rem;
+  opacity: 0.92;
+  background: linear-gradient(
+    90deg,
+    rgba(9, 11, 16, 0.86) 0%,
+    rgba(9, 11, 16, 0.6) 62%,
+    rgba(9, 11, 16, 0) 100%
+  );
+  backdrop-filter: blur(4px);
+}
+
+.fx-banner__turn {
+  font-size: 0.6rem;
+}
+
+.fx-banner__name {
+  font-size: 1rem;
+}
+
+/* --------------------------------------------------------------------------
+ * Telas apertadas
+ *
+ * Até 1280x800 a mesa continua inteira: as colunas laterais já recolhem
+ * sozinhas (ver `App.tsx`) e aqui as fileiras cedem o resto da folga.
+ * ----------------------------------------------------------------------- */
+
+@media (max-width: 1439px) {
+  .stack-panel {
+    max-width: 26%;
   }
 }

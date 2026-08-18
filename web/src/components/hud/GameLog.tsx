@@ -220,7 +220,7 @@ export function GameLog() {
   let lastTurn = -1
 
   return (
-    <div className="relative flex min-h-0 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <div
         ref={scrollRef}
         onScroll={handleScroll}

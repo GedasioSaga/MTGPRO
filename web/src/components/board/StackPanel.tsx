@@ -14,9 +14,9 @@ export interface StackPanelProps {
 }
 
 /**
- * A pilha (CR 405). O item de cima resolve primeiro, então ele aparece no topo
- * do painel e os de baixo ficam recuados — a ordem de resolução tem que ser
- * lida na geometria, não no texto.
+ * A pilha (CR 405). O item de cima resolve primeiro, então ele aparece
+ * primeiro na faixa e os de baixo seguem à direita — a ordem de resolução tem
+ * que ser lida na geometria, não no texto.
  */
 export function StackPanel({ stack, cards, players }: StackPanelProps) {
   const reduceMotion = useReducedMotion()
@@ -49,7 +49,6 @@ export function StackPanel({ stack, cards, players }: StackPanelProps) {
                 data-stack-id={item.id}
                 data-top={index === 0 ? 'true' : 'false'}
                 style={{
-                  marginLeft: `${index * 10}px`,
                   zIndex: top.length - index,
                   borderColor: withAlpha(seatAccent(item.controller), index === 0 ? 0.55 : 0.22),
                   background: `linear-gradient(122deg, ${withAlpha(

@@ -17,7 +17,7 @@ export interface CardSlotProps {
   /** Largura CSS explícita; ignora a escala da mesa. Para uso fora do tabuleiro. */
   width?: string
   revealed?: boolean
-  /** Gira 90° como uma carta virada de verdade, sem alargar a fileira. */
+  /** Reserva a folga lateral da carta virada; quem gira 90° é `card.css`. */
   tapped?: boolean
   className?: string
   style?: CSSProperties
@@ -54,6 +54,7 @@ export function CardSlot({
     <div
       data-card-id={id}
       data-fx-card={id}
+      data-tapped={tapped ? 'true' : 'false'}
       title={title}
       className={clsx('board-card-slot', className)}
       style={cssVars(
@@ -65,12 +66,9 @@ export function CardSlot({
         style,
       )}
     >
-      <div
-        className={clsx(
-          'board-card-slot__pivot',
-          tapped && 'board-card-slot__pivot--tapped',
-        )}
-      >
+      {/* Girar aqui somaria com a rotação que `card.css` já aplica na carta
+          virada, e o resultado eram 180° — carta de cabeça para baixo. */}
+      <div className="board-card-slot__pivot">
         {card === null ? (
           <CardBack seed={String(id)} />
         ) : (

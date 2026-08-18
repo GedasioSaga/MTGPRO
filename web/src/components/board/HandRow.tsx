@@ -41,7 +41,11 @@ export function HandRow({ player, ids, cards, side, count }: HandRowProps) {
   const center = (total - 1) / 2
   const spread = Math.min(4.2, 26 / Math.max(1, total))
   const overlapRatio = total <= 6 ? 0.16 : Math.min(0.62, 0.16 + (total - 6) * 0.07)
-  const step = `calc(${CARD_SIZES[size].width}px * var(--board-scale, 1) * ${scale} * -${overlapRatio})`
+  const cardWidth = `calc(${CARD_SIZES[size].width}px * var(--board-scale, 1) * ${scale})`
+  // O leque nunca pode passar da fileira: se não couber pelo recuo natural, o
+  // recuo aperta até caber. `94cqw` deixa a folga que a inclinação consome.
+  const fit = `calc((94cqw - ${cardWidth}) / ${Math.max(1, total - 1)} - ${cardWidth})`
+  const step = `min(calc(${cardWidth} * -${overlapRatio}), ${fit})`
   const lift = isOwn ? 5 : 3
 
   return (
