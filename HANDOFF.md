@@ -88,7 +88,8 @@ veredito binario; um unico maior gap; builder recebe so o gap.
 | 2 | B | perdemos | nao existe tabuleiro: cartas flutuam sobre vazio verde, sem superficie, sombra ou zonas demarcadas | **fechado** |
 | 3 | A | perdemos | cartas em jogo sao placas ilegiveis: caixa de regras branca vazia, arte espremida | **fechado** |
 | 4 | B | perdemos | cinco setas finas de combate cruzando meia tela; nao se le quem morre | **fechado** |
-| 5 | A | perdemos | tabuleiro e malha de caixas chapadas sem luz; o elemento de maior contraste e uma seta de anotacao | em ataque (rodada 6) |
+| 5 | A | perdemos | tabuleiro e malha de caixas chapadas sem luz; o elemento de maior contraste e uma seta de anotacao | **desfeito na r6** |
+| 6 | B | perdemos | nao tem tabuleiro: retangulo verde uniforme, cartas boiam sem zonas definidas, ~50% de vazio | **SECA** |
 
 O gap MUDOU entre 1 e 2 — o da rodada 1 foi de fato fechado (o critic novo nem
 menciona paineis laterais). Nao e seca. **Seca** seria o mesmo gap apontado duas
@@ -106,7 +107,26 @@ o turno 4, com tabuleiro quase vazio, contra um Arena em combate cheio. Isso med
 feita no turno ~12, com criaturas em campo, e o critic recebe ordem explicita de
 julgar o desenho e ignorar o estado do jogo.
 
-**ALERTA DE OSCILACAO (rodada 5).** O gap voltou ao terreno da rodada 2 (material
+## SECA DECLARADA NA RODADA 6 — loop de UI encerrado
+
+O gap da rodada 6 e literalmente o da rodada 2, e contradiz o da rodada 5:
+r2 "sem zonas demarcadas" -> demarque · r5 "malha de caixas" -> mate as
+demarcacoes · r6 "sem zonas definidas" -> demarque. Duas rodadas consecutivas
+sem fechar, com a correcao de uma virando o defeito da outra. Protocolo manda
+parar e reportar o delta.
+
+**DELTA HONESTO:** 6 rodadas, 6 derrotas contra o cliente do MTG Arena. Quatro
+gaps foram genuinamente fechados (paineis dominando, cartas ilegiveis, setas de
+combate cruzando a tela, superficie sem sombra). O gap que sobra nao e de
+layout — e de **material**. A bar tem arena de pedra esculpida, textura pintada
+a mao, arte de personagem e VFX de particula; nos geramos tudo com gradiente CSS.
+Nenhuma rodada de CSS fecha isso, e e por isso que o critic oscila: sem material,
+demarcar zona so tem duas saidas, contorno (vira painel) ou nada (vira vazio).
+
+Fechar de verdade exige **asset de arte** — textura, moldura, VFX — que e outro
+tipo de trabalho, nao outra rodada do mesmo loop.
+
+**ALERTA DE OSCILACAO (rodada 5, antecedeu a seca).** O gap voltou ao terreno da rodada 2 (material
 do tabuleiro) e o critic pediu para DESFAZER o que a rodada 3 fez: as molduras e
 os rotulos `CAMPO DE BATALHA`/`TERRENOS`, adicionados para "demarcar zonas", sao
 agora apontados como a causa do ar de painel de controle. A rodada 6 aplica a
