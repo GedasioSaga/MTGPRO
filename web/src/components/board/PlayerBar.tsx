@@ -19,6 +19,8 @@ const LETHAL_POISON = 10
 export interface PlayerBarProps {
   player: PlayerView
   side: 'top' | 'bottom'
+  /** Dano de combate que vai chegar neste jogador agora. 0 fora de combate. */
+  underFire?: number
 }
 
 /**
@@ -29,7 +31,7 @@ export interface PlayerBarProps {
  * de baixo), à altura de quem olha. Os contadores de zona ficam na cauda da
  * faixa, pequenos e apagados — são consulta, não manchete.
  */
-export function PlayerBar({ player, side }: PlayerBarProps) {
+export function PlayerBar({ player, side, underFire = 0 }: PlayerBarProps) {
   const accent = seatAccent(player.id)
   const reduceMotion = useReducedMotion()
   const critical = player.life <= 5 && !player.hasLost
@@ -41,14 +43,19 @@ export function PlayerBar({ player, side }: PlayerBarProps) {
       style={cssVars({ '--seat': accent, '--seat-soft': withAlpha(accent, 0.2) })}
       aria-label={`${player.name}: ${player.life} de vida`}
     >
-      <Portrait player={player} accent={accent} />
+      {/* Núcleo centralizado: retrato e vida ficam no eixo do tapete, que é
+          para onde o vetor de dano aponta. Nome no canto obriga o vetor a
+          atravessar a mesa na diagonal. */}
+      <div className="player-strip__core">
+        <Portrait player={player} accent={accent} underFire={underFire} />
 
-      <LifeReadout
-        player={player}
-        accent={accent}
-        critical={critical}
-        pulse={critical && !reduceMotion}
-      />
+        <LifeReadout
+          player={player}
+          accent={accent}
+          critical={critical}
+          pulse={critical && !reduceMotion}
+        />
+      </div>
 
       <div className="player-strip__meters">
         <ManaPool player={player} />
@@ -98,12 +105,32 @@ export function PlayerBar({ player, side }: PlayerBarProps) {
   )
 }
 
-function Portrait({ player, accent }: { player: PlayerView; accent: string }) {
+function Portrait({
+  player,
+  accent,
+  underFire,
+}: {
+  player: PlayerView
+  accent: string
+  underFire: number
+}) {
   const hash = hashString(player.name)
 
   return (
-    <div className="player-strip__id">
-      <div className="player-strip__avatar-wrap">
+    <>
+      <div className="player-strip__name-block">
+        <p className="player-strip__name">{player.name}</p>
+        <div className="player-strip__tags">
+          {player.isActive ? <Badge accent={accent}>turno</Badge> : null}
+          {player.hasPriority ? <Badge accent={accent}>prioridade</Badge> : null}
+          {player.hasLost ? <span className="player-strip__lost">derrotado</span> : null}
+        </div>
+      </div>
+
+      <div
+        className={clsx('player-strip__avatar-wrap', underFire > 0 && 'player-strip__avatar-wrap--hit')}
+        data-player-portrait={player.id}
+      >
         <div
           className="player-strip__avatar"
           style={{
@@ -123,16 +150,7 @@ function Portrait({ player, accent }: { player: PlayerView; accent: string }) {
           />
         ) : null}
       </div>
-
-      <div className="player-strip__name-block">
-        <p className="player-strip__name">{player.name}</p>
-        <div className="player-strip__tags">
-          {player.isActive ? <Badge accent={accent}>turno</Badge> : null}
-          {player.hasPriority ? <Badge accent={accent}>prioridade</Badge> : null}
-          {player.hasLost ? <span className="player-strip__lost">derrotado</span> : null}
-        </div>
-      </div>
-    </div>
+    </>
   )
 }
 

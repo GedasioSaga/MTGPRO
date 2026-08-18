@@ -29,6 +29,10 @@ export interface CardProps {
   /** Painel de zoom ao passar o mouse. Desligado no próprio zoom. */
   detailOnHover?: boolean
   interactive?: boolean
+  /** A criatura não sobrevive ao combate em curso (calculado em `combatPlan`). */
+  doomed?: boolean
+  /** Dano que ainda vai chegar nela neste combate. */
+  incoming?: number
   className?: string
   style?: CSSProperties
   onSelect?: () => void
@@ -45,6 +49,8 @@ export function Card({
   fill = false,
   detailOnHover = true,
   interactive = false,
+  doomed = false,
+  incoming = 0,
   className,
   style,
   onSelect,
@@ -110,6 +116,8 @@ export function Card({
         role !== null && `mtgc--${role}`,
         pt !== null && pt.damage > 0 && 'mtgc--damaged',
         pt !== null && pt.lethal && 'mtgc--lethal',
+        pt !== null && doomed && 'mtgc--doomed',
+        pt !== null && !doomed && incoming > 0 && 'mtgc--survives',
         pt !== null && pt.buffed && 'mtgc--buffed',
         pt !== null && pt.weakened && 'mtgc--weakened',
         clickable && 'mtgc--interactive',
@@ -182,15 +190,26 @@ export function Card({
             </div>
           ) : null}
 
-          {pt !== null ? <PtBox pt={pt} /> : null}
-          {pt === null && card.loyalty !== null ? (
-            <div className="mtgc__loyalty">{card.loyalty}</div>
-          ) : null}
+          {doomed ? <span className="mtgc__doomWash" aria-hidden="true" /> : null}
         </div>
 
         <span className="mtgc__glow" aria-hidden="true" />
         <span className="mtgc__halo" aria-hidden="true" />
       </div>
+
+      {/* Fora de `__tilt` de propósito: a carta virada gira 90 graus, e um P/T
+          deitado obriga a inclinar a cabeça para ler a informação mais
+          consultada da mesa. Aqui ele fica horizontal e no rodapé em qualquer
+          orientação. */}
+      {pt !== null ? <PtBox pt={pt} incoming={incoming} doomed={doomed} /> : null}
+      {pt === null && card.loyalty !== null ? (
+        <div className="mtgc__loyalty">{card.loyalty}</div>
+      ) : null}
+      {doomed ? (
+        <span className="mtgc__doomMark" title="Morre neste combate">
+          <SkullIcon />
+        </span>
+      ) : null}
 
       {anchor !== null ? <CardDetail card={card} anchor={anchor} /> : null}
     </div>
@@ -201,18 +220,27 @@ export function Card({
  * Quadro de P/T. Três informações moram aqui e precisam ser lidas de relance:
  * o valor atual, quanto dano já entrou e qual era o valor impresso.
  */
-function PtBox({ pt }: { pt: PtDisplay }): ReactElement {
+function PtBox({
+  pt,
+  incoming,
+  doomed,
+}: {
+  pt: PtDisplay
+  incoming: number
+  doomed: boolean
+}): ReactElement {
   const damaged = pt.damage > 0
-  const fill = pt.toughness > 0 ? Math.min(100, (pt.damage / pt.toughness) * 100) : 100
+  const total = Math.min(pt.toughness, pt.damage + incoming)
+  const fill = pt.toughness > 0 ? Math.min(100, (total / pt.toughness) * 100) : 100
 
   return (
-    <>
+    <div className="mtgc__ptbar">
       {pt.printed !== null ? <span className="mtgc__printedPt">{pt.printed}</span> : null}
-      {damaged ? <span className="mtgc__damageChip">-{pt.damage}</span> : null}
       <div className="mtgc__pt">
-        {damaged ? <span className="mtgc__ptDamage" style={{ height: `${fill}%` }} /> : null}
+        {total > 0 ? <span className="mtgc__ptDamage" style={{ width: `${fill}%` }} /> : null}
         <span className="mtgc__ptValue">
-          {pt.power}/
+          {pt.power}
+          <span className="mtgc__ptSlash">/</span>
           {damaged ? (
             <span className="mtgc__ptRemain">{Math.max(0, pt.remaining)}</span>
           ) : (
@@ -220,7 +248,12 @@ function PtBox({ pt }: { pt: PtDisplay }): ReactElement {
           )}
         </span>
       </div>
-    </>
+      {incoming > 0 ? (
+        <span className={clsx('mtgc__incoming', doomed && 'mtgc__incoming--fatal')}>
+          −{incoming}
+        </span>
+      ) : null}
+    </div>
   )
 }
 
@@ -288,6 +321,14 @@ function ShieldIcon(): ReactElement {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
       <path d="M12 2.2 4.2 5v6.4c0 4.7 3.2 8.6 7.8 10.4 4.6-1.8 7.8-5.7 7.8-10.4V5L12 2.2Zm0 2.3 5.6 2v4.9c0 3.5-2.2 6.5-5.6 8.1V4.5Z" />
+    </svg>
+  )
+}
+
+function SkullIcon(): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+      <path d="M12 1.8c-4.9 0-8.4 3.4-8.4 8 0 2.7 1.2 4.8 3.1 6.1v2.6c0 1 .8 1.8 1.8 1.8h.9v-2.4h1.7v2.4h1.8v-2.4h1.7v2.4h.9c1 0 1.8-.8 1.8-1.8v-2.6c1.9-1.3 3.1-3.4 3.1-6.1 0-4.6-3.5-8-8.4-8Zm-3.4 6.6a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm6.8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm-3.4 4.9 1.4 2.6h-2.8l1.4-2.6Z" />
     </svg>
   )
 }

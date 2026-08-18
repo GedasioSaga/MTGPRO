@@ -20,6 +20,10 @@ export interface CardSlotProps {
   revealed?: boolean
   /** Reserva a folga lateral da carta virada; quem gira 90° é `card.css`. */
   tapped?: boolean
+  /** A criatura não sobrevive ao combate em curso. */
+  doomed?: boolean
+  /** Dano que ainda vai chegar nela neste combate. */
+  incoming?: number
   className?: string
   style?: CSSProperties
   overlay?: ReactNode
@@ -43,19 +47,22 @@ export function CardSlot({
   width,
   revealed = true,
   tapped = false,
+  doomed = false,
+  incoming = 0,
   className,
   style,
   overlay,
   title,
 }: CardSlotProps) {
   const natural = CARD_SIZES[size].width
-  const ring = ringFor(card)
+  const ring = ringFor(card, doomed)
 
   return (
     <div
       data-card-id={id}
       data-fx-card={id}
       data-tapped={tapped ? 'true' : 'false'}
+      data-doomed={doomed ? 'true' : 'false'}
       title={title}
       className={clsx('board-card-slot', className)}
       style={cssVars(
@@ -73,7 +80,7 @@ export function CardSlot({
         {card === null ? (
           <CardBack seed={String(id)} />
         ) : (
-          <Card card={card} size={size} revealed={revealed} />
+          <Card card={card} size={size} revealed={revealed} doomed={doomed} incoming={incoming} />
         )}
         {ring !== null ? (
           <span
@@ -92,8 +99,12 @@ export function CardSlot({
 }
 
 /** Ataque, bloqueio e alvo legal precisam ser lidos num relance, sem hover. */
-function ringFor(card: CardView | null): string | null {
+function ringFor(card: CardView | null, doomed: boolean): string | null {
   if (card === null) return null
+  // Morrer é a informação mais cara da mesa: ela vence ataque e bloqueio.
+  if (doomed) {
+    return '0 0 0 3px rgba(255,72,60,0.95), 0 0 26px rgba(255,40,30,0.55)'
+  }
   if (card.attacking !== null) {
     return '0 0 0 2px rgba(242,104,94,0.85), 0 0 22px rgba(242,104,94,0.45)'
   }

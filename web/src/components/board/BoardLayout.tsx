@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useMatchStore } from '../../state/matchStore'
 import type { PlayerView } from '../../types/protocol'
 import { BattlefieldRow } from './BattlefieldRow'
@@ -8,7 +9,14 @@ import { PhaseTrack } from './PhaseTrack'
 import { PlayerBar } from './PlayerBar'
 import { StackPanel } from './StackPanel'
 import { TargetArrows } from './TargetArrows'
+import { CombatSeam } from './CombatSeam'
+import { buildCombatPlan, totalSlots } from './combatPlan'
 import { cssVars, useBoardScale } from './boardVisuals'
+
+/** Largura de uma coluna de combate a 1920x1080, antes de `--board-scale`. */
+const LANE_WIDTH = 178
+/** Faixa útil do tapete para as raias caberem sem espremer as bordas. */
+const RAIL_BUDGET = 1180
 
 /**
  * A mesa inteira.
@@ -28,6 +36,7 @@ export function BoardLayout() {
   const cards = useMatchStore((s) => s.cards)
   const connection = useMatchStore((s) => s.connection)
   const scale = useBoardScale()
+  const plan = useMemo(() => buildCombatPlan(cards), [cards])
 
   if (view === null || view.players.length < 2) {
     return <TableStandby connecting={connection === 'connecting'} />
@@ -36,14 +45,35 @@ export function BoardLayout() {
   const bottom: PlayerView = view.players[0]
   const top: PlayerView = view.players[1]
 
+  // O atacante é quem NÃO está defendendo. Sem defensor conhecido (ataque a
+  // planeswalker) o atacante ainda é o jogador do turno.
+  const attackerSide: 'top' | 'bottom' =
+    plan.defender !== null
+      ? plan.defender === top.id
+        ? 'bottom'
+        : 'top'
+      : view.activePlayer === bottom.id
+        ? 'bottom'
+        : 'top'
+
+  const damageTo = (id: PlayerView['id']): number =>
+    plan.defender === id ? plan.breachDamage : 0
+
+  const slots = Math.max(1, totalSlots(plan))
+  const lane = Math.min(LANE_WIDTH, Math.floor(RAIL_BUDGET / slots))
+
   return (
     <div
       className="board-grid"
       data-active-player={view.activePlayer}
-      style={cssVars({ '--board-scale': String(scale) })}
+      data-combat={plan.active ? 'true' : 'false'}
+      style={cssVars({
+        '--board-scale': String(scale),
+        '--combat-col': `calc(${lane}px * var(--board-scale, 1))`,
+      })}
     >
       <div className="board-area board-area--foe-strip" data-seat={top.id}>
-        <PlayerBar player={top} side="top" />
+        <PlayerBar player={top} side="top" underFire={damageTo(top.id)} />
       </div>
 
       <div className="board-area board-area--foe-hand">
@@ -77,10 +107,13 @@ export function BoardLayout() {
           side="top"
           permanents={view.battlefield[top.id] ?? []}
           cards={cards}
+          plan={plan}
         />
       </div>
 
-      <div className="board-area board-area--seam" aria-hidden="true" />
+      <div className="board-area board-area--seam" aria-hidden="true">
+        <CombatSeam plan={plan} cards={cards} attackerSide={attackerSide} />
+      </div>
 
       <div className="board-area board-area--own-field" data-seat={bottom.id}>
         <BattlefieldRow
@@ -88,6 +121,7 @@ export function BoardLayout() {
           side="bottom"
           permanents={view.battlefield[bottom.id] ?? []}
           cards={cards}
+          plan={plan}
         />
       </div>
 
@@ -117,7 +151,7 @@ export function BoardLayout() {
       </div>
 
       <div className="board-area board-area--own-strip" data-seat={bottom.id}>
-        <PlayerBar player={bottom} side="bottom" />
+        <PlayerBar player={bottom} side="bottom" underFire={damageTo(bottom.id)} />
       </div>
 
       {/* Rodapé: motor da partida, não manchete. Fica rente à borda de baixo,
@@ -132,7 +166,7 @@ export function BoardLayout() {
         <StackPanel stack={view.stack} cards={cards} players={view.players} />
       </div>
 
-      <TargetArrows view={view} cards={cards} />
+      <TargetArrows view={view} plan={plan} />
     </div>
   )
 }

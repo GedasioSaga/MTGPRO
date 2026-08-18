@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { defenderObject, defenderPlayer } from '../../types/protocol'
-import type { CardView, GameView, ObjectId } from '../../types/protocol'
+import type { GameView, ObjectId } from '../../types/protocol'
+import { EMPTY_COMBAT_PLAN } from './combatPlan'
+import type { CombatPlan } from './combatPlan'
 
-type ArrowTone = 'attack' | 'block' | 'spell'
+type ArrowTone = 'breach' | 'spell'
 
 interface Point {
   x: number
@@ -14,11 +15,12 @@ interface Arrow {
   tone: ArrowTone
   from: Point
   to: Point
+  /** Só o vetor de dano ao jogador carrega número. */
+  label: string | null
 }
 
 const TONE_COLOR: Record<ArrowTone, string> = {
-  attack: '#f2685e',
-  block: '#6f9cf5',
+  breach: '#ff5a48',
   spell: '#e8a94c',
 }
 
@@ -31,24 +33,24 @@ const SETTLE_MS = 900
 
 export interface TargetArrowsProps {
   view: GameView
-  cards: Record<ObjectId, CardView>
+  plan?: CombatPlan
 }
 
 /**
- * Setas de combate e de alvo, ancoradas no DOM real.
+ * Vetores de alvo, ancorados no DOM real.
  *
- * Ler quem ataca quem por anel de cor não escala: com quatro criaturas trocando
- * golpes a relação some. A seta é a única forma que sobrevive à bagunça — e por
- * isso ela mede posição de verdade (`getBoundingClientRect`), em vez de deduzir
- * do layout.
+ * Combate NÃO desenha seta: quem bloqueia quem se lê pela coluna (ver
+ * `combatPlan`), e o placar mora na costura. Sobrou aqui exatamente um traço
+ * longo — o dano que PASSA, um vetor grosso do arrombamento até o retrato do
+ * defensor — e as setas finas de alvo de mágica, que ligam pilha e alvo.
  */
-export function TargetArrows({ view, cards }: TargetArrowsProps) {
+export function TargetArrows({ view, plan = EMPTY_COMBAT_PLAN }: TargetArrowsProps) {
   const [arrows, setArrows] = useState<Arrow[]>([])
 
   const measure = useCallback(() => {
-    const next = collectArrows(view, cards)
+    const next = collectArrows(view, plan)
     setArrows((prev) => (signature(prev) === signature(next) ? prev : next))
-  }, [view, cards])
+  }, [view, plan])
 
   useEffect(() => {
     measure()
@@ -80,10 +82,10 @@ export function TargetArrows({ view, cards }: TargetArrowsProps) {
             key={tone}
             id={`arrow-head-${tone}`}
             viewBox="0 0 10 10"
-            refX="8"
+            refX="7"
             refY="5"
-            markerWidth="7"
-            markerHeight="7"
+            markerWidth={tone === 'breach' ? 4 : 7}
+            markerHeight={tone === 'breach' ? 4 : 7}
             orient="auto-start-reverse"
           >
             <path d="M 0 0 L 10 5 L 0 10 z" fill={TONE_COLOR[tone]} />
@@ -92,10 +94,14 @@ export function TargetArrows({ view, cards }: TargetArrowsProps) {
       </defs>
 
       {arrows.map((arrow) => {
-        const d = curve(arrow.from, arrow.to)
+        const d =
+          arrow.tone === 'breach'
+            ? `M ${round(arrow.from.x)} ${round(arrow.from.y)} L ${round(arrow.to.x)} ${round(arrow.to.y)}`
+            : curve(arrow.from, arrow.to)
         const color = TONE_COLOR[arrow.tone]
+        const mid = { x: (arrow.from.x + arrow.to.x) / 2, y: (arrow.from.y + arrow.to.y) / 2 }
         return (
-          <g key={arrow.key}>
+          <g key={arrow.key} className={`target-arrows__group target-arrows__group--${arrow.tone}`}>
             <path className="target-arrows__halo" d={d} stroke={color} />
             <path
               className="target-arrows__line"
@@ -103,7 +109,22 @@ export function TargetArrows({ view, cards }: TargetArrowsProps) {
               stroke={color}
               markerEnd={`url(#arrow-head-${arrow.tone})`}
             />
-            <circle className="target-arrows__origin" cx={arrow.from.x} cy={arrow.from.y} r={3.5} fill={color} />
+            {arrow.label === null ? (
+              <circle
+                className="target-arrows__origin"
+                cx={arrow.from.x}
+                cy={arrow.from.y}
+                r={3.5}
+                fill={color}
+              />
+            ) : (
+              <>
+                <circle className="target-arrows__chip" cx={mid.x} cy={mid.y} r={19} />
+                <text className="target-arrows__label" x={mid.x} y={mid.y} fill={color}>
+                  {arrow.label}
+                </text>
+              </>
+            )}
           </g>
         )
       })}
@@ -115,29 +136,20 @@ export function TargetArrows({ view, cards }: TargetArrowsProps) {
 // Coleta
 // ---------------------------------------------------------------------------
 
-function collectArrows(view: GameView, cards: Record<ObjectId, CardView>): Arrow[] {
+function collectArrows(view: GameView, plan: CombatPlan): Arrow[] {
   const arrows: Arrow[] = []
 
-  for (const card of Object.values(cards)) {
-    if (card.zone !== 'Battlefield') continue
-
-    if (card.attacking !== null) {
-      const player = defenderPlayer(card.attacking)
-      const object = defenderObject(card.attacking)
-      const target =
-        player !== null ? playerAnchor(player) : object !== null ? cardAnchor(object) : null
-      const source = cardAnchor(card.id)
-      if (source !== null && target !== null) {
-        arrows.push({ key: `atk-${card.id}`, tone: 'attack', ...trim(source, target) })
-      }
-    }
-
-    for (const blocked of card.blocking) {
-      const source = cardAnchor(card.id)
-      const target = cardAnchor(blocked)
-      if (source !== null && target !== null) {
-        arrows.push({ key: `blk-${card.id}-${blocked}`, tone: 'block', ...trim(source, target) })
-      }
+  // Um único vetor para todo o dano que passa, do arrombamento ao retrato.
+  if (plan.active && plan.breachDamage > 0 && plan.defender !== null) {
+    const source = anchorRect('[data-breach-anchor="true"]')
+    const target = anchorRect(`[data-player-portrait="${plan.defender}"]`)
+    if (source !== null && target !== null) {
+      arrows.push({
+        key: 'breach',
+        tone: 'breach',
+        label: `-${plan.breachDamage}`,
+        ...trim(source, target),
+      })
     }
   }
 
@@ -147,13 +159,13 @@ function collectArrows(view: GameView, cards: Record<ObjectId, CardView>): Arrow
     for (const target of item.targets) {
       const to = cardAnchor(target)
       if (to !== null) {
-        arrows.push({ key: `spl-${item.id}-c${target}`, tone: 'spell', ...trim(source, to) })
+        arrows.push({ key: `spl-${item.id}-c${target}`, tone: 'spell', label: null, ...trim(source, to) })
       }
     }
     for (const target of item.targetPlayers) {
       const to = playerAnchor(target)
       if (to !== null) {
-        arrows.push({ key: `spl-${item.id}-p${target}`, tone: 'spell', ...trim(source, to) })
+        arrows.push({ key: `spl-${item.id}-p${target}`, tone: 'spell', label: null, ...trim(source, to) })
       }
     }
   }

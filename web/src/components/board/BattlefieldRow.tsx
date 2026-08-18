@@ -3,6 +3,9 @@ import type { ReactNode } from 'react'
 import { isCreature, isLand } from '../../types/protocol'
 import type { CardView, ObjectId, PlayerId } from '../../types/protocol'
 import { CardSlot } from './CardSlot'
+import { cssVars } from './boardVisuals'
+import { EMPTY_COMBAT_PLAN } from './combatPlan'
+import type { CombatPlan } from './combatPlan'
 
 /*
  * Largura das cartas do campo. Vem de variável da mesa (`App.css`) em vez de
@@ -19,6 +22,8 @@ export interface BattlefieldRowProps {
   side: 'top' | 'bottom'
   permanents: ObjectId[]
   cards: Record<ObjectId, CardView>
+  /** Pareamento de combate. Fora de combate vem vazio e a fileira é uma fila só. */
+  plan?: CombatPlan
 }
 
 interface LandGroup {
@@ -32,7 +37,13 @@ interface LandGroup {
  * faixa de terrenos na borda externa. As duas existem mesmo vazias — o jogador
  * precisa ver ONDE as coisas vão cair antes de elas caírem.
  */
-export function BattlefieldRow({ player, side, permanents, cards }: BattlefieldRowProps) {
+export function BattlefieldRow({
+  player,
+  side,
+  permanents,
+  cards,
+  plan = EMPTY_COMBAT_PLAN,
+}: BattlefieldRowProps) {
   const creatures: CardView[] = []
   const lands: CardView[] = []
   const others: CardView[] = []
@@ -58,21 +69,15 @@ export function BattlefieldRow({ player, side, permanents, cards }: BattlefieldR
       data-seat={player}
     >
       <Zone kind="battle" label="campo de batalha">
-        <div className="board-field__creatures">
-          {creatures.map((card) => (
-            <CardSlot
-              key={card.id}
-              id={card.id}
-              card={card}
-              size="board"
-              width={FIELD_WIDTH}
-              tapped={card.tapped}
-              title={card.name ?? undefined}
-              className={combatClass(card)}
-              overlay={<AttachmentBadge count={card.attachments.length} />}
-            />
-          ))}
-        </div>
+        {plan.active ? (
+          <CombatLanes creatures={creatures} plan={plan} />
+        ) : (
+          <div className="board-field__creatures">
+            {creatures.map((card) => (
+              <Creature key={card.id} card={card} plan={plan} />
+            ))}
+          </div>
+        )}
       </Zone>
 
       <Zone kind="lands" label="terrenos">
@@ -148,6 +153,62 @@ function LandStack({ group, cards }: { group: LandGroup; cards: Record<ObjectId,
         <span className="board-lands__count">{group.ids.length}</span>
       ) : null}
     </div>
+  )
+}
+
+/**
+ * Fileira de combate: uma coluna por duelo, na ordem do plano, com largura
+ * idêntica nas duas metades da mesa. É a coluna que diz quem bloqueia quem —
+ * sem ela seria preciso uma linha atravessando a tela para dizer o mesmo.
+ */
+function CombatLanes({ creatures, plan }: { creatures: CardView[]; plan: CombatPlan }) {
+  const inLane: CardView[][] = plan.lanes.map(() => [])
+  const reserve: CardView[] = []
+  for (const card of creatures) {
+    const index = plan.laneOf.get(card.id)
+    if (index === undefined) reserve.push(card)
+    else inLane[index].push(card)
+  }
+
+  return (
+    <div className="board-field__creatures board-field__creatures--combat">
+      <div className="combat-rail">
+        {plan.lanes.map((lane, index) => (
+          <div
+            key={lane.key}
+            className={`combat-cell combat-cell--${lane.kind}`}
+            style={cssVars({ '--slots': String(lane.slots) })}
+          >
+            {inLane[index].map((card) => (
+              <Creature key={card.id} card={card} plan={plan} />
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="combat-reserve">
+        {reserve.map((card) => (
+          <Creature key={card.id} card={card} plan={plan} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Creature({ card, plan }: { card: CardView; plan: CombatPlan }) {
+  const incoming = plan.incoming.get(card.id) ?? 0
+  return (
+    <CardSlot
+      id={card.id}
+      card={card}
+      size="board"
+      width={FIELD_WIDTH}
+      tapped={card.tapped}
+      title={card.name ?? undefined}
+      className={combatClass(card)}
+      doomed={plan.doomed.has(card.id)}
+      incoming={incoming}
+      overlay={<AttachmentBadge count={card.attachments.length} />}
+    />
   )
 }
 

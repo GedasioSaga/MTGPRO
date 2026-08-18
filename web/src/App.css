@@ -372,6 +372,19 @@
 .board-area--seam {
   grid-area: seam;
   height: calc(10px * var(--board-scale, 1));
+  transition: height var(--duration-base) var(--ease-standard);
+}
+
+/* Em combate a costura deixa de ser linha e vira PLACAR: e ali, entre as duas
+   fileiras, que o dano de cada duelo e resolvido. */
+.board-grid[data-combat="true"] .board-area--seam {
+  height: calc(52px * var(--board-scale, 1));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-area--seam {
+    transition: none;
+  }
 }
 
 .board-area--seam::before {
@@ -389,6 +402,13 @@
     transparent
   );
   box-shadow: 0 0 14px 1px rgba(154, 230, 194, 0.16);
+}
+
+/* Em combate o placar dos duelos ocupa a costura; a marca de mesa sairia por
+   cima dele e viraria ruido. */
+.board-grid[data-combat="true"] .board-area--seam::before,
+.board-grid[data-combat="true"] .board-area--seam::after {
+  opacity: 0;
 }
 
 /* Losango no centro da costura: marca de mesa, e âncora do olho. */
@@ -649,6 +669,199 @@
   }
 }
 
+/* --------------------------------------------------------------------------
+ * Raias de combate
+ *
+ * Em combate a fileira deixa de ser fila e vira COLUNAS. As duas metades da
+ * mesa consomem a mesma lista de raias (`combatPlan.ts`), com a mesma largura,
+ * entao o atacante cai exatamente embaixo de quem o bloqueou. Quem bloqueia
+ * quem passa a se ler pela POSICAO, e nenhuma linha atravessa a tela.
+ * ----------------------------------------------------------------------- */
+
+.board-field__creatures--combat {
+  display: grid;
+  /* As duas colunas laterais sao iguais por construcao, entao o trilho central
+     cai no mesmo eixo nas duas metades da mesa E na costura. */
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  align-items: center;
+}
+
+.combat-rail {
+  grid-column: 2;
+  display: flex;
+  height: 100%;
+  align-items: center;
+}
+
+.combat-cell {
+  flex: 0 0 auto;
+  width: calc(var(--combat-col, 178px) * var(--slots, 1));
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(4px * var(--board-scale, 1));
+}
+
+/* Raia do arrombamento: sem ninguem na frente, o vao fica visivel de proposito.
+   Do lado do DEFENSOR a mesma raia existe e esta vazia — marca-la ali seria
+   desenhar um vao onde nao ha nada acontecendo. */
+.combat-cell--breach {
+  position: relative;
+}
+
+.combat-cell--breach:empty::before {
+  display: none;
+}
+
+.combat-cell--breach::before {
+  content: "";
+  position: absolute;
+  inset: calc(-4px * var(--board-scale, 1));
+  border-radius: calc(14px * var(--board-scale, 1));
+  border: 1px dashed rgba(255, 110, 92, 0.3);
+  background: radial-gradient(60% 70% at 50% 50%, rgba(255, 80, 62, 0.11), transparent 76%);
+  pointer-events: none;
+}
+
+/* Quem nao esta em combate espera na reserva: menor, apagada e fora do eixo. */
+.combat-reserve {
+  grid-column: 3;
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
+  gap: calc(6px * var(--board-scale, 1));
+  padding-left: calc(14px * var(--board-scale, 1));
+  overflow: hidden;
+  opacity: 0.72;
+  mask-image: linear-gradient(90deg, #000 78%, transparent 100%);
+}
+
+/* Especificidade a mais de proposito: a zona de batalha manda toda carta
+   ocupar 100% da altura, e a reserva precisa vencer essa regra para nao
+   competir de tamanho com quem esta lutando. */
+.board-zone[data-zone="battle"] .combat-reserve .board-card-slot {
+  height: 62%;
+}
+
+/* --------------------------------------------------------------------------
+ * Placar de combate na costura
+ * ----------------------------------------------------------------------- */
+
+.combat-seam {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  pointer-events: none;
+}
+
+.combat-seam__rail {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+}
+
+.combat-seam__cell {
+  flex: 0 0 auto;
+  width: calc(var(--combat-col, 178px) * var(--slots, 1));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.combat-duel {
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--board-scale, 1));
+  padding: calc(3px * var(--board-scale, 1)) calc(9px * var(--board-scale, 1));
+  border-radius: 999px;
+  border: 1px solid rgba(214, 255, 234, 0.16);
+  background: linear-gradient(180deg, rgba(14, 30, 24, 0.95), rgba(6, 14, 11, 0.95));
+  box-shadow:
+    0 calc(3px * var(--board-scale, 1)) calc(12px * var(--board-scale, 1)) rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.combat-duel__cross {
+  font-size: calc(13px * var(--board-scale, 1));
+  line-height: 1;
+  color: rgba(226, 255, 240, 0.5);
+}
+
+.combat-beam {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(3px * var(--board-scale, 1));
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  color: #eaf6ef;
+}
+
+.combat-beam__glyph {
+  font-size: calc(9px * var(--board-scale, 1));
+  line-height: 1;
+  opacity: 0.6;
+}
+
+.combat-beam__value {
+  font-size: calc(19px * var(--board-scale, 1));
+  font-weight: 700;
+  line-height: 1;
+}
+
+.combat-beam[data-zero="true"] {
+  opacity: 0.34;
+}
+
+/* Golpe que MATA: o numero muda de cor e ganha a caveira. Sobreviver e o
+   estado silencioso; morrer e o que precisa gritar. */
+.combat-beam--kills {
+  color: #ff6a55;
+  text-shadow: 0 0 calc(14px * var(--board-scale, 1)) rgba(255, 60, 42, 0.6);
+}
+
+.combat-beam__skull {
+  font-size: calc(13px * var(--board-scale, 1));
+  line-height: 1;
+}
+
+.combat-breach {
+  display: flex;
+  align-items: baseline;
+  gap: calc(7px * var(--board-scale, 1));
+  padding: calc(3px * var(--board-scale, 1)) calc(13px * var(--board-scale, 1));
+  border-radius: 999px;
+  border: 1px solid rgba(255, 110, 92, 0.5);
+  background: linear-gradient(180deg, rgba(74, 16, 12, 0.96), rgba(28, 6, 6, 0.96));
+  box-shadow:
+    0 0 calc(24px * var(--board-scale, 1)) rgba(255, 60, 42, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.combat-breach__label {
+  font-size: calc(9.5px * var(--board-scale, 1));
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide-caps);
+  text-transform: uppercase;
+  color: rgba(255, 190, 178, 0.8);
+}
+
+.combat-breach__value {
+  font-family: var(--font-display);
+  font-size: calc(24px * var(--board-scale, 1));
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #ffb0a2;
+  text-shadow: 0 0 calc(16px * var(--board-scale, 1)) rgba(255, 60, 42, 0.75);
+}
+
 .board-field__back {
   display: flex;
   flex: 1 1 auto;
@@ -767,10 +980,8 @@
 
 .player-strip {
   position: relative;
-  display: flex;
+  display: block;
   height: var(--strip-h);
-  align-items: center;
-  gap: calc(14px * var(--board-scale, 1));
   padding-inline: calc(14px * var(--board-scale, 1));
   border-radius: calc(11px * var(--board-scale, 1));
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -791,11 +1002,29 @@
     rgba(6, 14, 11, 0.5);
 }
 
-.player-strip__id {
-  display: flex;
-  min-width: 0;
+/*
+ * O RETRATO fica no eixo central do tapete, e nao no canto.
+ *
+ * As duas colunas laterais sao `1fr` iguais, entao o avatar cai exatamente no
+ * meio da faixa — que e o mesmo meio das raias de combate. E por isso que o
+ * vetor de dano que passa desce quase reto em vez de cortar a mesa na
+ * diagonal, que era o traco mais longo da tela.
+ */
+.player-strip__core {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  height: 100%;
   align-items: center;
-  gap: calc(9px * var(--board-scale, 1));
+  gap: calc(14px * var(--board-scale, 1));
+  padding-inline: calc(14px * var(--board-scale, 1));
+}
+
+.player-strip__core > .player-strip__name-block {
+  justify-self: end;
+}
+
+.player-strip__core > .player-strip__life {
+  justify-self: start;
 }
 
 .player-strip__avatar-wrap {
@@ -819,6 +1048,24 @@
   font-size: calc(11px * var(--board-scale, 1));
   font-weight: 600;
   color: rgba(255, 255, 255, 0.9);
+}
+
+/* Alvo do vetor de dano. O traco tem que bater em ALGO que pareca um alvo:
+   sem o anel, a ponta da seta morre num disco de 30px sem funcao aparente. */
+.player-strip__avatar-wrap--hit {
+  scale: 1.18;
+}
+
+.player-strip__avatar-wrap--hit::after {
+  content: "";
+  position: absolute;
+  inset: calc(-7px * var(--board-scale, 1));
+  border-radius: 999px;
+  border: 2px solid rgba(255, 90, 72, 0.9);
+  box-shadow:
+    0 0 calc(20px * var(--board-scale, 1)) rgba(255, 60, 42, 0.6),
+    inset 0 0 calc(12px * var(--board-scale, 1)) rgba(255, 60, 42, 0.4);
+  pointer-events: none;
 }
 
 .player-strip__dot {
@@ -927,9 +1174,14 @@
 }
 
 /* Cauda da faixa: motor, não manchete. */
+/* Cauda de telemetria: flutua na borda direita para nao empurrar o retrato
+   para fora do eixo. */
 .player-strip__meters {
+  position: absolute;
+  right: calc(14px * var(--board-scale, 1));
+  top: 50%;
+  translate: 0 -50%;
   display: flex;
-  margin-left: auto;
   align-items: center;
   gap: calc(12px * var(--board-scale, 1));
 }
@@ -1488,6 +1740,34 @@
 
 .target-arrows__origin {
   opacity: 0.9;
+}
+
+/*
+ * Dano que passa: UM traco, reto e grosso, do arrombamento ate o retrato. E o
+ * unico vetor longo que sobrou na mesa, e por isso pode ser gritado.
+ */
+.target-arrows__group--breach .target-arrows__halo {
+  stroke-width: 32;
+  opacity: 0.12;
+}
+
+.target-arrows__group--breach .target-arrows__line {
+  stroke-width: 13;
+  opacity: 0.9;
+}
+
+.target-arrows__chip {
+  fill: #1b0709;
+  stroke: rgba(255, 120, 100, 0.8);
+  stroke-width: 1.5;
+}
+
+.target-arrows__label {
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
 }
 
 /* --------------------------------------------------------------------------
