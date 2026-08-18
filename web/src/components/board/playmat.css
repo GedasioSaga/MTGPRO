@@ -19,13 +19,16 @@
 .playmat {
   --playmat-round: calc(16px * var(--board-scale, 1));
   /* Serigrafia pequena, mas nunca abaixo do limite de leitura: em 1280x800 o
-     `--board-scale` cai para ~0.66 e 12px viraria borrão. */
-  --playmat-label: max(8px, calc(12px * var(--board-scale, 1)));
+     `--board-scale` cai para ~0.66 e 12px viraria borrão. O valor vem de
+     `.playmat-seat` (App.css), que é o mesmo número de que o recuo de pouso da
+     carta depende — duas medidas separadas voltariam a cobrir o rótulo. O
+     fallback mantém o mat desenhável fora da mesa. */
+  --playmat-label: var(--mat-label, max(8px, calc(12px * var(--board-scale, 1))));
   /* Tinta fraca de proposito. A carta pousa POR CIMA da serigrafia, como no mat
      de verdade, e a metade que sobra nao pode competir com o nome da carta: em
      tinta forte o rotulo cortado le como palavra quebrada ("...ATALHA"), que
      parece defeito. Fraco, ele volta a ser textura impressa. */
-  --playmat-ink: rgba(238, 248, 255, 0.3);
+  --playmat-ink: rgba(238, 248, 255, 0.42);
 
   position: relative;
   z-index: 0;
@@ -63,7 +66,12 @@
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
-  filter: saturate(0.6) brightness(0.66) contrast(1.05);
+  /* Lavada, nao apagada. A 0.66 de brilho a arte escolhida pelo jogador
+     virava mancha marrom e a mesa perdia o unico material que ela tem. A carta
+     continua ganhando: ela leva `brightness(1.1)` em `App.css` e vive num plano
+     acima, entao a distancia de luminancia entre as duas cresceu mesmo com o
+     tapete mais claro. */
+  filter: saturate(0.78) brightness(0.84) contrast(1.14);
 }
 
 /*
@@ -84,8 +92,8 @@
   inset: 0;
   z-index: 1;
   background-image:
-    radial-gradient(118% 94% at 50% 50%, rgba(0, 0, 0, 0.08) 30%, rgba(0, 0, 0, 0.7) 100%),
-    linear-gradient(180deg, rgba(6, 10, 14, 0.16), rgba(6, 10, 14, 0.3));
+    radial-gradient(122% 98% at 50% 50%, rgba(0, 0, 0, 0.02) 38%, rgba(0, 0, 0, 0.44) 100%),
+    linear-gradient(180deg, rgba(6, 10, 14, 0.06), rgba(6, 10, 14, 0.16));
 }
 
 /* Trama do feltro. O mesmo ladrilho de material da mesa, em `soft-light`: o
@@ -127,6 +135,20 @@
   justify-content: center;
   padding: calc(4px * var(--board-scale, 1)) 6px;
   overflow: hidden;
+}
+
+/*
+ * As duas bandas largas imprimem o rótulo na PONTA, não no meio.
+ *
+ * A carta ocupa a altura inteira da banda e as cartas se agrupam no centro, que
+ * é justamente onde um rótulo centrado cairia: na captura anterior sobrava
+ * "…HÁ" de CAMPO DE BATALHA e TERRENOS sumia atrás dos terrenos. Serigrafia
+ * coberta não identifica zona nenhuma, e identificar a zona é a única coisa que
+ * ela faz. Na ponta esquerda a banda está sempre livre.
+ */
+.playmat__label--band {
+  justify-content: flex-start;
+  padding-inline: calc(12px * var(--board-scale, 1));
 }
 
 .playmat__label--bottom {

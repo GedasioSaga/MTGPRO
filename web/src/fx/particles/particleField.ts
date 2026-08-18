@@ -4,8 +4,21 @@ import { spawnBurst } from './spawnBurst'
 import type { FxBurst, Particle } from './particleTypes'
 import { MAX_PARTICLES, SHAPE } from './particleTypes'
 
-/** Passo maximo por quadro: aba em segundo plano volta sem teletransporte. */
+/** Passo maximo de INTEGRACAO: acima disso a fisica salta e a curva quebra. */
 const MAX_STEP_S = 0.032
+/**
+ * Tempo real maximo recuperado num quadro so.
+ *
+ * O passo de integracao e curto de proposito, mas o tempo decorrido nao pode
+ * ser jogado fora com ele: se cada quadro so envelhece 32ms, a vida da
+ * particula passa a ser contada em QUADROS e nao em milissegundos, e num
+ * ambiente com poucos quadros por segundo — maquina fraca, aba em segundo
+ * plano, captura automatizada — um anel de 288ms fica varios segundos parado na
+ * tela. Era assim que o halo verde do rodape parecia preso por cima do END.
+ * Aqui o quadro recupera ate 250ms de tempo real em sub-passos, e o que passar
+ * disso e descartado para a volta de uma aba dormente nao teleportar tudo.
+ */
+const MAX_CATCHUP_S = 0.25
 /** Retina custa 4x fill rate por nada; 2 ja e o teto util. */
 const MAX_DPR = 2
 
@@ -54,15 +67,14 @@ export function createParticleField(canvas: HTMLCanvasElement): ParticleField | 
 
   const pool: Particle[] = Array.from({ length: MAX_PARTICLES }, blankParticle)
   const free: number[] = pool.map((_, index) => index)
-  let liveCount = 0
   // Cursor de reciclagem: com o pool cheio, a rajada nova rouba a particula
   // mais antiga em vez de ser engolida pela fumaca da anterior.
   let recycleCursor = 0
 
   let width = 0
   let height = 0
-  let running = false
-  let frame = 0
+  /** Quadro agendado, ou `null` quando o laco esta parado. */
+  let frame: number | null = null
   let lastTs = 0
 
   const resize = (): void => {
@@ -77,14 +89,12 @@ export function createParticleField(canvas: HTMLCanvasElement): ParticleField | 
   const acquire = (): Particle => {
     const index = free.pop()
     if (index !== undefined) {
-      liveCount += 1
       const particle = pool[index]!
       particle.active = true
       return particle
     }
     recycleCursor = (recycleCursor + 1) % MAX_PARTICLES
     const particle = pool[recycleCursor]!
-    if (!particle.active) liveCount += 1
     particle.active = true
     return particle
   }
@@ -93,29 +103,34 @@ export function createParticleField(canvas: HTMLCanvasElement): ParticleField | 
     const particle = pool[index]!
     if (!particle.active) return
     particle.active = false
-    liveCount -= 1
     free.push(index)
   }
 
-  const step = (dt: number): void => {
+  /** Avanca a fisica e devolve quantas particulas continuam vivas. */
+  const step = (dt: number): number => {
+    let live = 0
     for (let i = 0; i < MAX_PARTICLES; i += 1) {
       const p = pool[i]!
       if (!p.active) continue
       p.age += dt * 1000
-      if (p.age < p.delay) continue
       if (p.age - p.delay >= p.life) {
         release(i)
         continue
       }
+      live += 1
+      if (p.age < p.delay) continue
       const damping = 1 - Math.min(p.drag * dt, 0.95)
       p.vy = (p.vy + p.gravity * dt) * damping
       p.vx *= damping
       p.x += p.vx * dt
       p.y += p.vy * dt
     }
+    return live
   }
 
-  const draw = (): void => {
+  /** Pinta o quadro e devolve quantas particulas foram de fato desenhadas. */
+  const draw = (): number => {
+    let painted = 0
     ctx.globalCompositeOperation = 'lighter'
     for (let i = 0; i < MAX_PARTICLES; i += 1) {
       const p = pool[i]!
@@ -125,6 +140,7 @@ export function createParticleField(canvas: HTMLCanvasElement): ParticleField | 
       const alpha = Math.min(1, t / 0.1) * Math.pow(1 - t, p.fade)
       if (alpha <= 0.01) continue
       const radius = p.a0 + (p.a1 - p.a0) * easeOut(t)
+      painted += 1
 
       if (p.shape === SHAPE.ring) {
         // O anel pinta pelo `strokeStyle`, entao precisa zerar o `globalAlpha`
@@ -167,36 +183,49 @@ export function createParticleField(canvas: HTMLCanvasElement): ParticleField | 
     }
     ctx.globalAlpha = 1
     ctx.globalCompositeOperation = 'source-over'
+    return painted
   }
 
+  /*
+   * O laco so pode parar num quadro que LIMPOU e nao pintou nada.
+   *
+   * A versao anterior parava assim que um contador de vivos zerava, e esse
+   * contador era mantido a mao pelo par acquire/release. Bastava ele dessincar
+   * um passo para o laco morrer no quadro em que a ultima particula ainda
+   * aparecia — e o desenho dela ficava congelado na tela ate a proxima rajada.
+   * Era isso o anel verde parado no canto do rodape, por cima do marco END.
+   * Agora quem decide sao os dois numeros que o proprio quadro produziu, entao
+   * nao ha estado paralelo para divergir da tela.
+   */
   const tick = (ts: number): void => {
-    const dt = Math.min((ts - lastTs) / 1000, MAX_STEP_S)
+    frame = null
+    let remaining = Math.min(Math.max((ts - lastTs) / 1000, 0), MAX_CATCHUP_S)
     lastTs = ts
     ctx.clearRect(0, 0, width, height)
-    step(dt > 0 ? dt : 0)
-    draw()
-    if (liveCount > 0) {
-      frame = requestAnimationFrame(tick)
-      return
+    let live = step(0)
+    while (remaining > 0) {
+      const dt = Math.min(remaining, MAX_STEP_S)
+      live = step(dt)
+      remaining -= dt
     }
-    running = false
+    const painted = draw()
+    if (live > 0 || painted > 0) schedule()
   }
 
-  const wake = (): void => {
-    if (running) return
-    running = true
-    lastTs = performance.now()
+  /** Agenda o proximo quadro; chamar duas vezes no mesmo quadro nao duplica. */
+  function schedule(): void {
+    if (frame !== null) return
     frame = requestAnimationFrame(tick)
   }
 
   const emit = (burst: FxBurst): void => {
     spawnBurst(burst, acquire)
-    wake()
+    schedule()
   }
 
   const dispose = (): void => {
-    cancelAnimationFrame(frame)
-    running = false
+    if (frame !== null) cancelAnimationFrame(frame)
+    frame = null
     for (let i = 0; i < MAX_PARTICLES; i += 1) release(i)
     ctx.clearRect(0, 0, width, height)
   }

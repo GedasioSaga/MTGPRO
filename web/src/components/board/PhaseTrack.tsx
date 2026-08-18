@@ -1,9 +1,8 @@
 import type { CSSProperties } from 'react'
 import { STEP_LABEL } from '../../types/protocol'
 import type { PlayerId, PlayerView, Step } from '../../types/protocol'
-import { seatAccent } from '../../design/tokens'
 import { withAlpha } from '../../design/color'
-import { cssVars } from './boardVisuals'
+import { cssVars, seatSwatch } from './boardVisuals'
 import './phaseTrack.css'
 
 /**
@@ -112,7 +111,7 @@ export function PhaseTrack({
   players,
   className,
 }: PhaseTrackProps) {
-  const swatch = seatAccent[activePlayer % seatAccent.length]
+  const swatch = seatSwatch(activePlayer)
   const currentMilestone = MILESTONE_OF_STEP[step]
   const currentIndex = MILESTONES.findIndex((mark) => mark.id === currentMilestone)
   const inCombat = currentMilestone === 'Combat'

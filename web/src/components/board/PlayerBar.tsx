@@ -2,7 +2,7 @@ import clsx from 'clsx'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import type { PlayerView } from '../../types/protocol'
 import { hashString, withAlpha } from '../../design/color'
-import { COLORLESS_HEX, MANA_HEX, cssVars, initialsOf, seatAccent } from './boardVisuals'
+import { COLORLESS_HEX, MANA_HEX, cssVars, initialsOf, seatSwatch } from './boardVisuals'
 import { HandIcon, PoisonIcon } from './BoardIcons'
 
 const STARTING_LIFE = 20
@@ -24,7 +24,7 @@ export interface PlayerBarProps {
  * caíram. Por isso a faixa perdeu altura: ela é a beira da mesa, não um HUD.
  */
 export function PlayerBar({ player, side, underFire = 0 }: PlayerBarProps) {
-  const accent = seatAccent(player.id)
+  const accent = seatSwatch(player.id).core
   const reduceMotion = useReducedMotion()
 
   return (
@@ -89,7 +89,7 @@ export function PlayerBar({ player, side, underFire = 0 }: PlayerBarProps) {
  * mesa onde a vida está escrita, e não para uma caixa flutuante na borda.
  */
 export function PlayerLife({ player }: { player: PlayerView }) {
-  const accent = seatAccent(player.id)
+  const accent = seatSwatch(player.id).core
   const reduceMotion = useReducedMotion()
   const critical = player.life <= 5 && !player.hasLost
   const ratio = Math.max(0, Math.min(1, player.life / STARTING_LIFE))

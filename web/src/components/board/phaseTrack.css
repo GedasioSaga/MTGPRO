@@ -115,11 +115,18 @@
 
 .phase-rail__marks {
   display: grid;
-  /* Combate reserva a largura das tres batidas SEMPRE: e o que garante que a
-     expansao aconteca no lugar, sem empurrar os outros seis marcos. */
+  /*
+   * Combate reserva a largura das tres batidas SEMPRE.
+   *
+   * `minmax(0, 2.6fr)` nao reservava nada: o zero deixa a coluna encolher
+   * abaixo do conteudo, e a terceira batida saia cortada — que e o defeito que
+   * o UI_BAR_SPEC proibe por escrito. `min-content` num marco `nowrap` e a
+   * largura da linha inteira "COMBAT ATK BLK DMG", entao a coluna nunca fica
+   * menor que o que ela precisa mostrar; o `2.6fr` continua mandando na folga.
+   */
   grid-template-columns:
     repeat(4, minmax(0, 1fr))
-    minmax(0, 2.6fr)
+    minmax(min-content, 2.6fr)
     repeat(2, minmax(0, 1fr));
   align-items: center;
   flex: 1 1 auto;
@@ -213,8 +220,8 @@
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: calc(var(--rail-h) * 0.08);
-  padding: calc(var(--rail-h) * 0.09) calc(var(--rail-h) * 0.16);
+  gap: calc(var(--rail-h) * 0.16);
+  padding: calc(var(--rail-h) * 0.09) calc(var(--rail-h) * 0.22);
 }
 
 /*
@@ -243,15 +250,19 @@
 }
 
 .phase-rail__sub {
-  /* Largura travada: as tres batidas tem tres letras e o marco nunca respira. */
-  min-width: 3.4ch;
+  /* Largura travada: as tres batidas tem tres letras e o marco nunca respira.
+     4ch e o que separa as tres palavras — a 3.4ch "DMG" encostava em "BLK" e as
+     tres liam como um token so ("ATKBLKDMG"). */
+  min-width: 4ch;
   text-align: center;
   font-family: var(--font-sans);
   font-size: 0.76em;
   font-weight: 600;
   letter-spacing: 0.1em;
   color: var(--color-ink-faint);
-  opacity: 0.28;
+  /* Piso de leitura: a 0.28 a batida existia no DOM e nao na tela, e "DMG"
+     parecia truncado quando so estava apagado. */
+  opacity: 0.5;
   transition:
     color 220ms var(--ease-standard),
     opacity 220ms var(--ease-standard),
@@ -259,7 +270,7 @@
 }
 
 .phase-rail__sub[data-state='next'] {
-  opacity: 0.4;
+  opacity: 0.62;
 }
 
 .phase-rail__sub[data-state='done'] {

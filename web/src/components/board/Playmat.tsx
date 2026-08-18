@@ -181,7 +181,9 @@ export function Playmat({
       {zones.map((zone) => (
         <span
           key={zone.id}
-          className={`playmat__label playmat__label--${zone.labelAnchor}`}
+          className={`playmat__label playmat__label--${zone.labelAnchor} playmat__label--${
+            zone.id === 'battlefield' || zone.id === 'lands' ? 'band' : 'slot'
+          }`}
           style={rectStyle(zone.rect)}
         >
           <span className="playmat__labelText">{zone.label}</span>

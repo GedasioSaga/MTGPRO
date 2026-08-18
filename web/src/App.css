@@ -224,13 +224,18 @@
   z-index: 0;
   pointer-events: none;
   background-image:
-    radial-gradient(46% 30% at 50% 46%, rgba(198, 255, 224, 0.13), transparent 76%),
-    linear-gradient(180deg, rgba(255, 244, 214, 0.09), transparent 28%),
+    radial-gradient(48% 32% at 50% 46%, rgba(206, 255, 230, 0.2), transparent 78%),
+    linear-gradient(180deg, rgba(255, 246, 220, 0.14), transparent 34%),
+    /* A vinheta fecha a composicao; ela nao pode APAGAR a composicao. A versao
+       anterior tirava dois tercos da luz da borda e a mesa inteira lia como
+       penumbra: a bar de referencia e saturada e de alto contraste, com a
+       criatura como ponto mais claro do quadro. Aqui a queda comeca mais tarde
+       e para na metade da profundidade de antes. */
     radial-gradient(
-      86% 70% at 50% 48%,
-      transparent 34%,
-      rgba(0, 0, 0, 0.3) 72%,
-      rgba(0, 0, 0, 0.66) 100%
+      92% 78% at 50% 48%,
+      transparent 46%,
+      rgba(0, 0, 0, 0.14) 78%,
+      rgba(0, 0, 0, 0.38) 100%
     );
 }
 
@@ -356,6 +361,19 @@
  * ----------------------------------------------------------------------- */
 
 .playmat-seat {
+  /*
+   * Faixa serigrafada, em pixel e num lugar so.
+   *
+   * `.playmat-seat` e o bloco de contencao comum da impressao e das cartas,
+   * entao e daqui que os dois leem o tamanho do rotulo: `playmat.css` para
+   * desenhar a letra, `.mat-zone__inner` para NAO pousar carta em cima dela.
+   * Enquanto a faixa nao era reservada, a serigrafia saia pela metade
+   * ("...DE BATALHA", DECK atras do baralho) e um rotulo cortado nao identifica
+   * zona nenhuma, que e a unica coisa que ele faz.
+   */
+  --mat-label: max(8px, calc(12px * var(--board-scale, 1)));
+  --mat-label-band: calc(var(--mat-label) + 9px * var(--board-scale, 1));
+
   position: absolute;
   inset: 0;
   border-radius: var(--mat-round);
@@ -404,8 +422,10 @@
   gap: calc(10px * var(--board-scale, 1));
   min-height: calc(26px * var(--board-scale, 1));
   padding-top: calc(4px * var(--board-scale, 1));
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-  opacity: 0.62;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  /* Um tom abaixo da mesa, nao dois: a 0.62 o terceiro token do COMBAT sumia
+     junto com o resto do rodape. */
+  opacity: 0.88;
   transition: opacity var(--duration-base) var(--ease-standard);
 }
 
@@ -533,12 +553,30 @@
   justify-content: center;
 }
 
+/*
+ * A coluna lateral recua da aresta em que o rótulo foi serigrafado — a de
+ * baixo no assento de baixo, a de cima no de cima. O recuo agora é a faixa
+ * medida (`--mat-label-band`), e não uma porcentagem chutada: em zona baixa
+ * 20% não cobria a letra, e em zona alta cobria demais.
+ */
+.playmat-seat[data-side="bottom"] .mat-zone--pile .mat-zone__inner,
+.playmat-seat[data-side="bottom"] .mat-zone--life .mat-zone__inner {
+  bottom: var(--mat-label-band);
+}
+
+.playmat-seat[data-side="top"] .mat-zone--pile .mat-zone__inner,
+.playmat-seat[data-side="top"] .mat-zone--life .mat-zone__inner {
+  top: var(--mat-label-band);
+}
+
 .mat-zone--pile .mat-zone__inner {
-  inset: 7% 8%;
+  left: 8%;
+  right: 8%;
 }
 
 .mat-zone--life .mat-zone__inner {
-  inset: 10% 4%;
+  left: 4%;
+  right: 4%;
 }
 
 .mat-row {
@@ -573,7 +611,12 @@
  * do campo (terreno, encantamento) recua meio tom.
  */
 .mat-row .board-card-slot {
+  /* O ganho de luz vem ANTES das sombras na cadeia: assim a carta acende e a
+     sombra que ela projeta continua preta. A carta em jogo tem que estar acima
+     do tapete em luminancia — sem isso a mesa inteira le como penumbra e a
+     serigrafia disputa atencao com a criatura. */
   filter:
+    saturate(1.12) brightness(1.1) contrast(1.04)
     drop-shadow(0 calc(16px * var(--board-scale, 1)) calc(18px * var(--board-scale, 1))
       rgba(0, 0, 0, 0.8))
     drop-shadow(0 calc(2px * var(--board-scale, 1)) calc(3px * var(--board-scale, 1))
@@ -595,16 +638,18 @@
 
 .mat-row .board-creature--attacking {
   filter:
+    saturate(1.24) brightness(1.22) contrast(1.06)
     drop-shadow(0 calc(12px * var(--board-scale, 1)) calc(16px * var(--board-scale, 1))
       rgba(0, 0, 0, 0.68))
-    drop-shadow(0 0 calc(16px * var(--board-scale, 1)) rgba(242, 104, 94, 0.5));
+    drop-shadow(0 0 calc(18px * var(--board-scale, 1)) rgba(242, 104, 94, 0.62));
 }
 
 .mat-row .board-creature--blocking {
   filter:
+    saturate(1.24) brightness(1.22) contrast(1.06)
     drop-shadow(0 calc(12px * var(--board-scale, 1)) calc(16px * var(--board-scale, 1))
       rgba(0, 0, 0, 0.68))
-    drop-shadow(0 0 calc(16px * var(--board-scale, 1)) rgba(111, 156, 245, 0.5));
+    drop-shadow(0 0 calc(18px * var(--board-scale, 1)) rgba(111, 156, 245, 0.62));
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -682,8 +727,20 @@
   gap: calc(6px * var(--board-scale, 1));
   padding-left: calc(12px * var(--board-scale, 1));
   overflow: hidden;
-  opacity: 0.72;
-  mask-image: linear-gradient(90deg, #000 78%, transparent 100%);
+  /*
+   * A reserva le como criatura PRESENTE, so que fora do combate: menor e um
+   * tom abaixo. A versao anterior somava 0.72 de opacidade a uma mascara que
+   * comecava a desfazer a carta ja aos 78% da faixa, e o resultado nao lia como
+   * criatura em espera — lia como artefato de renderizacao. A mascara agora e
+   * so a franja da borda de corte, que continua dizendo "tem mais" sem apagar
+   * quem esta inteiro dentro da linha.
+   */
+  opacity: 0.94;
+  mask-image: linear-gradient(
+    90deg,
+    #000 calc(100% - 16px * var(--board-scale, 1)),
+    transparent 100%
+  );
 }
 
 /* Especificidade a mais de propósito: a zona de batalha manda toda carta ocupar
@@ -697,7 +754,7 @@
  * última — é a forma honesta de dizer "tem mais", e melhor que um corte seco.
  */
 .mat-zone--battlefield .combat-reserve .board-card-slot {
-  height: 54%;
+  height: 66%;
 }
 
 .combat-reserve .board-card-slot + .board-card-slot {
@@ -837,10 +894,18 @@
   margin-left: calc(var(--card-land) * -0.62);
 }
 
+/*
+ * O contador pousa no canto da carta de topo, DENTRO da caixa da pilha. Com
+ * deslocamento negativo ele saia da zona impressa e flutuava por cima da linha
+ * serigrafada da faixa TERRENOS — uma ficha de interface boiando sobre o mat,
+ * que e exatamente o que a serigrafia existe para nao ser.
+ */
 .mat-lands__count {
   position: absolute;
-  top: calc(-5px * var(--board-scale, 1));
-  right: calc(-5px * var(--board-scale, 1));
+  /* 4% da caixa da pilha e exatamente a aresta de cima da carta, que ocupa 92%
+     dela: o badge encosta na carta sem sair da zona. */
+  top: 4%;
+  right: 0;
   z-index: 20;
   display: grid;
   place-items: center;
@@ -1490,124 +1555,6 @@
   .zone-pile__well {
     transition: none;
   }
-}
-/* --------------------------------------------------------------------------
- * Trilha de fases
- * ----------------------------------------------------------------------- */
-
-/* Régua de fases no rodapé: sem painel, sem moldura. Vira legenda da mesa. */
-.phase-track {
-  display: flex;
-  flex: 0 1 auto;
-  width: calc(900px * var(--board-scale, 1));
-  min-width: 0;
-  align-items: center;
-  gap: calc(8px * var(--board-scale, 1));
-  padding: 0 calc(6px * var(--board-scale, 1));
-}
-
-.phase-track__turn {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  flex: 0 0 auto;
-}
-
-.phase-track__turn-label {
-  font-family: var(--font-display);
-  font-size: calc(10px * var(--board-scale, 1));
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
-  color: var(--color-ink-faint);
-}
-
-.phase-track__turn-number {
-  font-family: var(--font-display);
-  font-size: calc(14px * var(--board-scale, 1));
-  font-variant-numeric: tabular-nums;
-  color: var(--color-ink-strong);
-}
-
-.phase-track__turn-player {
-  font-size: calc(11px * var(--board-scale, 1));
-  font-weight: 600;
-  max-width: calc(118px * var(--board-scale, 1));
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.phase-track__steps {
-  display: flex;
-  flex: 1 1 auto;
-  align-items: stretch;
-  gap: calc(2px * var(--board-scale, 1));
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.phase-step {
-  position: relative;
-  flex: 1 1 0;
-  min-width: 0;
-  display: grid;
-  place-items: center;
-  padding: calc(2px * var(--board-scale, 1)) calc(3px * var(--board-scale, 1));
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--color-ink-faint);
-  transition: color var(--duration-fast) var(--ease-standard);
-}
-
-.phase-step[data-state="done"] {
-  color: color-mix(in oklab, var(--color-ink-muted) 70%, transparent);
-}
-
-.phase-step[data-phase-open="true"] {
-  margin-left: calc(9px * var(--board-scale, 1));
-}
-
-.phase-step[data-phase-open="true"]::before {
-  content: "";
-  position: absolute;
-  left: calc(-5px * var(--board-scale, 1));
-  top: 18%;
-  bottom: 18%;
-  width: 1px;
-  background: var(--color-edge-hair);
-}
-
-.phase-step__glow {
-  position: absolute;
-  inset: 0;
-  border-radius: var(--radius-sm);
-}
-
-.phase-step__label {
-  position: relative;
-  z-index: 1;
-  max-width: 100%;
-  font-family: var(--font-display);
-  font-size: calc(8.5px * var(--board-scale, 1));
-  letter-spacing: 0.1em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.phase-track__now {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: calc(130px * var(--board-scale, 1));
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: right;
-  font-family: var(--font-display);
-  font-size: calc(10.5px * var(--board-scale, 1));
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
 }
 
 /* --------------------------------------------------------------------------

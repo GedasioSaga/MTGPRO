@@ -6,7 +6,7 @@ import type {
   StackItemView,
 } from '../../types/protocol'
 import { withAlpha } from '../../design/color'
-import { seatAccent } from './boardVisuals'
+import { seatSwatch } from './boardVisuals'
 
 export interface StackPanelProps {
   stack: StackItemView[]
@@ -47,9 +47,9 @@ export function StackPanel({ stack, cards, players }: StackPanelProps) {
                 data-top={index === 0 ? 'true' : 'false'}
                 style={{
                   zIndex: top.length - index,
-                  borderColor: withAlpha(seatAccent(item.controller), index === 0 ? 0.55 : 0.22),
+                  borderColor: withAlpha(seatSwatch(item.controller).core, index === 0 ? 0.55 : 0.22),
                   background: `linear-gradient(122deg, ${withAlpha(
-                    seatAccent(item.controller),
+                    seatSwatch(item.controller).core,
                     index === 0 ? 0.2 : 0.1,
                   )} 0%, rgba(10,13,21,0.92) 62%)`,
                 }}
@@ -64,7 +64,7 @@ export function StackPanel({ stack, cards, players }: StackPanelProps) {
               >
                 <span
                   className="stack-item__seat"
-                  style={{ background: seatAccent(item.controller) }}
+                  style={{ background: seatSwatch(item.controller).core }}
                   aria-hidden="true"
                 />
                 <div className="stack-item__body">

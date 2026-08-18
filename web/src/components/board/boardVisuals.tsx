@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
+import { seatAccent } from '../../design/tokens'
+import type { SeatSwatch } from '../../design/tokens'
 
-/** Cor de identidade de cada assento. P0 é quente (embaixo), P1 é frio (em cima). */
-const SEAT_ACCENT: readonly string[] = ['#e8a94c', '#6f9cf5']
-
-export function seatAccent(player: number): string {
-  return SEAT_ACCENT[player % SEAT_ACCENT.length]
+/**
+ * Cor de identidade do assento. A paleta mora em `design/tokens` — aqui só se
+ * traduz o número do jogador, que o motor emite, para o índice do assento. Duas
+ * tabelas de cor divergiam no primeiro ajuste: a mesa acendia num âmbar e o HUD
+ * noutro.
+ */
+export function seatSwatch(player: number): SeatSwatch {
+  return seatAccent[player % seatAccent.length]
 }
 
 /** WUBRG na ordem dos bits de `ColorSet`. */
