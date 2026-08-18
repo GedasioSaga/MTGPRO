@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useMatchStore } from '../../state/matchStore'
 import type { PlayerView } from '../../types/protocol'
+import { ArenaFrame } from './ArenaFrame'
 import { BattlefieldRow } from './BattlefieldRow'
 import { ExilePile } from './ExilePile'
 import { GraveyardPile } from './GraveyardPile'
@@ -72,6 +73,11 @@ export function BoardLayout() {
         '--combat-col': `calc(${lane}px * var(--board-scale, 1))`,
       })}
     >
+      {/* A arena é o objeto físico atrás de tudo. Ela mora na MESMA grade das
+          fileiras, então cada patamar cai exatamente sobre a faixa que ele
+          sustenta, sem medição em JS. */}
+      <ArenaFrame />
+
       <div className="board-area board-area--foe-strip" data-seat={top.id}>
         <PlayerBar player={top} side="top" underFire={damageTo(top.id)} />
       </div>

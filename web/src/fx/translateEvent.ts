@@ -250,6 +250,7 @@ export function translateEvent(event: MatchEvent, ctx: FxTranslateContext): FxSp
           amount,
           tone: 'damage',
           lethal: bool(raw.lethal),
+          subject: 'card',
         },
       ]
     }
@@ -259,7 +260,15 @@ export function translateEvent(event: MatchEvent, ctx: FxTranslateContext): FxSp
       if (amount <= 0) return []
       const at = playerPoint(num(raw.player))
       const specs: FxSpec[] = [
-        { kind: 'damageNumber', durationMs: d, at, amount, tone: 'damage', lethal: false },
+        {
+          kind: 'damageNumber',
+          durationMs: d,
+          at,
+          amount,
+          tone: 'damage',
+          lethal: false,
+          subject: 'player',
+        },
         {
           kind: 'vignette',
           durationMs: d,
@@ -290,6 +299,7 @@ export function translateEvent(event: MatchEvent, ctx: FxTranslateContext): FxSp
           amount: delta,
           tone: 'life',
           lethal: false,
+          subject: 'player',
         })
       }
       return specs

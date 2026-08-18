@@ -272,7 +272,9 @@
   width: min(1560px, calc(100% - 48px));
   margin-inline: auto;
   margin-block: calc(10px * var(--board-scale, 1));
-  padding: calc(10px * var(--board-scale, 1));
+  padding-block: calc(10px * var(--board-scale, 1));
+  /* Folga lateral para o bisel externo da moldura aparecer inteiro. */
+  padding-inline: calc(20px * var(--board-scale, 1));
   gap: var(--board-gap);
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr) auto minmax(0, 1fr) auto auto auto;

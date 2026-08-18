@@ -32,7 +32,15 @@ export type FxBody =
   | { kind: 'counterShatter'; at: FxPoint }
   | { kind: 'attackLunge'; card: ObjectId; rect: FxRect; toward: FxPoint }
   | { kind: 'blockClash'; at: FxPoint }
-  | { kind: 'damageNumber'; at: FxPoint; amount: number; tone: 'damage' | 'life'; lethal: boolean }
+  | {
+      kind: 'damageNumber'
+      at: FxPoint
+      amount: number
+      tone: 'damage' | 'life'
+      lethal: boolean
+      /** Quem levou: carta apanha faisca de impacto, jogador leva onda de choque. */
+      subject: 'card' | 'player'
+    }
   | { kind: 'lifePulse'; at: FxPoint; tone: 'damage' | 'life' }
   | { kind: 'deathDissolve'; rect: FxRect; tone: 'death' | 'exile' }
   | { kind: 'tokenSpawn'; rect: FxRect }

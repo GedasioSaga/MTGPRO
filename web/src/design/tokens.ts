@@ -67,6 +67,129 @@ export const line = {
 } as const
 
 // ---------------------------------------------------------------------------
+// Material procedural
+// ---------------------------------------------------------------------------
+
+/**
+ * Receita de um material de `design/materials.tsx`.
+ *
+ * Material nao e gradiente: e RELEVO com luz por cima. Toda entrada descreve a
+ * mesma cadeia — uma turbulencia gera o relevo, uma luz direcional revela o
+ * relevo, uma rampa linear recentra o resultado em cinza medio para o CSS
+ * poder misturar com `overlay` sem clarear a mesa inteira.
+ *
+ * `baseFrequency` esta em ciclos por pixel (`x y`). Assimetrica de proposito:
+ * e a razao entre os dois eixos que da DIRECAO ao material — trama no feltro,
+ * escovado no metal. Simetrica vira ruido de televisao.
+ */
+export interface SurfaceSpec {
+  readonly baseFrequency: string
+  readonly octaves: number
+  /** Sem seed fixa o ruido muda entre navegadores e entre reloads. */
+  readonly seed: number
+  /** Altura do relevo lido pela luz. */
+  readonly surfaceScale: number
+  /** Graus no plano da tela; 270 e luz vindo do topo. */
+  readonly azimuth: number
+  /** Graus acima do plano. Baixo = rasante, sombra longa. */
+  readonly elevation: number
+  readonly lightColor: string
+  /** Ganho de contraste da rampa linear que recentra o mapa de luz. */
+  readonly slope: number
+  /** Deslocamento da rampa. Calculado para a media cair perto de 0.5. */
+  readonly intercept: number
+  /** Cor da superficie por baixo do relevo. */
+  readonly base: string
+}
+
+export const material = {
+  /** Superficie de jogo: fibra fina com trama na vertical, luz caindo do topo. */
+  felt: {
+    baseFrequency: '0.36 0.94',
+    octaves: 3,
+    seed: 11,
+    surfaceScale: 2.2,
+    azimuth: 270,
+    elevation: 58,
+    lightColor: '#cfe9d8',
+    slope: 1.6,
+    intercept: -0.65,
+    base: felt.base,
+  },
+  /** Faixa dos terrenos: celula media, luz rasante, couro recuado. */
+  leather: {
+    baseFrequency: '0.19 0.21',
+    octaves: 2,
+    seed: 29,
+    surfaceScale: 2.4,
+    azimuth: 258,
+    elevation: 44,
+    lightColor: '#c7a97e',
+    slope: 1.5,
+    intercept: -0.18,
+    base: '#241a12',
+  },
+  /** HUD embutido na moldura: risco fino no eixo horizontal. */
+  brushed: {
+    baseFrequency: '0.005 1.2',
+    octaves: 1,
+    seed: 41,
+    surfaceScale: 1.1,
+    azimuth: 272,
+    elevation: 68,
+    lightColor: '#dde6f7',
+    slope: 1.7,
+    intercept: -0.91,
+    base: surface.metal,
+  },
+  /**
+   * Moldura da arena e veio da costura. Unico material OPACO: sai do filtro
+   * ja com corpo e brilho, sem depender de mistura no CSS — pedra e objeto,
+   * nao textura por cima de outra coisa.
+   */
+  stone: {
+    baseFrequency: '0.013 0.021',
+    octaves: 2,
+    seed: 5,
+    surfaceScale: 3.6,
+    azimuth: 232,
+    elevation: 46,
+    lightColor: '#8f8a79',
+    slope: 1,
+    intercept: 0,
+    base: '#4b473c',
+  },
+} as const satisfies Record<string, SurfaceSpec>
+
+/**
+ * O que transforma turbulencia em GRANITO: deslocar o ruido do veio por um
+ * segundo ruido mais fino. Sem o deslocamento a pedra fica com nuvem regular,
+ * que le como fumaca e nao como rocha.
+ */
+export const stoneVein = {
+  warpFrequency: '0.09',
+  warpOctaves: 1,
+  warpSeed: 23,
+  displace: 16,
+  specularColor: '#f7f1de',
+  specularConstant: 0.7,
+  specularExponent: 22,
+} as const
+
+/**
+ * Quanto de cada material chega na tela, espelhado em `--mat-*-amount`. Acima
+ * destes valores o relevo deixa de ser material e vira sujeira sobre a carta.
+ */
+export const materialAmount = {
+  felt: 0.55,
+  leather: 0.5,
+  brushed: 0.4,
+  stone: 0.8,
+} as const
+
+export type MaterialKey = keyof typeof material
+
+// ---------------------------------------------------------------------------
 // Mana
 // ---------------------------------------------------------------------------
 

@@ -107,6 +107,12 @@ export function defenderPoint(defender: unknown): FxPoint {
   return { x: w * 0.5, y: h * 0.18 }
 }
 
+/** Centro da tela — ancora dos efeitos que nao pertencem a nenhum no. */
+export function viewportCenter(): FxPoint {
+  const { w, h } = viewport()
+  return { x: w / 2, y: h / 2 }
+}
+
 export function midpoint(a: FxPoint, b: FxPoint): FxPoint {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
 }
