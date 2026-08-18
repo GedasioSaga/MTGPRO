@@ -278,7 +278,7 @@
 
   /* Ângulo do tampo. Um número só manda na inclinação do tapete e na
      contra-rotação de tudo que está apoiado nele — ver `.mat-plane`. */
-  --mat-tilt: 16deg;
+  --mat-tilt: 20deg;
 
   position: relative;
   /* Acima da luz de arena (`.app-shell__table::after`), que é `z-index: 0`. */
