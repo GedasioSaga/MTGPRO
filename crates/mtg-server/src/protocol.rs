@@ -18,6 +18,11 @@ pub enum ClientMessage {
         seed: u64,
         #[serde(default = "default_speed")]
         speed: f64,
+        /// De quem e a visao transmitida. Omitido = "player0", que e o que o
+        /// espectador espera: mao de baixo aberta, mao de cima de costas.
+        /// "omniscient" existe para analise, mas precisa ser pedido.
+        #[serde(default)]
+        perspective: Perspective,
     },
     Pause,
     Resume,
@@ -26,6 +31,30 @@ pub enum ClientMessage {
 
 fn default_speed() -> f64 {
     1.0
+}
+
+/// Quem esta assistindo. O padrao NAO e onisciente de proposito: default que
+/// revela informacao oculta transforma bug de esquecimento em vazamento.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Perspective {
+    #[default]
+    Player0,
+    Player1,
+    Spectator,
+    Omniscient,
+}
+
+impl Perspective {
+    pub fn observer(self) -> mtg_core::view::Observer {
+        use mtg_core::view::Observer;
+        match self {
+            Perspective::Player0 => Observer::Player(mtg_core::ids::PlayerId(0)),
+            Perspective::Player1 => Observer::Player(mtg_core::ids::PlayerId(1)),
+            Perspective::Spectator => Observer::Spectator,
+            Perspective::Omniscient => Observer::Omniscient,
+        }
+    }
 }
 
 /// Frame enviado ao cliente em `/ws/match`.

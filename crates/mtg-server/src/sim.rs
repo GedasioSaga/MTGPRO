@@ -34,6 +34,8 @@ pub struct MatchRequest {
     pub deck_a: Vec<CardDefId>,
     pub deck_b: Vec<CardDefId>,
     pub seed: u64,
+    /// De quem e a visao transmitida. Ver `protocol::Perspective`.
+    pub observer: Observer,
 }
 
 /// Decorador de `Agent`: nunca muta `Game` porque a assinatura de
@@ -46,6 +48,7 @@ struct StreamingAgent {
     inner: Box<dyn Agent>,
     tx: Sender<ServerFrame>,
     cursor: Arc<AtomicUsize>,
+    observer: Observer,
 }
 
 impl StreamingAgent {
@@ -57,7 +60,7 @@ impl StreamingAgent {
         }
         let batch = game.match_events[already_sent..total].to_vec();
         self.cursor.store(total, Ordering::Relaxed);
-        let view = game.view(Observer::Omniscient);
+        let view = game.view(self.observer);
         // Melhor esforço: se o cliente WS já desconectou, o receptor foi
         // dropado e o envio falha — a simulação segue até o fim mesmo assim
         // (ela tem teto de decisões em `GameConfig::max_decisions`).
@@ -97,11 +100,13 @@ pub fn run_match_blocking(db: Arc<CardDatabase>, req: MatchRequest, tx: Sender<S
     // calham de ser simétricos.
     let cursor = Arc::new(AtomicUsize::new(0));
     let agent_a: Box<dyn Agent> = Box::new(StreamingAgent {
+        observer: req.observer,
         inner: Box::new(SeededBot::new(req.name_a.clone(), req.seed ^ 0x51_0A)),
         tx: tx.clone(),
         cursor: cursor.clone(),
     });
     let agent_b: Box<dyn Agent> = Box::new(StreamingAgent {
+        observer: req.observer,
         inner: Box::new(SeededBot::new(req.name_b.clone(), req.seed ^ 0x51_0B)),
         tx: tx.clone(),
         cursor: cursor.clone(),
@@ -117,7 +122,7 @@ pub fn run_match_blocking(db: Arc<CardDatabase>, req: MatchRequest, tx: Sender<S
         }
     };
 
-    let init_view = game.view(Observer::Omniscient);
+    let init_view = game.view(req.observer);
     if tx
         .blocking_send(ServerFrame::Init { view: init_view, players: [req.name_a, req.name_b], seed: req.seed })
         .is_err()
@@ -135,7 +140,7 @@ pub fn run_match_blocking(db: Arc<CardDatabase>, req: MatchRequest, tx: Sender<S
     let already_sent = cursor.load(Ordering::Relaxed);
     if game.match_events.len() > already_sent {
         let batch = game.match_events[already_sent..].to_vec();
-        let view = game.view(Observer::Omniscient);
+        let view = game.view(req.observer);
         let _ = tx.blocking_send(ServerFrame::Events { events: batch, view });
     }
 

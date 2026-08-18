@@ -180,7 +180,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     while let Some(Ok(msg)) = ws_rx.next().await {
         let Message::Text(text) = msg else { continue };
         match serde_json::from_str::<ClientMessage>(text.as_str()) {
-            Ok(ClientMessage::Start { deck_a, deck_b, seed, speed }) => {
+            Ok(ClientMessage::Start { deck_a, deck_b, seed, speed, perspective }) => {
                 if playback.as_ref().is_some_and(|h| !h.is_finished()) {
                     send_error(&out_tx, "partida já em andamento nesta conexão").await;
                     continue;
@@ -197,6 +197,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                 let req = MatchRequest {
                     name_a: cfg_a.name.clone(),
                     name_b: cfg_b.name.clone(),
+                    observer: perspective.observer(),
                     deck_a: cfg_a.cards.clone(),
                     deck_b: cfg_b.cards.clone(),
                     seed,
