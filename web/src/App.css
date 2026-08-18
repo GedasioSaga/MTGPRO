@@ -290,8 +290,8 @@
   background-color: #10281f;
   background-image:
     /* holofote alto sobre a linha de combate */
-    radial-gradient(78% 42% at 50% 50%, rgba(206, 255, 226, 0.11), transparent 78%),
-    radial-gradient(120% 54% at 50% -6%, rgba(255, 238, 198, 0.11), transparent 62%),
+    radial-gradient(92% 58% at 50% 50%, rgba(206, 255, 226, 0.15), transparent 80%),
+    radial-gradient(120% 54% at 50% -6%, rgba(255, 238, 198, 0.13), transparent 62%),
     var(--tex-fiber),
     var(--tex-grain),
     /* vinheta do próprio tapete: as quatro bordas caem meio tom */
@@ -321,8 +321,8 @@
   z-index: 0;
   pointer-events: none;
   border-radius: calc(var(--mat-round) - 4px);
-  border: 1px dashed color-mix(in oklab, var(--color-felt-seam) 78%, white 22%);
-  opacity: 0.42;
+  box-shadow: inset 0 0 calc(46px * var(--board-scale, 1)) rgba(0, 0, 0, 0.34);
+  opacity: 0.7;
 }
 
 .board-area {
@@ -473,9 +473,10 @@
   /* Toda carta na mesa projeta sombra. É o que separa "pousada sobre feltro"
      de "recortada sobre um fundo". */
   filter:
-    drop-shadow(0 calc(5px * var(--board-scale, 1)) calc(7px * var(--board-scale, 1))
-      rgba(0, 0, 0, 0.5))
-    drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5));
+    drop-shadow(0 calc(9px * var(--board-scale, 1)) calc(12px * var(--board-scale, 1))
+      rgba(0, 0, 0, 0.62))
+    drop-shadow(0 calc(2px * var(--board-scale, 1)) calc(2px * var(--board-scale, 1))
+      rgba(0, 0, 0, 0.6));
 }
 
 /* Sombra de contato: a elipse escura logo abaixo da borda de baixo da carta,
@@ -486,11 +487,11 @@
   z-index: -1;
   left: -10%;
   right: -10%;
-  bottom: calc(-14px * var(--board-scale, 1));
-  height: calc(28px * var(--board-scale, 1));
+  bottom: calc(-13px * var(--board-scale, 1));
+  height: calc(30px * var(--board-scale, 1));
   border-radius: 50%;
-  background: radial-gradient(50% 50% at 50% 50%, rgba(0, 0, 0, 0.95), transparent 70%);
-  filter: blur(calc(5px * var(--board-scale, 1)));
+  background: radial-gradient(50% 50% at 50% 50%, rgba(0, 0, 0, 0.98), transparent 68%);
+  filter: blur(calc(6px * var(--board-scale, 1)));
   pointer-events: none;
 }
 
@@ -548,27 +549,61 @@
   flex-direction: column-reverse;
 }
 
-/* Área impressa no tapete: rebaixo de tom, moldura interna e rótulo apagado. */
+/*
+ * A zona NAO e uma caixa. Nao tem borda, nao tem rotulo, nao tem retangulo de
+ * fundo: e um trecho da mesma superficie continua, distinguido so por LUZ.
+ * A faixa de batalha recebe a luz alta e sobe meio tom; a de terrenos fica na
+ * penumbra e recua. Toda marca aqui e ELIPSE com queda suave — elipse nunca
+ * desenha canto, e canto e o que faz a tela ler como painel de controle.
+ */
 .board-zone {
   position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-radius: calc(12px * var(--board-scale, 1));
-  border: 1px solid rgba(180, 240, 210, 0.09);
-  background:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0.05) 42%, rgba(0, 0, 0, 0.2));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    inset 0 0 calc(26px * var(--board-scale, 1)) rgba(0, 0, 0, 0.22);
+}
+
+.board-zone::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  /* O feather e o que impede a faixa de virar caixa: a diferenca de tom morre
+     antes de encostar na borda, entao nao existe aresta para o olho ler. */
+  mask-image:
+    linear-gradient(
+      180deg,
+      transparent 0%,
+      rgba(0, 0, 0, 0.72) 34%,
+      #000 50%,
+      rgba(0, 0, 0, 0.72) 66%,
+      transparent 100%
+    ),
+    linear-gradient(90deg, transparent 0%, #000 20%, #000 80%, transparent 100%);
+  mask-composite: intersect;
+  -webkit-mask-image:
+    linear-gradient(
+      180deg,
+      transparent 0%,
+      rgba(0, 0, 0, 0.72) 34%,
+      #000 50%,
+      rgba(0, 0, 0, 0.72) 66%,
+      transparent 100%
+    ),
+    linear-gradient(90deg, transparent 0%, #000 20%, #000 80%, transparent 100%);
+  -webkit-mask-composite: source-in;
 }
 
 .board-zone[data-zone="battle"] {
   flex: 1 1 auto;
-  border-color: rgba(180, 240, 210, 0.15);
+}
+
+/* Elevacao: clareia do centro para fora, sem nunca tocar a borda da faixa. */
+.board-zone[data-zone="battle"]::before {
   background:
-    radial-gradient(58% 72% at 50% 58%, rgba(214, 255, 232, 0.13), transparent 74%),
-    linear-gradient(180deg, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0) 46%, rgba(0, 0, 0, 0.2));
+    radial-gradient(80% 100% at 50% 42%, rgba(228, 255, 242, 0.2), transparent 80%),
+    linear-gradient(180deg, rgba(255, 250, 226, 0.1), transparent 50%);
 }
 
 .board-zone[data-zone="lands"] {
@@ -576,20 +611,10 @@
   height: var(--lands-h);
 }
 
-/* Serigrafia de playmat: sempre lá, nunca competindo com as cartas. */
-.board-zone__label {
-  position: absolute;
-  top: 50%;
-  left: calc(14px * var(--board-scale, 1));
-  translate: 0 -50%;
-  z-index: 0;
-  font-family: var(--font-display);
-  font-size: calc(8.5px * var(--board-scale, 1));
-  letter-spacing: var(--tracking-wide-caps);
-  text-transform: uppercase;
-  color: rgba(214, 255, 234, 0.13);
-  pointer-events: none;
-  white-space: nowrap;
+/* Recuo: a borda externa da mesa afunda na sombra, sem linha nenhuma. */
+.board-zone[data-zone="lands"]::before {
+  background:
+    radial-gradient(120% 150% at 50% 50%, rgba(0, 0, 0, 0.58), rgba(0, 0, 0, 0.2) 70%, transparent 92%);
 }
 
 .board-zone__inner {
@@ -831,35 +856,16 @@
   line-height: 1;
 }
 
+/*
+ * Origem do dano que passa. O NUMERO nao mora mais aqui — ele mora no alvo.
+ * Sobra um ponto discreto, que existe para o traco curto ter de onde sair.
+ */
 .combat-breach {
-  display: flex;
-  align-items: baseline;
-  gap: calc(7px * var(--board-scale, 1));
-  padding: calc(3px * var(--board-scale, 1)) calc(13px * var(--board-scale, 1));
+  width: calc(9px * var(--board-scale, 1));
+  height: calc(9px * var(--board-scale, 1));
   border-radius: 999px;
-  border: 1px solid rgba(255, 110, 92, 0.5);
-  background: linear-gradient(180deg, rgba(74, 16, 12, 0.96), rgba(28, 6, 6, 0.96));
-  box-shadow:
-    0 0 calc(24px * var(--board-scale, 1)) rgba(255, 60, 42, 0.32),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
-}
-
-.combat-breach__label {
-  font-size: calc(9.5px * var(--board-scale, 1));
-  font-weight: 600;
-  letter-spacing: var(--tracking-wide-caps);
-  text-transform: uppercase;
-  color: rgba(255, 190, 178, 0.8);
-}
-
-.combat-breach__value {
-  font-family: var(--font-display);
-  font-size: calc(24px * var(--board-scale, 1));
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  color: #ffb0a2;
-  text-shadow: 0 0 calc(16px * var(--board-scale, 1)) rgba(255, 60, 42, 0.75);
+  background: rgba(232, 96, 79, 0.75);
+  box-shadow: 0 0 calc(10px * var(--board-scale, 1)) rgba(232, 96, 79, 0.4);
 }
 
 .board-field__back {
@@ -1747,24 +1753,24 @@
  * unico vetor longo que sobrou na mesa, e por isso pode ser gritado.
  */
 .target-arrows__group--breach .target-arrows__halo {
-  stroke-width: 32;
-  opacity: 0.12;
+  stroke-width: 12;
+  opacity: 0.14;
 }
 
 .target-arrows__group--breach .target-arrows__line {
-  stroke-width: 13;
-  opacity: 0.9;
+  stroke-width: 4;
+  opacity: 0.8;
 }
 
 .target-arrows__chip {
-  fill: #1b0709;
-  stroke: rgba(255, 120, 100, 0.8);
-  stroke-width: 1.5;
+  fill: rgba(24, 8, 9, 0.9);
+  stroke: rgba(255, 120, 100, 0.55);
+  stroke-width: 1;
 }
 
 .target-arrows__label {
   font-family: var(--font-display);
-  font-size: 21px;
+  font-size: 15px;
   font-weight: 700;
   text-anchor: middle;
   dominant-baseline: central;

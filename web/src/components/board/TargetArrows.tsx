@@ -17,12 +17,19 @@ interface Arrow {
   to: Point
   /** Só o vetor de dano ao jogador carrega número. */
   label: string | null
+  /** Onde o número mora. Sempre colado no ALVO, nunca solto no vão. */
+  labelAt: Point | null
 }
 
 const TONE_COLOR: Record<ArrowTone, string> = {
-  breach: '#ff5a48',
+  breach: '#e8604f',
   spell: '#e8a94c',
 }
+
+/** Comprimento do traço de dano, em px de tela. Curto de propósito. */
+const STUB_LENGTH = 46
+/** Distância do número ao centro do alvo, na direção de onde o dano vem. */
+const LABEL_OFFSET = 34
 
 /** Quanto a ponta recua para não entrar por baixo da carta. */
 const EDGE_INSET = 0.44
@@ -40,9 +47,9 @@ export interface TargetArrowsProps {
  * Vetores de alvo, ancorados no DOM real.
  *
  * Combate NÃO desenha seta: quem bloqueia quem se lê pela coluna (ver
- * `combatPlan`), e o placar mora na costura. Sobrou aqui exatamente um traço
- * longo — o dano que PASSA, um vetor grosso do arrombamento até o retrato do
- * defensor — e as setas finas de alvo de mágica, que ligam pilha e alvo.
+ * `combatPlan`), e o placar mora na costura. O dano que PASSA é um traço CURTO
+ * encostado no retrato do defensor, com o número ancorado nele — não um vetor
+ * atravessando a tela. Sobram ainda as setas finas de alvo de mágica.
  */
 export function TargetArrows({ view, plan = EMPTY_COMBAT_PLAN }: TargetArrowsProps) {
   const [arrows, setArrows] = useState<Arrow[]>([])
@@ -99,7 +106,6 @@ export function TargetArrows({ view, plan = EMPTY_COMBAT_PLAN }: TargetArrowsPro
             ? `M ${round(arrow.from.x)} ${round(arrow.from.y)} L ${round(arrow.to.x)} ${round(arrow.to.y)}`
             : curve(arrow.from, arrow.to)
         const color = TONE_COLOR[arrow.tone]
-        const mid = { x: (arrow.from.x + arrow.to.x) / 2, y: (arrow.from.y + arrow.to.y) / 2 }
         return (
           <g key={arrow.key} className={`target-arrows__group target-arrows__group--${arrow.tone}`}>
             <path className="target-arrows__halo" d={d} stroke={color} />
@@ -109,7 +115,7 @@ export function TargetArrows({ view, plan = EMPTY_COMBAT_PLAN }: TargetArrowsPro
               stroke={color}
               markerEnd={`url(#arrow-head-${arrow.tone})`}
             />
-            {arrow.label === null ? (
+            {arrow.label === null || arrow.labelAt === null ? (
               <circle
                 className="target-arrows__origin"
                 cx={arrow.from.x}
@@ -119,8 +125,18 @@ export function TargetArrows({ view, plan = EMPTY_COMBAT_PLAN }: TargetArrowsPro
               />
             ) : (
               <>
-                <circle className="target-arrows__chip" cx={mid.x} cy={mid.y} r={19} />
-                <text className="target-arrows__label" x={mid.x} y={mid.y} fill={color}>
+                <circle
+                  className="target-arrows__chip"
+                  cx={arrow.labelAt.x}
+                  cy={arrow.labelAt.y}
+                  r={14}
+                />
+                <text
+                  className="target-arrows__label"
+                  x={arrow.labelAt.x}
+                  y={arrow.labelAt.y}
+                  fill={color}
+                >
                   {arrow.label}
                 </text>
               </>
@@ -144,11 +160,13 @@ function collectArrows(view: GameView, plan: CombatPlan): Arrow[] {
     const source = anchorRect('[data-breach-anchor="true"]')
     const target = anchorRect(`[data-player-portrait="${plan.defender}"]`)
     if (source !== null && target !== null) {
+      const span = trim(source, target)
       arrows.push({
         key: 'breach',
         tone: 'breach',
         label: `-${plan.breachDamage}`,
-        ...trim(source, target),
+        labelAt: offsetToward(target.center, span.from, target.radius + LABEL_OFFSET),
+        ...stub(span, STUB_LENGTH),
       })
     }
   }
@@ -159,13 +177,13 @@ function collectArrows(view: GameView, plan: CombatPlan): Arrow[] {
     for (const target of item.targets) {
       const to = cardAnchor(target)
       if (to !== null) {
-        arrows.push({ key: `spl-${item.id}-c${target}`, tone: 'spell', label: null, ...trim(source, to) })
+        arrows.push({ key: `spl-${item.id}-c${target}`, tone: 'spell', label: null, labelAt: null, ...trim(source, to) })
       }
     }
     for (const target of item.targetPlayers) {
       const to = playerAnchor(target)
       if (to !== null) {
-        arrows.push({ key: `spl-${item.id}-p${target}`, tone: 'spell', label: null, ...trim(source, to) })
+        arrows.push({ key: `spl-${item.id}-p${target}`, tone: 'spell', label: null, labelAt: null, ...trim(source, to) })
       }
     }
   }
@@ -209,6 +227,33 @@ function trim(from: Anchor, to: Anchor): { from: Point; to: Point } {
     from: { x: from.center.x + ux * from.radius, y: from.center.y + uy * from.radius },
     to: { x: to.center.x - ux * to.radius, y: to.center.y - uy * to.radius },
   }
+}
+
+/**
+ * Encurta um vão para um traço colado no ALVO. O olho completa o resto do
+ * caminho sozinho; a flecha inteira só serviria para gritar.
+ */
+function stub(span: { from: Point; to: Point }, length: number): { from: Point; to: Point } {
+  const dx = span.to.x - span.from.x
+  const dy = span.to.y - span.from.y
+  const total = Math.hypot(dx, dy)
+  if (total <= length) return span
+  return {
+    from: {
+      x: span.to.x - (dx / total) * length,
+      y: span.to.y - (dy / total) * length,
+    },
+    to: span.to,
+  }
+}
+
+/** Ponto a `distance` de `origin`, na direção de `toward`. */
+function offsetToward(origin: Point, toward: Point, distance: number): Point {
+  const dx = toward.x - origin.x
+  const dy = toward.y - origin.y
+  const length = Math.hypot(dx, dy)
+  if (length < 1) return origin
+  return { x: origin.x + (dx / length) * distance, y: origin.y + (dy / length) * distance }
 }
 
 /** Bezier quadrática arqueada para a lateral: duas setas paralelas não colam. */

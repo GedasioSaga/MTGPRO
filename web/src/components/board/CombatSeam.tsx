@@ -101,15 +101,17 @@ function Beam({
 }
 
 /**
- * O dano que passa. Este é o único ponto do tabuleiro de onde sai um vetor
- * longo — `TargetArrows` ancora nele para chegar no retrato do defensor.
+ * Origem do dano que passa. Só um ponto: o número vive ANCORADO NO ALVO (ver
+ * `TargetArrows`), e repeti-lo aqui, solto no vão, era o elemento de maior
+ * contraste da tela sem ser a informação mais importante dela.
  */
 function BreachChip({ damage }: { damage: number }): ReactElement {
   return (
-    <div className="combat-breach" data-breach-anchor="true">
-      <span className="combat-breach__label">passa</span>
-      <span className="combat-breach__value">{damage}</span>
-    </div>
+    <div
+      className="combat-breach"
+      data-breach-anchor="true"
+      title={`passa ${damage}`}
+    />
   )
 }
 

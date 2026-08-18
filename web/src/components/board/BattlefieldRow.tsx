@@ -34,8 +34,8 @@ interface LandGroup {
 /**
  * Metade do campo de batalha de um jogador, desenhada como duas zonas da mesa:
  * a faixa de batalha, colada na linha central (é onde o combate acontece), e a
- * faixa de terrenos na borda externa. As duas existem mesmo vazias — o jogador
- * precisa ver ONDE as coisas vão cair antes de elas caírem.
+ * faixa de terrenos na borda externa. Nenhuma das duas é desenhada com linha:
+ * a diferença entre elas é de luz e de altura, não de moldura.
  */
 export function BattlefieldRow({
   player,
@@ -107,8 +107,10 @@ export function BattlefieldRow({
 }
 
 /**
- * Área impressa na mesa. O rótulo é serigrafia de playmat: fica sempre lá,
- * apagado, e some sob as cartas quando a zona enche.
+ * Trecho da mesa, não caixa. Não desenha moldura nem rótulo: quem separa a
+ * zona é a LUZ (ver `.board-zone` em `App.css`) — a faixa de batalha sobe meio
+ * tom, a de terrenos afunda. O nome da zona sobrevive só como `aria-label`,
+ * para leitor de tela, que é onde ele de fato faz falta.
  */
 function Zone({
   kind,
@@ -121,9 +123,6 @@ function Zone({
 }) {
   return (
     <section className="board-zone" data-zone={kind} aria-label={label}>
-      <span className="board-zone__label" aria-hidden="true">
-        {label}
-      </span>
       <div className="board-zone__inner">{children}</div>
     </section>
   )
