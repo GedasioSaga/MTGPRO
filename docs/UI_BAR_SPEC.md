@@ -76,3 +76,33 @@ Mesa física por webcam, quatro jogadores, com painel de histórico à direita
 mostrando as últimas cartas jogadas em miniatura. Não é a bar do nosso layout
 (produto diferente), mas ensina uma coisa: **o histórico com miniatura da carta**
 lê muito melhor que o nosso log de texto. Candidato para o painel `REGISTRO`.
+
+## Decisão: régua de fases colapsada, na costura central
+
+Pedido do usuário em 18/08. O motor continua com os 13 `Step` das regras — só a
+**apresentação** colapsa para sete marcos:
+
+| Marco exibido | `Step` do motor que agrupa |
+|---|---|
+| `UNTAP` | `Untap` |
+| `UPKEEP` | `Upkeep` |
+| `DRAW` | `Draw` |
+| `MAIN 1` | `PrecombatMain` |
+| `COMBAT` | `BeginCombat`, `DeclareAttackers`, `DeclareBlockers`, `FirstStrikeDamage`, `CombatDamage`, `EndCombat` |
+| `MAIN 2` | `PostcombatMain` |
+| `END` | `End`, `Cleanup` |
+
+Motivo: o crítico cego apontou **duas vezes** a régua de 13 passos truncados
+(`UNTA… UPKE… DEAW… 1ST D… DAMA…`) no rodapé como "vocabulário de ferramenta de
+replay, não de partida".
+
+Duas restrições que vêm junto:
+
+- **Sem truncamento com `…`.** Se não couber, reduz a escala tipográfica ou usa
+  abreviação de 3 letras. Reticência em rótulo é assinatura de protótipo.
+- **O sub-passo do combate não some no agrupamento.** Quando o passo corrente
+  está dentro do combate, o marco `COMBAT` se expande no lugar mostrando
+  atacantes / bloqueadores / dano. É a informação mais importante da partida.
+
+Posição: faixa fina na **costura central**, entre os dois playmats — não no
+rodapé. Referência de agrupamento: como o Forge apresenta fases na própria UI.
