@@ -163,4 +163,39 @@ JSON em camelCase (`serde rename_all`). `MatchEvent` usa tag interna `"type"`.
 - Reconstruir/atualizar: `graphify update "<repo>"`.
 - Checar staleness: comparar `built_at_commit` do `graph.json` com
   `git rev-parse HEAD`. Diferente = atualizar antes de confiar.
-- Hooks `post-commit` e `post-checkout` de auto-rebuild: **ver seção abaixo**.
+- Hooks `post-commit` e `post-checkout` **instalados** em `.git/hooks/`: rodam
+  `graphify update` em background a cada commit, saída em
+  `graphify-out/.last-update.log`. Não bloqueiam o commit e saem em silêncio se
+  `graphify` sumir do PATH.
+- `graphify-out/` está no `.gitignore`: é derivado, 1 MB, e o hook o reconstrói.
+
+Consultas úteis (custam 0 token de API — é travessia AST local):
+
+```bash
+G='C:\Users\gedasio.filho\OneDrive - Vertis Capital\Área de Trabalho\Tudo\Jogo Magic\graphify-out\graph.json'
+graphify query "quem chama layers::characteristics" --graph "$G" --budget 1200
+graphify god-nodes --graph "$G"
+graphify explain "resolve_effect" --graph "$G"
+graphify path "Game::run" "sba::check" --graph "$G"
+```
+
+Estado do grafo em 2026-08-17: 841 nodes, 2120 edges, 31 communities,
+construído no commit `a97d121` (antes dos workflows fecharem — reconstruir
+depois que os builders terminarem).
+
+---
+
+## Como retomar esta sessão do zero
+
+1. `cd` para o diretório do projeto (entre aspas — tem espaço e acento).
+2. Ler este arquivo, depois `docs/ENGINE_CONTRACT.md`.
+3. `git log --oneline | head -10` e `git status` para ver onde parou.
+4. `cargo check --workspace --all-targets 2>&1 | head -40` — é a verdade sobre
+   o estado do motor. Se falhar, o passo é consertar, não recomeçar.
+5. `cd web && npx tsc --noEmit` — a verdade sobre o cliente.
+6. Comparar `graphify-out/graph.json` (`built_at_commit`) com `git rev-parse HEAD`;
+   se divergir, `graphify update "<repo>"`.
+7. Retomar em "Próximos passos".
+
+Se algo neste arquivo contradiz o código, **o código ganha** — isto é um retrato,
+não a fonte da verdade.

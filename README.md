@@ -68,3 +68,12 @@ cargo test --workspace           # regras + interações
 cargo clippy --workspace --all-targets
 cd web && npx tsc --noEmit && npm run build
 ```
+
+## Licença e aviso
+
+Código sob licença MIT (`LICENSE`).
+
+Este é um projeto de fã, sem relação com a Wizards of the Coast. *Magic: The
+Gathering*, os nomes das cartas e o texto de regras são propriedade da Wizards
+of the Coast LLC. Nenhuma arte de carta é redistribuída aqui: a interface busca
+as imagens da API pública do Scryfall em tempo de execução.

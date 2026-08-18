@@ -1,0 +1,245 @@
+/* Camada de efeitos. Tudo aqui e overlay: nenhum no participa do layout da
+   mesa, e nada captura ponteiro exceto o overlay de fim de jogo. */
+
+.fx-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+  font-family: var(--fx-font, ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif);
+}
+
+/* Todo overlay e ancorado em (0,0) e posicionado por transform — nunca por
+   top/left, que forcariam layout a cada quadro. */
+.fx-node {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform, opacity;
+}
+
+.fx-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- faixa de turno --- */
+
+.fx-banner {
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+  padding: 0.7rem 2.4rem 0.7rem 1.6rem;
+  background: linear-gradient(
+    90deg,
+    rgba(9, 11, 16, 0.94) 0%,
+    rgba(9, 11, 16, 0.86) 62%,
+    rgba(9, 11, 16, 0) 100%
+  );
+  border-left: 3px solid var(--fx-accent, #4fa8ff);
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(6px);
+}
+
+.fx-banner__turn {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.fx-banner__name {
+  font-size: 1.55rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: #f4f6fb;
+  text-shadow: 0 0 22px var(--fx-accent-soft, rgba(79, 168, 255, 0.5));
+}
+
+.fx-banner__sheen {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.16) 50%,
+    transparent 62%
+  );
+}
+
+/* --- numeros flutuantes --- */
+
+.fx-number {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.85),
+    0 0 18px currentColor,
+    0 8px 26px rgba(0, 0, 0, 0.7);
+}
+
+.fx-number--lethal::after {
+  content: '';
+  position: absolute;
+  inset: -0.35em -0.5em;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 77, 77, 0.28), transparent 70%);
+}
+
+/* --- etiquetas --- */
+
+.fx-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #0d0f14;
+  background: var(--fx-tag-bg, #ffd76a);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+  max-width: 22rem;
+}
+
+.fx-tag__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- fim de jogo --- */
+
+.fx-gameover {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+  background: radial-gradient(circle at 50% 45%, rgba(12, 15, 22, 0.72), rgba(4, 5, 9, 0.94));
+  backdrop-filter: blur(10px) saturate(0.7);
+}
+
+.fx-gameover__panel {
+  min-width: min(30rem, 88vw);
+  padding: 2.4rem 2.6rem;
+  text-align: center;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(24, 28, 38, 0.96), rgba(12, 14, 20, 0.96));
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.65);
+}
+
+.fx-gameover__eyebrow {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.fx-gameover__title {
+  margin: 0.65rem 0 0.3rem;
+  font-size: 2.1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fbf3d8;
+  text-shadow: 0 0 34px rgba(230, 195, 79, 0.35);
+}
+
+.fx-gameover__subtitle {
+  font-size: 0.92rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.fx-gameover__score {
+  display: grid;
+  gap: 0.45rem;
+  margin: 1.6rem 0;
+}
+
+.fx-gameover__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.2rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.fx-gameover__row[data-won='true'] {
+  color: #fbf3d8;
+  background: rgba(230, 195, 79, 0.1);
+  border-color: rgba(230, 195, 79, 0.32);
+}
+
+.fx-gameover__life {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.fx-gameover__button {
+  appearance: none;
+  cursor: pointer;
+  padding: 0.7rem 1.7rem;
+  border-radius: 8px;
+  border: 1px solid rgba(230, 195, 79, 0.5);
+  font: inherit;
+  font-weight: 650;
+  font-size: 0.95rem;
+  color: #0d0f14;
+  background: linear-gradient(180deg, #f0d377, #d9b44a);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  transition: filter 160ms ease, transform 160ms ease;
+}
+
+.fx-gameover__button:hover {
+  filter: brightness(1.08);
+}
+
+.fx-gameover__button:active {
+  transform: translateY(1px);
+}
+
+.fx-gameover__button:focus-visible {
+  outline: 2px solid #ffe9a8;
+  outline-offset: 3px;
+}
+
+/* --- ticker de vida (componente de HUD, nao overlay) --- */
+
+.fx-life-ticker {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  transition: color 220ms ease;
+}
+
+.fx-life-ticker[data-trend='down'] {
+  color: #ff6a6a;
+}
+
+.fx-life-ticker[data-trend='up'] {
+  color: #5ce6a0;
+}
+
+/* Sem movimento: o efeito ainda acontece, so nao viaja pela tela. */
+@media (prefers-reduced-motion: reduce) {
+  .fx-banner__sheen {
+    display: none;
+  }
+}

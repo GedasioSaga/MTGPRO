@@ -1,0 +1,12 @@
+C:/Users/gedasio.filho/OneDrive - Vertis Capital/Área de Trabalho/Tudo/Jogo Magic/target-probe\debug\deps\serde-2e996c5fe4e21a71.d: C:\Users\gedasio.filho\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs C:\Users\gedasio.filho\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs C:\Users\gedasio.filho\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs C:\Users\gedasio.filho\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs C:\Users\gedasio.filho\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs C:/Users/gedasio.filho/OneDrive\ -\ Vertis\ Capital/Área\ de\ Trabalho/Tudo/Jogo\ Magic/target-probe\debug\build\serde-ef2ab1015bdc3ee6\out/private.rs
+
+C:/Users/gedasio.filho/OneDrive - Vertis Capital/Área de Trabalho/Tudo/Jogo Magic/target-probe\debug\deps\libserde-2e996c5fe4e21a71.rmeta: C:\Users\gedasio.filho\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs C:\Users\gedasio.filho\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs C:\Users\gedasio.filho\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs C:\Users\gedasio.filho\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs C:\Users\gedasio.filho\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs C:/Users/gedasio.filho/OneDrive\ -\ Vertis\ Capital/Área\ de\ Trabalho/Tudo/Jogo\ Magic/target-probe\debug\build\serde-ef2ab1015bdc3ee6\out/private.rs
+
+C:\Users\gedasio.filho\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs:
+C:\Users\gedasio.filho\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs:
+C:\Users\gedasio.filho\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs:
+C:\Users\gedasio.filho\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs:
+C:\Users\gedasio.filho\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs:
+C:/Users/gedasio.filho/OneDrive\ -\ Vertis\ Capital/Área\ de\ Trabalho/Tudo/Jogo\ Magic/target-probe\debug\build\serde-ef2ab1015bdc3ee6\out/private.rs:
+
+# env-dep:OUT_DIR=C:/Users/gedasio.filho/OneDrive - Vertis Capital/Área de Trabalho/Tudo/Jogo Magic/target-probe\\debug\\build\\serde-ef2ab1015bdc3ee6\\out

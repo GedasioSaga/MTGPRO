@@ -109,7 +109,7 @@ pub enum Filter {
     HasColor(Color),
     Colorless,
     Multicolored,
-    HasKeyword(Keyword),
+    HasKeyword(Box<Keyword>),
     HasCounter(CounterKind),
 
     Tapped,
@@ -254,7 +254,7 @@ pub enum Keyword {
     Kicker(Box<Cost>),
     Cycling(Box<Cost>),
     Equip(Box<Cost>),
-    Enchant(Filter),
+    Enchant(Box<Filter>),
     Landwalk(String),
     Annihilator(u8),
     Afflict(u8),

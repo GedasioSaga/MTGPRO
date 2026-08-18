@@ -48,7 +48,7 @@ pub struct AbilityRef {
 
 /// Gerador monotônico. Nunca reutiliza id — objeto que muda de zona vira
 /// objeto novo pelas regras (CR 400.7), e id novo torna isso explícito.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IdGen {
     next: u32,
 }

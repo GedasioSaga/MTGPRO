@@ -1,111 +1,159 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+@import 'tailwindcss';
+@import './design/theme.css';
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+/*
+ * Espelho em CSS de `src/design/tokens.ts`. Mudou um, mude o outro.
+ * Namespaces do Tailwind v4: --color-*, --font-*, --radius-*, --shadow-*,
+ * --ease-*, --animate-*, --text-*, --tracking-*.
+ */
+@theme {
+  /* Superficies ---------------------------------------------------------- */
+  --color-surface-void: #07090f;
+  --color-surface-sunken: #0a0d15;
+  --color-surface-base: #111621;
+  --color-surface-raised: #19202e;
+  --color-surface-metal: #232c3e;
+  --color-surface-metal-high: #303a50;
+  --color-surface-overlay: #1b2231;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  /* Feltro da mesa ------------------------------------------------------- */
+  --color-felt-deep: #0a1614;
+  --color-felt: #122220;
+  --color-felt-light: #1b332c;
+  --color-felt-seam: #2b4a3f;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  /* Texto ---------------------------------------------------------------- */
+  --color-ink-strong: #f3f5f9;
+  --color-ink: #bcc4d4;
+  --color-ink-muted: #7e8aa2;
+  --color-ink-faint: #4f5a73;
+  --color-ink-inverse: #0a0d15;
+
+  /* Bordas --------------------------------------------------------------- */
+  --color-edge-hair: rgba(255, 255, 255, 0.07);
+  --color-edge: rgba(255, 255, 255, 0.11);
+  --color-edge-strong: rgba(255, 255, 255, 0.18);
+  --color-edge-gloss: rgba(255, 255, 255, 0.24);
+
+  /* Mana WUBRG + incolor + ouro ------------------------------------------ */
+  --color-mana-w: #f4ecd2;
+  --color-mana-w-bright: #fffaea;
+  --color-mana-w-deep: #b8ab88;
+  --color-mana-w-bg: rgba(244, 236, 210, 0.13);
+
+  --color-mana-u: #4a9eff;
+  --color-mana-u-bright: #94ccff;
+  --color-mana-u-deep: #1d4f8f;
+  --color-mana-u-bg: rgba(74, 158, 255, 0.15);
+
+  --color-mana-b: #a08fbe;
+  --color-mana-b-bright: #ccbde3;
+  --color-mana-b-deep: #4a3d64;
+  --color-mana-b-bg: rgba(160, 143, 190, 0.15);
+
+  --color-mana-r: #e8543c;
+  --color-mana-r-bright: #ff9075;
+  --color-mana-r-deep: #8c2416;
+  --color-mana-r-bg: rgba(232, 84, 60, 0.15);
+
+  --color-mana-g: #42ab6c;
+  --color-mana-g-bright: #84dda4;
+  --color-mana-g-deep: #1d5735;
+  --color-mana-g-bg: rgba(66, 171, 108, 0.15);
+
+  --color-mana-c: #a8a49c;
+  --color-mana-c-bright: #d6d2c9;
+  --color-mana-c-deep: #4e4b46;
+  --color-mana-c-bg: rgba(168, 164, 156, 0.13);
+
+  --color-mana-m: #d8ad46;
+  --color-mana-m-bright: #f6d986;
+  --color-mana-m-deep: #8a6716;
+  --color-mana-m-bg: rgba(216, 173, 70, 0.15);
+
+  /* Assentos ------------------------------------------------------------- */
+  --color-seat-0: #f0b23f;
+  --color-seat-0-bright: #ffd685;
+  --color-seat-0-deep: #8a5f10;
+  --color-seat-0-bg: rgba(240, 178, 63, 0.14);
+
+  --color-seat-1: #7c6ef2;
+  --color-seat-1-bright: #b3a9ff;
+  --color-seat-1-deep: #3c318f;
+  --color-seat-1-bg: rgba(124, 110, 242, 0.16);
+
+  /* Estados -------------------------------------------------------------- */
+  --color-success: #3ecf8e;
+  --color-success-bg: rgba(62, 207, 142, 0.14);
+  --color-danger: #f0524d;
+  --color-danger-bg: rgba(240, 82, 77, 0.15);
+  --color-warning: #f0b23f;
+  --color-warning-bg: rgba(240, 178, 63, 0.14);
+  --color-info: #4a9eff;
+  --color-info-bg: rgba(74, 158, 255, 0.14);
+  --color-life: #e0574f;
+  --color-poison: #8bc34a;
+
+  /* Tipografia ----------------------------------------------------------- */
+  --font-display: 'Cinzel', 'Palatino Linotype', Georgia, serif;
+  --font-sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+  --text-hud: 0.6875rem;
+  --text-hud--line-height: 1;
+  --text-hud--letter-spacing: 0.16em;
+  --text-numeral: 2.75rem;
+  --text-numeral--line-height: 0.9;
+  --text-banner: 3.5rem;
+  --text-banner--line-height: 1;
+
+  --tracking-caps: 0.14em;
+  --tracking-wide-caps: 0.22em;
+
+  /* Forma ---------------------------------------------------------------- */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 18px;
+  --radius-2xl: 26px;
+  --radius-card: 4.7%;
+
+  /* Elevacao ------------------------------------------------------------- */
+  --shadow-e1: 0 1px 2px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-e2: 0 2px 4px -1px rgba(0, 0, 0, 0.5), 0 8px 18px -8px rgba(0, 0, 0, 0.55);
+  --shadow-e3: 0 4px 8px -2px rgba(0, 0, 0, 0.55), 0 18px 38px -12px rgba(0, 0, 0, 0.7);
+  --shadow-e4: 0 8px 16px -4px rgba(0, 0, 0, 0.6), 0 40px 80px -20px rgba(0, 0, 0, 0.85);
+
+  /* Movimento — nenhuma curva linear ------------------------------------- */
+  --ease-standard: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-snap: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --ease-glide: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --duration-micro: 110ms;
+  --duration-fast: 170ms;
+  --duration-base: 260ms;
+  --duration-slow: 400ms;
+  --duration-slower: 560ms;
+  --duration-dramatic: 700ms;
+
+  --animate-rise: rise var(--duration-slow) var(--ease-out) both;
+  --animate-glow-pulse: glow-pulse 2.4s var(--ease-in-out) infinite;
+  --animate-sheen: sheen 2.8s var(--ease-in-out) infinite;
+  --animate-drift: drift 14s var(--ease-in-out) infinite alternate;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-}
-
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+/*
+ * `inline` faz a utility resolver a variavel no ponto de uso, entao `bg-accent`
+ * acompanha o assento ativo sem recompilar nada — quem troca o acento e o
+ * atributo `data-active-player` no elemento raiz.
+ */
+@theme inline {
+  --color-accent: var(--accent);
+  --color-accent-bright: var(--accent-bright);
+  --color-accent-deep: var(--accent-deep);
+  --color-accent-bg: var(--accent-bg);
 }

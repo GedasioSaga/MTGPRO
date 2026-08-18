@@ -5,3 +5,4 @@ web/dist/
 *.sqlite
 .claude-trail.md
 graphify-out/
+docs/bar/
