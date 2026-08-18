@@ -189,9 +189,25 @@ mod tests {
     use crate::build_database;
     use mtg_core::types::CardType;
 
+    /// Lista de decks com garantia de não estar vazia. Sem isto, um `decks()`
+    /// que devolvesse `vec![]` faria todo teste de laço abaixo passar sem
+    /// afirmar coisa nenhuma.
+    fn all_decks() -> Vec<DeckList> {
+        let d = decks();
+        assert!(!d.is_empty(), "decks() não devolveu nenhum deck jogável");
+        d
+    }
+
+    /// Carta do catálogo pelo nome. Nome que não resolve é erro de deck, não
+    /// motivo para pular a verificação.
+    fn card<'a>(db: &'a CardDatabase, name: &str) -> &'a mtg_core::card::CardDef {
+        db.by_name(name)
+            .unwrap_or_else(|| panic!("carta '{name}' citada num deck não existe no catálogo"))
+    }
+
     #[test]
     fn todo_deck_tem_exatamente_sessenta_cartas() {
-        for d in decks() {
+        for d in all_decks() {
             assert_eq!(d.size(), 60, "deck {} tem {} cartas", d.name, d.size());
         }
     }
@@ -199,7 +215,7 @@ mod tests {
     #[test]
     fn todo_deck_expande_para_sessenta_ids_validos() {
         let db = build_database().expect("catálogo carrega");
-        for d in decks() {
+        for d in all_decks() {
             let ids = d.expand(&db).unwrap_or_else(|| panic!("deck {} cita carta inexistente", d.name));
             assert_eq!(ids.len(), 60, "deck {}", d.name);
             for id in ids {
@@ -211,10 +227,10 @@ mod tests {
     #[test]
     fn nenhum_deck_passa_de_quatro_copias_fora_de_terreno_basico() {
         let db = build_database().expect("catálogo carrega");
-        for d in decks() {
+        for d in all_decks() {
             for (name, count) in &d.cards {
-                let card = db.by_name(name).unwrap_or_else(|| panic!("carta {name} não existe"));
-                let basico = card.type_line.has_supertype(mtg_core::types::Supertype::Basic);
+                let basico =
+                    card(&db, name).type_line.has_supertype(mtg_core::types::Supertype::Basic);
                 if !basico {
                     // CR 100.2a — limite de quatro cópias por baralho.
                     assert!(*count <= 4, "deck {}: {name} aparece {count} vezes", d.name);
@@ -226,13 +242,11 @@ mod tests {
     #[test]
     fn todo_deck_tem_entre_22_e_25_terrenos() {
         let db = build_database().expect("catálogo carrega");
-        for d in decks() {
+        for d in all_decks() {
             let terrenos: u32 = d
                 .cards
                 .iter()
-                .filter(|(name, _)| {
-                    db.by_name(name).map(|c| c.type_line.is_land()).unwrap_or(false)
-                })
+                .filter(|(name, _)| card(&db, name).type_line.is_land())
                 .map(|(_, n)| *n as u32)
                 .sum();
             assert!(
@@ -247,31 +261,33 @@ mod tests {
     fn todo_deck_pode_pagar_as_proprias_cores() {
         // Um deck que declara cor sem fonte dela trava na primeira mão.
         let db = build_database().expect("catálogo carrega");
-        for d in decks() {
+        let mut verificadas = 0usize;
+        for d in all_decks() {
             for (name, _) in &d.cards {
-                if let Some(card) = db.by_name(name) {
-                    for cor in card.colors().iter() {
-                        assert!(
-                            d.colors.contains(&cor),
-                            "deck {} joga {name}, que é {cor:?}, mas não declara essa cor",
-                            d.name
-                        );
-                    }
+                for cor in card(&db, name).colors().iter() {
+                    verificadas += 1;
+                    assert!(
+                        d.colors.contains(&cor),
+                        "deck {} joga {name}, que é {cor:?}, mas não declara essa cor",
+                        d.name
+                    );
                 }
             }
         }
+        assert!(
+            verificadas > 0,
+            "nenhuma carta colorida foi verificada: o teste não afirmou nada"
+        );
     }
 
     #[test]
     fn todo_deck_tem_criatura_suficiente_para_jogar_o_jogo() {
         let db = build_database().expect("catálogo carrega");
-        for d in decks() {
+        for d in all_decks() {
             let criaturas: u32 = d
                 .cards
                 .iter()
-                .filter(|(name, _)| {
-                    db.by_name(name).map(|c| c.type_line.has_type(CardType::Creature)).unwrap_or(false)
-                })
+                .filter(|(name, _)| card(&db, name).type_line.has_type(CardType::Creature))
                 .map(|(_, n)| *n as u32)
                 .sum();
             assert!(criaturas >= 8, "deck {} só tem {criaturas} criaturas", d.name);

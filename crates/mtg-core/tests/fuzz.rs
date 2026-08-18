@@ -10,9 +10,9 @@
 //! O `--nocapture` importa: as métricas (taxa de empate, cartas reprovadas) são
 //! impressas, não só afirmadas.
 
-mod support;
+mod common;
 
-use support::*;
+use common::*;
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
@@ -393,6 +393,10 @@ fn acao_ilegal_de_agente_e_descartada_sem_corromper_estado() {
         cleaned.len(),
         reference.len(),
         "descontadas as rejeições, o log tinha de ser idêntico ao da referência"
+    );
+    assert!(
+        !reference.is_empty(),
+        "log de referência vazio: a comparação entrada a entrada não afirmaria nada"
     );
     for (i, (x, y)) in cleaned.iter().zip(reference.iter()).enumerate() {
         assert_eq!(x, y, "log diverge na entrada {i}\nrogue: {x:?}\nref:   {y:?}");

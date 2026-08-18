@@ -70,7 +70,9 @@ export function Card({
 
   const vars: CSSProperties = {
     ...cardCssVars(paint, size, card.controller, card.rarity),
-    ...nameFit(card.name, card.manaCost),
+    // Na mesa o custo de mana já foi pago: esconder o custo devolve a largura
+    // da placa ao nome, que é o que identifica a permanente.
+    ...nameFit(card.name, size === 'board' ? null : card.manaCost, size),
     ...style,
   }
 
@@ -127,7 +129,9 @@ export function Card({
           <div className="mtgc__frame">
             <div className="mtgc__bar mtgc__title">
               <span className="mtgc__name">{card.name}</span>
-              {size === 'micro' ? null : <ManaCost cost={card.manaCost} />}
+              {size === 'micro' || size === 'board' ? null : (
+                <ManaCost cost={card.manaCost} />
+              )}
             </div>
 
             <div className="mtgc__artwin">
@@ -300,11 +304,17 @@ function HourglassIcon(): ReactElement {
  * A carta impressa aperta a fonte do nome em vez de cortá-lo, e reticências no
  * lugar de metade do nome custam caro num tabuleiro que se lê de relance.
  */
-function nameFit(name: string | null, manaCost: string | null): { '--name-fit': string } {
+function nameFit(
+  name: string | null,
+  manaCost: string | null,
+  size: CardSize,
+): { '--name-fit': string } {
   const symbols = (manaCost?.match(/\{/g) ?? []).length
-  const budget = Math.max(8, 15 - symbols)
+  // A placa da mesa usa corpo maior, então cabe menos nome antes de apertar.
+  const base = size === 'board' ? 12 : 15
+  const budget = Math.max(8, base - symbols)
   const length = name?.length ?? 0
-  const fit = length <= budget ? 1 : Math.max(0.6, budget / length)
+  const fit = length <= budget ? 1 : Math.max(0.55, budget / length)
   return { '--name-fit': fit.toFixed(3) }
 }
 

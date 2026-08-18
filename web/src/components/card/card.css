@@ -1123,3 +1123,139 @@
     background: rgba(255, 255, 255, 0.06);
   }
 }
+
+/* --------------------------------------------------------------------- */
+/* Variante de mesa: miniatura orientada à arte                          */
+/* --------------------------------------------------------------------- */
+
+/*
+ * Quem está em jogo é reconhecido pela ARTE, não pela caixa de regras: a
+ * carta inteira encolhida virava uma placa com meia carta em branco. Aqui a
+ * arte ocupa quase tudo, o nome fica numa placa legível no topo e o P/T vira
+ * um selo escuro no canto — o texto completo continua no zoom de hover.
+ *
+ * A inclinação em perspectiva mora no nó raiz, FORA de `__tilt`: assim virar
+ * a carta continua girando no plano da mesa em vez de tombá-la para trás.
+ */
+.mtgc--board {
+  transform: perspective(900px) rotateX(7deg);
+  filter: drop-shadow(0 calc(var(--cw) * 0.055) calc(var(--cw) * 0.05) rgba(2, 2, 6, 0.6));
+}
+
+.mtgc--board .mtgc__bezel {
+  padding: calc(var(--cw) * 0.026);
+}
+
+.mtgc--board .mtgc__frame {
+  padding: calc(var(--cw) * 0.024);
+  gap: calc(var(--cw) * 0.016);
+}
+
+/* Placa do nome: mais alta e mais contrastada que na carta impressa, porque
+   aqui ela é o rótulo do objeto, não um enfeite da moldura. */
+.mtgc--board .mtgc__title {
+  flex: 0 0 15.5%;
+  border-radius: calc(var(--cw) * 0.02);
+  padding-inline: calc(var(--cw) * 0.05);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bar) 62%, #fff 12%) 0%,
+    color-mix(in srgb, var(--bar) 92%, #000) 62%,
+    color-mix(in srgb, var(--bar) 70%, #000) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.45),
+    0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+.mtgc--board .mtgc__name {
+  font-size: calc(var(--cw) * 0.108 * var(--name-fit, 1));
+  letter-spacing: calc(var(--cw) * 0.0008);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+}
+
+/* Numa pilha de terreno a carta é estreita demais para o corpo padrão; lá o
+   nome ganha proporcionalmente mais corpo, senão vira risco cinza. */
+@container (width < 74px) {
+  .mtgc--board .mtgc__title {
+    flex: 0 0 19%;
+  }
+
+  .mtgc--board .mtgc__name {
+    font-size: calc(var(--cw) * 0.155 * var(--name-fit, 1));
+  }
+}
+
+.mtgc--board .mtgc__artwin {
+  flex: 1 1 auto;
+  border-radius: calc(var(--cw) * 0.016);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.8),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.16),
+    0 2px 5px rgba(0, 0, 0, 0.5);
+}
+
+/* Véu na base da arte: garante contraste do selo de P/T sobre arte clara. */
+.mtgc--board .mtgc__artwin::after {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  inset: 52% 0 0 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(4, 3, 9, 0) 0%,
+    rgba(4, 3, 9, 0.12) 52%,
+    rgba(4, 3, 9, 0.6) 100%
+  );
+}
+
+/* Selo de P/T: escuro e opaco, não a moldura colorida — precisa de contraste
+   alto contra qualquer arte e continuar legível com a carta virada. */
+.mtgc--board .mtgc__pt {
+  right: calc(var(--cw) * 0.038);
+  bottom: calc(var(--cw) * 0.036);
+  min-width: calc(var(--cw) * 0.36);
+  padding: calc(var(--cw) * 0.018) calc(var(--cw) * 0.036);
+  border-radius: calc(var(--cw) * 0.028);
+  font-size: calc(var(--cw) * 0.15);
+  color: #fdfbff;
+  background: linear-gradient(180deg, rgba(32, 29, 42, 0.97) 0%, rgba(7, 6, 12, 0.98) 100%);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.28),
+    0 2px 6px rgba(0, 0, 0, 0.72);
+}
+
+.mtgc--board.mtgc--damaged .mtgc__pt {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 0 0 1px rgba(255, 96, 74, 0.95),
+    0 0 calc(var(--cw) * 0.06) rgba(224, 58, 42, 0.6),
+    0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+.mtgc--board.mtgc--buffed .mtgc__pt {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 0 0 1px rgba(255, 214, 92, 0.9),
+    0 0 calc(var(--cw) * 0.06) rgba(255, 196, 60, 0.5),
+    0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+.mtgc--board .mtgc__damageChip {
+  bottom: calc(var(--cw) * 0.205);
+  right: calc(var(--cw) * 0.038);
+}
+
+.mtgc--board .mtgc__printedPt {
+  right: calc(var(--cw) * 0.42);
+  bottom: calc(var(--cw) * 0.052);
+}
+
+.mtgc--board .mtgc__loyalty {
+  right: calc(var(--cw) * 0.05);
+  bottom: calc(var(--cw) * 0.03);
+}

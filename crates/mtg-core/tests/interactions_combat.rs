@@ -15,9 +15,9 @@
 //! entrega precisam compilar sozinhos, sem depender de `tests/common/mod.rs`,
 //! que está sendo escrito em paralelo.
 
-mod support;
+mod common;
 
-use support::*;
+use common::*;
 
 use mtg_core::action::{Action, Request, TargetChoice};
 use mtg_core::card::CardDef;
@@ -42,25 +42,25 @@ const P1: PlayerId = PlayerId::P1;
 /// catálogo.
 fn combat_cards() -> Vec<CardDef> {
     vec![
-        creature_def("Vanilla Bear", "{1}{G}", 2, 2, &[]),
-        creature_def("Big Vanilla", "{3}{G}", 3, 3, &[]),
-        creature_def("Hasty Raider", "{1}{R}", 2, 2, &[Keyword::Haste]),
-        creature_def("Watchful Knight", "{2}{W}", 2, 2, &[Keyword::Vigilance]),
-        creature_def("Sky Serpent", "{2}{U}", 2, 2, &[Keyword::Flying]),
-        creature_def("Web Spinner", "{1}{G}", 1, 3, &[Keyword::Reach]),
-        creature_def("Two-Headed Brute", "{2}{R}", 3, 3, &[Keyword::Menace]),
-        creature_def("Stomping Ox", "{3}{G}", 5, 5, &[Keyword::Trample]),
-        creature_def(
+        creature_def_costed("Vanilla Bear", "{1}{G}", 2, 2, &[]),
+        creature_def_costed("Big Vanilla", "{3}{G}", 3, 3, &[]),
+        creature_def_costed("Hasty Raider", "{1}{R}", 2, 2, &[Keyword::Haste]),
+        creature_def_costed("Watchful Knight", "{2}{W}", 2, 2, &[Keyword::Vigilance]),
+        creature_def_costed("Sky Serpent", "{2}{U}", 2, 2, &[Keyword::Flying]),
+        creature_def_costed("Web Spinner", "{1}{G}", 1, 3, &[Keyword::Reach]),
+        creature_def_costed("Two-Headed Brute", "{2}{R}", 3, 3, &[Keyword::Menace]),
+        creature_def_costed("Stomping Ox", "{3}{G}", 5, 5, &[Keyword::Trample]),
+        creature_def_costed(
             "Venomous Charger",
             "{3}{B}",
             5,
             5,
             &[Keyword::Trample, Keyword::Deathtouch],
         ),
-        creature_def("Duelist", "{1}{W}", 2, 2, &[Keyword::FirstStrike]),
-        creature_def("Twin Blade", "{2}{W}", 2, 2, &[Keyword::DoubleStrike]),
-        creature_def("Wall of Meat", "{2}{G}", 0, 5, &[]),
-        creature_def("Bloodthirsty Cleric", "{2}{W}", 3, 3, &[Keyword::Lifelink]),
+        creature_def_costed("Duelist", "{1}{W}", 2, 2, &[Keyword::FirstStrike]),
+        creature_def_costed("Twin Blade", "{2}{W}", 2, 2, &[Keyword::DoubleStrike]),
+        creature_def_costed("Wall of Meat", "{2}{G}", 0, 5, &[]),
+        creature_def_costed("Bloodthirsty Cleric", "{2}{W}", 3, 3, &[Keyword::Lifelink]),
     ]
 }
 
@@ -480,7 +480,7 @@ fn cost_cards() -> Vec<CardDef> {
         land_def("Island", ManaSymbol::Colored(Color::Blue)),
         land_def("Forest", ManaSymbol::Colored(Color::Green)),
         land_def("Mountain", ManaSymbol::Colored(Color::Red)),
-        instant_def(
+        instant_def_costed(
             "Hybrid Blessing",
             "{W/U}",
             Effect::GainLife {
@@ -488,7 +488,7 @@ fn cost_cards() -> Vec<CardDef> {
                 player: PlayerRef::You,
             },
         ),
-        instant_def(
+        instant_def_costed(
             "Phyrexian Blessing",
             "{W/P}",
             Effect::GainLife {
@@ -496,7 +496,7 @@ fn cost_cards() -> Vec<CardDef> {
                 player: PlayerRef::You,
             },
         ),
-        instant_def(
+        instant_def_costed(
             "Variable Bolt",
             "{X}{R}",
             Effect::DealDamageToPlayer {
@@ -504,7 +504,7 @@ fn cost_cards() -> Vec<CardDef> {
                 player: PlayerRef::Opponents,
             },
         ),
-        instant_def(
+        instant_def_costed(
             "Expensive Blessing",
             "{5}",
             Effect::GainLife {
@@ -512,7 +512,7 @@ fn cost_cards() -> Vec<CardDef> {
                 player: PlayerRef::You,
             },
         ),
-        creature_def("Sacrificial Goat", "{G}", 0, 1, &[]),
+        creature_def_costed("Sacrificial Goat", "{G}", 0, 1, &[]),
         artifact_with_activated(
             "Bone Altar",
             "{2}",
@@ -820,7 +820,7 @@ fn alvo_ilegal_tambem_impede_a_magica_de_aparecer() {
     // aparece nas ações legais" poderia estar acontecendo pelo motivo errado.
     let defs = vec![
         land_def("Mountain", ManaSymbol::Colored(Color::Red)),
-        creature_def("Vanilla Bear", "{1}{G}", 2, 2, &[]),
+        creature_def_costed("Vanilla Bear", "{1}{G}", 2, 2, &[]),
         instant_def_targeted(
             "Sniper Shot",
             "{R}",

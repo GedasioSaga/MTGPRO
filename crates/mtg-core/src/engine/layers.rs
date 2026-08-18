@@ -241,11 +241,28 @@ fn compute(game: &Game, id: ObjectId, with_statics: bool) -> Option<Characterist
     Some(ch)
 }
 
+/// CR 611.2b — `Duration::WhileSourcePresent` vale enquanto a fonte estiver no
+/// campo de batalha. As outras durações não dependem da fonte.
+pub fn effect_source_present(game: &Game, eff: &crate::state::ContinuousEffect) -> bool {
+    if eff.duration != Duration::WhileSourcePresent {
+        return true;
+    }
+    game.state
+        .object(eff.source)
+        .is_some_and(|o| o.zone.kind == ZoneKind::Battlefield)
+}
+
 /// Efeitos contínuos vindos de resolução. Não exigem consulta: a lista de
 /// afetados e os números já vieram travados (CR 611.2c).
 fn collect_runtime_mods(game: &Game, id: ObjectId, out: &mut Vec<LayerMod>) {
     for eff in &game.state.continuous {
         if !eff.affected.contains(&id) {
+            continue;
+        }
+        // CR 611.2b — efeito preso à fonte deixa de se aplicar no instante em
+        // que ela sai do campo. `expire_continuous_effects` só varre na limpeza;
+        // sem esta checagem o bônus sobreviveria até lá.
+        if !effect_source_present(game, eff) {
             continue;
         }
         let kind = match &eff.modification {
@@ -805,7 +822,10 @@ mod tests {
         let mut game = game_with(vec![bear], 8);
         let id = take_from_library(&mut game, PlayerId::P0, CardDefId(0));
         put_on_battlefield(&mut game, id, 1);
-        if let Some(obj) = game.state.object_mut(id) {
+        let Some(obj) = game.state.object_mut(id) else {
+            panic!("{id} não existe: não dá para transformá-lo em ficha");
+        };
+        {
             obj.is_token = true;
             obj.token_spec = Some(Box::new(crate::ir::TokenSpec {
                 name: "Soldier".to_string(),

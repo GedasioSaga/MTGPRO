@@ -64,7 +64,7 @@ export function BattlefieldRow({ player, side, permanents, cards }: BattlefieldR
               key={card.id}
               id={card.id}
               card={card}
-              size="medium"
+              size="board"
               width={FIELD_WIDTH}
               tapped={card.tapped}
               title={card.name ?? undefined}
@@ -88,7 +88,7 @@ export function BattlefieldRow({ player, side, permanents, cards }: BattlefieldR
                 key={card.id}
                 id={card.id}
                 card={card}
-                size="small"
+                size="board"
                 width={OTHER_WIDTH}
                 tapped={card.tapped}
                 title={card.name ?? undefined}
@@ -135,7 +135,7 @@ function LandStack({ group, cards }: { group: LandGroup; cards: Record<ObjectId,
             key={id}
             id={id}
             card={card}
-            size="small"
+            size="board"
             width={LAND_WIDTH}
             tapped={card.tapped}
             title={card.name ?? undefined}

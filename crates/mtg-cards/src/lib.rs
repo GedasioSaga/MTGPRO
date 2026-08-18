@@ -204,7 +204,9 @@ mod tests {
     use mtg_core::types::CardType;
 
     fn db() -> CardDatabase {
-        build_database().expect("catálogo carrega")
+        let db = build_database().expect("catálogo carrega");
+        assert!(!db.cards.is_empty(), "catálogo vazio: varredura não afirmaria nada");
+        db
     }
 
     #[test]
@@ -225,6 +227,10 @@ mod tests {
         let disco = db();
         let embutido = build_database_embedded().expect("catálogo embutido carrega");
         assert_eq!(disco.len(), embutido.len());
+        assert!(
+            !disco.cards.is_empty(),
+            "catálogo vazio: a comparação carta a carta não afirmaria nada"
+        );
         for (a, b) in disco.cards.iter().zip(embutido.cards.iter()) {
             assert_eq!(a, b);
         }
@@ -266,28 +272,47 @@ mod tests {
     /// Alvo sem especificação vira índice fora de faixa na resolução.
     #[test]
     fn todo_alvo_referenciado_tem_especificacao() {
+        let mut checados = 0usize;
         for card in &db().cards {
             if let Some(effect) = &card.spell_effect {
-                check(&card.name, "mágica", effect, card.spell_targets.len());
+                check(&card.name, "mágica", effect, card.spell_targets.len(), &mut checados);
             }
             for ability in &card.abilities {
                 match ability {
-                    Ability::Activated(a) => check(&card.name, "ativada", &a.effect, a.targets.len()),
-                    Ability::Triggered(a) => check(&card.name, "disparada", &a.effect, a.targets.len()),
-                    Ability::Replacement(a) => check(&card.name, "substituição", &a.replacement, 0),
+                    Ability::Activated(a) => {
+                        check(&card.name, "ativada", &a.effect, a.targets.len(), &mut checados)
+                    }
+                    Ability::Triggered(a) => {
+                        check(&card.name, "disparada", &a.effect, a.targets.len(), &mut checados)
+                    }
+                    Ability::Replacement(a) => {
+                        check(&card.name, "substituição", &a.replacement, 0, &mut checados)
+                    }
                     _ => {}
                 }
             }
         }
+        assert!(
+            checados > 0,
+            "nenhum efeito do catálogo referencia alvo: o teste não afirmou nada"
+        );
 
-        fn check(card: &str, escopo: &str, effect: &Effect, declarados: usize) {
-            if let Some(max) = effect.max_target_index() {
-                assert!(
-                    (max as usize) < declarados,
-                    "{card}: efeito de {escopo} usa alvo #{} mas só {declarados} foram declarados",
-                    max + 1
-                );
-            }
+        fn check(
+            card: &str,
+            escopo: &str,
+            effect: &Effect,
+            declarados: usize,
+            checados: &mut usize,
+        ) {
+            let Some(max) = effect.max_target_index() else {
+                return;
+            };
+            *checados += 1;
+            assert!(
+                (max as usize) < declarados,
+                "{card}: efeito de {escopo} usa alvo #{} mas só {declarados} foram declarados",
+                max + 1
+            );
         }
     }
 
@@ -302,7 +327,11 @@ mod tests {
     /// a travessia que o serde já faz.
     #[test]
     fn todo_alvo_declarado_e_usado() {
+        let mut declarantes = 0usize;
         for card in &db().cards {
+            if !card.spell_targets.is_empty() {
+                declarantes += 1;
+            }
             if !card.spell_targets.is_empty() {
                 let effect = card
                     .spell_effect
@@ -322,6 +351,10 @@ mod tests {
                 }
             }
         }
+        assert!(
+            declarantes > 0,
+            "nenhuma mágica do catálogo declara alvo: o teste não afirmou nada"
+        );
 
         fn check(card: &str, escopo: &str, effect: &Effect, declarados: usize) {
             let json = serde_json::to_string(effect).expect("efeito serializa");

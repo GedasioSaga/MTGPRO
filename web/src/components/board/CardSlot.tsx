@@ -2,11 +2,12 @@ import clsx from 'clsx'
 import type { CSSProperties, ReactNode } from 'react'
 import { Card } from '../card/Card'
 import { CARD_SIZES } from '../card/cardVisuals'
+import type { CardSize } from '../card/cardVisuals'
 import type { CardView, ObjectId } from '../../types/protocol'
 import { CardBack } from './CardBack'
 import { cssVars } from './boardVisuals'
 
-export type CardSlotSize = 'micro' | 'small' | 'medium' | 'large'
+export type CardSlotSize = CardSize
 
 export interface CardSlotProps {
   id: ObjectId

@@ -224,7 +224,7 @@ export function framePaintFor(card: CardView): FramePaint {
 // Tamanhos
 // ---------------------------------------------------------------------------
 
-export type CardSize = 'micro' | 'small' | 'medium' | 'large'
+export type CardSize = 'micro' | 'small' | 'board' | 'medium' | 'large'
 
 export interface SizeSpec {
   /** Largura em px; a altura sai de `aspect-ratio: 5 / 7`. */
@@ -238,6 +238,10 @@ export interface SizeSpec {
 export const CARD_SIZES: Record<CardSize, SizeSpec> = {
   micro: { width: 44, layout: 'compact', showFlavor: false },
   small: { width: 102, layout: 'compact', showFlavor: false },
+  /* Miniatura de mesa: quem está em jogo é identificado pela ARTE, não pela
+     caixa de regras. Encolher a carta inteira produzia uma placa branca vazia
+     ocupando metade da carta; o texto completo mora no zoom de hover. */
+  board: { width: 150, layout: 'compact', showFlavor: false },
   medium: { width: 170, layout: 'full', showFlavor: false },
   large: { width: 316, layout: 'full', showFlavor: true },
 }

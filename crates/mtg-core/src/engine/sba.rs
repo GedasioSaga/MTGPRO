@@ -474,9 +474,10 @@ mod tests {
         );
 
         // Dano letal não mata o indestrutível (CR 702.12b).
-        if let Some(obj) = game.state.object_mut(id) {
-            obj.damage = 99;
-        }
+        let Some(obj) = game.state.object_mut(id) else {
+            panic!("{id} não existe: não dá para marcar dano letal");
+        };
+        obj.damage = 99;
         check(&mut game);
         assert!(
             game.state
@@ -487,7 +488,10 @@ mod tests {
         );
 
         // Resistência 0 mata mesmo assim (CR 704.5f não é destruição).
-        if let Some(obj) = game.state.object_mut(id) {
+        let Some(obj) = game.state.object_mut(id) else {
+            panic!("{id} não existe: não dá para pôr marcadores");
+        };
+        {
             obj.damage = 0;
             obj.add_counter(CounterKind::MinusOneMinusOne, 2);
         }

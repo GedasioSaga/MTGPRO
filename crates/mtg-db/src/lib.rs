@@ -442,6 +442,7 @@ mod tests {
 
         let loaded = store.load_all().expect("load_all");
         assert_eq!(loaded.cards.len(), db.cards.len());
+        assert!(!db.cards.is_empty(), "amostra vazia: o round-trip não compararia nada");
         for original in &db.cards {
             let found = loaded.cards.iter().find(|c| c.name == original.name).expect("carta carregada");
             assert_eq!(found, original, "round-trip deve preservar CardDef igual");

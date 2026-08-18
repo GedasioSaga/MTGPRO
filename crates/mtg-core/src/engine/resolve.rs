@@ -602,6 +602,34 @@ fn deal_damage_to_object(
     );
 }
 
+/// CR 702.16c — o alvo tem proteção contra alguma cor da fonte do dano?
+///
+/// Fonte inexistente (`ObjectId::NONE`, dano sem fonte no campo) não tem cor,
+/// então nada é prevenido.
+fn protected_from(
+    game: &Game,
+    target_chars: Option<&super::Characteristics>,
+    source: ObjectId,
+) -> bool {
+    let Some(ch) = target_chars else {
+        return false;
+    };
+    if !ch
+        .keywords
+        .iter()
+        .any(|kw| matches!(kw, Keyword::Protection(_)))
+    {
+        return false;
+    }
+    let Some(src) = layers::characteristics(game, source) else {
+        return false;
+    };
+    ch.keywords.iter().any(|kw| match kw {
+        Keyword::Protection(color) => src.colors.contains(*color),
+        _ => false,
+    })
+}
+
 /// Marca dano num permanente. CR 120.3: dano marcado fica até a limpeza; quem
 /// mata é a SBA (CR 704.5g/h), não este código.
 fn damage_object(
@@ -621,6 +649,18 @@ fn damage_object(
     if chars.as_ref().is_some_and(|c| c.prevent_all_damage) {
         game.state.push_log(
             format!("dano em {} prevenido", game.card_name(target)),
+            None,
+        );
+        return;
+    }
+    // CR 702.16c — proteção previne o dano de uma fonte da cor nomeada. Vale
+    // para qualquer dano, não só o de combate (`combat::damage_prevented`).
+    if protected_from(game, chars.as_ref(), source) {
+        game.state.push_log(
+            format!(
+                "dano em {} prevenido por proteção",
+                game.card_name(target)
+            ),
             None,
         );
         return;

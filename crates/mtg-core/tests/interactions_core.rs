@@ -833,13 +833,9 @@ fn protecao_contra_vermelho_impede_alvo_de_magica_vermelha() {
 
 /// CR 702.16c — proteção previne o dano de uma fonte da cor protegida.
 ///
-/// FALHA: `resolve::damage_object` só consulta `prevent_all_damage`; a
-/// palavra-chave `Protection(cor)` não é considerada fora do combate, então a
-/// fonte vermelha marca dano normalmente numa criatura com proteção contra
-/// vermelho. `combat::damage_prevented` faz a checagem certa — o buraco é só no
-/// dano que não vem de combate.
+/// Corrigido em `resolve::protected_from`: antes só `combat::damage_prevented`
+/// fazia a checagem, então dano fora de combate atravessava a proteção.
 #[test]
-#[ignore = "FALHA: dano fora de combate ignora proteção (CR 702.16c)"]
 fn protecao_previne_dano_da_cor_protegida() {
     let mut setup = Setup::empty();
     let mut protected = creature_def("Cavaleiro Protegido", 2, 4);
@@ -1081,13 +1077,10 @@ fn efeito_de_fim_de_turno_expira_na_limpeza() {
 
 /// CR 611.2b — efeito que depende da fonte no campo acaba quando ela sai.
 ///
-/// FALHA: `layers::collect_runtime_mods` aplica todo `ContinuousEffect` cuja
-/// lista de afetados contém o objeto, sem checar se a fonte ainda está no campo
-/// de batalha. A limpeza do turno (`expire_continuous_effects`) é o único ponto
-/// que remove o efeito, então entre a saída da fonte e a limpeza a criatura
-/// continua com o bônus.
+/// Corrigido em `layers::effect_source_present`: antes só a limpeza do turno
+/// (`expire_continuous_effects`) removia o efeito, e entre a saída da fonte e a
+/// limpeza a criatura continuava com o bônus.
 #[test]
-#[ignore = "FALHA: efeito WhileSourcePresent só some na limpeza, não quando a fonte sai (CR 611.2b)"]
 fn efeito_expira_quando_a_fonte_sai_do_campo() {
     let mut setup = Setup::empty();
     let bear = setup.add_card(creature_def("Urso de Teste", 2, 2));
@@ -1463,12 +1456,14 @@ fn aura_sem_alvo_legal_vai_para_o_cemiterio() {
     let mut game = setup.build_passing();
     let host = put_on_battlefield(&mut game, "Urso de Teste", P0);
     let enchantment = put_on_battlefield(&mut game, "Encantamento de Teste", P0);
-    if let Some(o) = game.state.object_mut(enchantment) {
-        o.attached_to = Some(host);
-    }
-    if let Some(o) = game.state.object_mut(host) {
-        o.attachments.push(enchantment);
-    }
+    let Some(o) = game.state.object_mut(enchantment) else {
+        panic!("{enchantment} não existe: a aura precisa estar em campo");
+    };
+    o.attached_to = Some(host);
+    let Some(o) = game.state.object_mut(host) else {
+        panic!("{host} não existe: a criatura hospedeira precisa estar em campo");
+    };
+    o.attachments.push(enchantment);
     assert!(
         !sba::check(&mut game),
         "aura presa a uma criatura em campo é legal"

@@ -1562,10 +1562,11 @@ mod tests {
         let mut game = build(vec![creature(0, "Soldado", 3, 3, &[])]);
         let attacker = deploy(&mut game, PlayerId::P0, CardDefId(0));
         set_attacking(&mut game, attacker, PlayerId::P1);
-        if let Some(obj) = game.state.object_mut(attacker) {
-            // CR 509.1h — foi bloqueada, e depois ficou sem bloqueadores.
-            obj.combat.was_blocked = true;
-        }
+        let Some(obj) = game.state.object_mut(attacker) else {
+            panic!("{attacker} não existe: o cenário exige o atacante em campo");
+        };
+        // CR 509.1h — foi bloqueada, e depois ficou sem bloqueadores.
+        obj.combat.was_blocked = true;
 
         combat_damage_step(&mut game, false);
         assert_eq!(game.state.player(PlayerId::P1).life, 20);
