@@ -89,7 +89,9 @@ veredito binario; um unico maior gap; builder recebe so o gap.
 | 3 | A | perdemos | cartas em jogo sao placas ilegiveis: caixa de regras branca vazia, arte espremida | **fechado** |
 | 4 | B | perdemos | cinco setas finas de combate cruzando meia tela; nao se le quem morre | **fechado** |
 | 5 | A | perdemos | tabuleiro e malha de caixas chapadas sem luz; o elemento de maior contraste e uma seta de anotacao | **desfeito na r6** |
-| 6 | B | perdemos | nao tem tabuleiro: retangulo verde uniforme, cartas boiam sem zonas definidas, ~50% de vazio | **SECA** |
+| 6 | B | perdemos | nao tem tabuleiro: retangulo verde uniforme, cartas boiam sem zonas definidas, ~50% de vazio | seca declarada |
+| — | — | — | usuario forneceu bar melhor (Arena Ixalan) e a ideia do PLAYMAT; loop retomado a pedido dele | — |
+| 7 | A | perdemos | zonas sao caixas chapadas com rotulo de formulario e outline de debug; falta perspectiva | em ataque (rodada 8) |
 
 O gap MUDOU entre 1 e 2 — o da rodada 1 foi de fato fechado (o critic novo nem
 menciona paineis laterais). Nao e seca. **Seca** seria o mesmo gap apontado duas
@@ -115,7 +117,19 @@ demarcacoes · r6 "sem zonas definidas" -> demarque. Duas rodadas consecutivas
 sem fechar, com a correcao de uma virando o defeito da outra. Protocolo manda
 parar e reportar o delta.
 
-**DELTA HONESTO:** 6 rodadas, 6 derrotas contra o cliente do MTG Arena. Quatro
+**LOOP RETOMADO NA RODADA 7, a pedido do usuario.** Ele forneceu uma bar melhor
+(`docs/bar/arena-ixalan-board.png`, tabuleiro cheio em vez de tutorial) e a ideia
+que quebrou o pendulo: **playmat**. Zona demarcada por linha impressa num objeto
+fisico nao le como painel de UI — e a terceira saida que faltava entre "contorno"
+e "nada". Entregue com arte escolhivel por jogador (carta do deck, URL colada com
+validacao de esquema, ou gradiente), persistida em localStorage.
+
+Achado da rodada 7: **a mesa da bar esta em PERSPECTIVA e a nossa e chapada.**
+Nunca tentado em 7 rodadas, e e a maior diferenca estrutural entre as duas telas.
+E o alvo da rodada 8, junto com carta maior (nome trunca), contorno virando
+brilho difuso, e painel de replay recolhido.
+
+**DELTA ATE A RODADA 6:** 6 rodadas, 6 derrotas contra o cliente do MTG Arena. Quatro
 gaps foram genuinamente fechados (paineis dominando, cartas ilegiveis, setas de
 combate cruzando a tela, superficie sem sombra). O gap que sobra nao e de
 layout — e de **material**. A bar tem arena de pedra esculpida, textura pintada
