@@ -272,5 +272,5 @@ async fn send_frame(out: &mpsc::Sender<Message>, frame: &ServerFrame) -> bool {
             return true; // não é motivo para derrubar a conexão
         }
     };
-    out.send(Message::text(text)).await.is_ok()
+    out.send(Message::Text(text)).await.is_ok()
 }

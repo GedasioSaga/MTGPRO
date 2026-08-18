@@ -598,14 +598,17 @@ name = "mtg-cards"
 version = "0.1.0"
 dependencies = [
  "mtg-core",
+ "mtg-script",
  "serde",
  "serde_json",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
 name = "mtg-core"
 version = "0.1.0"
 dependencies = [
+ "mtg-cards",
  "rand",
  "rand_chacha",
  "serde",

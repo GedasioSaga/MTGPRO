@@ -8,7 +8,6 @@ use crate::event::{Defender, Phase, Step};
 use crate::ids::{ObjectId, PlayerId};
 use crate::mana::{ColorSet, ManaPool};
 use crate::state::GameOutcome;
-use crate::types::CounterKind;
 use crate::zone::ZoneKind;
 use serde::{Deserialize, Serialize};
 

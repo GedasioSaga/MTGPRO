@@ -159,7 +159,9 @@ pub fn simulate_combat(
                 remaining -= give;
                 pending.push((b, give, atk.traits.deathtouch));
                 if atk.traits.lifelink {
-                    life_delta[side_index(attacker_side)] += give;
+                    // Vínculo com a vida credita o controlador da própria criatura
+                    // (CR 702.15b), por isso o lado sai do lutador e não do laço.
+                    life_delta[side_index(atk.side)] += give;
                 }
             }
             if remaining > 0 && atk.traits.trample {
@@ -179,7 +181,8 @@ pub fn simulate_combat(
                 }
                 pending.push((*atk_id, blk.power, blk.traits.deathtouch));
                 if blk.traits.lifelink {
-                    life_delta[side_index(defender_side)] += blk.power;
+                    // Mesmo motivo do atacante: o crédito segue o lado do lutador.
+                    life_delta[side_index(blk.side)] += blk.power;
                 }
             }
         }
@@ -830,5 +833,99 @@ fn merge_traits(base: Traits, extra: Traits) -> Traits {
         hexproof: base.hexproof || extra.hexproof,
         shroud: base.shroud || extra.shroud,
         protection: base.protection || extra.protection,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::eval::Snapshot;
+    use mtg_core::ids::PlayerId;
+
+    const ME: PlayerId = PlayerId(0);
+    const OPP: PlayerId = PlayerId(1);
+
+    /// Snapshot com criaturas de teste em cada lado.
+    fn board(mine: &[(u32, i32, i32)], theirs: &[(u32, i32, i32)]) -> Snapshot {
+        let mut s = Snapshot::empty(ME, OPP);
+        for (id, p, t) in mine {
+            s.my_creatures.push(CreatureInfo::vanilla(ObjectId(*id), ME, *p, *t));
+        }
+        for (id, p, t) in theirs {
+            s.opp_creatures.push(CreatureInfo::vanilla(ObjectId(*id), OPP, *p, *t));
+        }
+        s
+    }
+
+    fn set_trait(s: &mut Snapshot, id: u32, f: impl Fn(&mut Traits)) {
+        if let Some(c) = s.find_mut(ObjectId(id)) {
+            f(&mut c.traits);
+        }
+    }
+
+    #[test]
+    fn atacante_sem_bloqueio_tira_vida_do_defensor() {
+        let mut s = board(&[(1, 3, 3)], &[]);
+        simulate_combat(&mut s, Side::Me, &[ObjectId(1)], &[]);
+        assert_eq!(s.life(Side::Opponent), 17);
+        assert_eq!(s.life(Side::Me), 20);
+    }
+
+    #[test]
+    fn vinculo_com_a_vida_credita_o_dono_do_atacante() {
+        // CR 702.15b: quem ganha vida é o controlador da fonte do dano, não o
+        // "lado atacante" por definição — é o que a regressão aqui protege.
+        let mut s = board(&[(1, 3, 3)], &[]);
+        set_trait(&mut s, 1, |t| t.lifelink = true);
+        simulate_combat(&mut s, Side::Me, &[ObjectId(1)], &[]);
+        assert_eq!(s.life(Side::Me), 23, "atacante com vínculo não creditou o dono");
+        assert_eq!(s.life(Side::Opponent), 17);
+    }
+
+    #[test]
+    fn vinculo_com_a_vida_do_bloqueador_credita_o_defensor() {
+        let mut s = board(&[(1, 1, 4)], &[(2, 2, 4)]);
+        set_trait(&mut s, 2, |t| t.lifelink = true);
+        simulate_combat(&mut s, Side::Me, &[ObjectId(1)], &[(ObjectId(2), ObjectId(1))]);
+        assert_eq!(s.life(Side::Opponent), 22, "bloqueador com vínculo não creditou o dono");
+        assert_eq!(s.life(Side::Me), 20, "bloqueado não deveria passar dano");
+    }
+
+    #[test]
+    fn toque_mortal_mata_bloqueador_maior() {
+        // CR 702.2b: qualquer dano de toque mortal é letal.
+        let mut s = board(&[(1, 1, 1)], &[(2, 0, 9)]);
+        set_trait(&mut s, 1, |t| t.deathtouch = true);
+        simulate_combat(&mut s, Side::Me, &[ObjectId(1)], &[(ObjectId(2), ObjectId(1))]);
+        assert!(s.creatures(Side::Opponent).is_empty(), "toque mortal não matou o bloqueador");
+    }
+
+    #[test]
+    fn indestrutivel_sobrevive_a_dano_letal() {
+        // CR 702.12b: indestrutível ignora dano letal e toque mortal.
+        let mut s = board(&[(1, 9, 9)], &[(2, 0, 1)]);
+        set_trait(&mut s, 1, |t| t.deathtouch = true);
+        set_trait(&mut s, 2, |t| t.indestructible = true);
+        simulate_combat(&mut s, Side::Me, &[ObjectId(1)], &[(ObjectId(2), ObjectId(1))]);
+        assert_eq!(s.creatures(Side::Opponent).len(), 1, "indestrutível morreu");
+    }
+
+    #[test]
+    fn atropelar_passa_o_excedente() {
+        // CR 702.19b: só o que sobra depois do letal ao bloqueador passa.
+        let mut s = board(&[(1, 5, 5)], &[(2, 0, 2)]);
+        set_trait(&mut s, 1, |t| t.trample = true);
+        simulate_combat(&mut s, Side::Me, &[ObjectId(1)], &[(ObjectId(2), ObjectId(1))]);
+        assert_eq!(s.life(Side::Opponent), 17, "excedente de atropelar errado");
+    }
+
+    #[test]
+    fn vigilancia_nao_vira_ao_atacar() {
+        // CR 702.20b.
+        let mut s = board(&[(1, 2, 2), (2, 2, 2)], &[]);
+        set_trait(&mut s, 1, |t| t.vigilance = true);
+        simulate_combat(&mut s, Side::Me, &[ObjectId(1), ObjectId(2)], &[]);
+        let tapped: Vec<bool> = s.creatures(Side::Me).iter().map(|c| c.tapped).collect();
+        assert_eq!(tapped, vec![false, true]);
     }
 }

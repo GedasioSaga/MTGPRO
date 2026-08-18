@@ -467,3 +467,71 @@ function basic_land(name, subtype, symbol)
     abilities = { mana_ability { produces = symbol } },
   }
 end
+
+-- ---------------------------------------------------------------------------
+-- Adições (catálogo). Só acrescentam vocabulário — nenhum helper acima foi
+-- alterado, para não quebrar carta já escrita.
+-- ---------------------------------------------------------------------------
+
+-- Gatilho genérico: `etb`/`dies`/... cobrem os casos comuns, mas o IR tem
+-- muito mais TriggerCondition do que atalho. Este expõe todas sem obrigar a
+-- criar um atalho por condição.
+--   trigger({ LifeGained = YOU }, add_counters(1))
+function trigger(condition, effect, opts)
+  return trigger_ability(condition, effect, opts)
+end
+
+function when_leaves(effect, opts)
+  return trigger_ability({ LeavesBattlefield = sel { filter = IS_SELF } }, effect, opts)
+end
+
+function when_deals_damage_to_player(effect, opts)
+  return trigger_ability({ DealsCombatDamageToPlayer = sel { filter = IS_SELF } }, effect, opts)
+end
+
+function when_you_gain_life(effect, opts)
+  return trigger_ability({ LifeGained = YOU }, effect, opts)
+end
+
+function when_other_enters(filter, effect, opts)
+  return trigger_ability({ EntersBattlefield = sel { filter = f_and(filter or CREATURE, IS_OTHER) } }, effect, opts)
+end
+
+-- Referências de jogador derivadas de um objeto ("seu controlador ganha...").
+function controller_of(ref) return { ControllerOf = ref } end
+function owner_of(ref) return { OwnerOf = ref } end
+
+function has_supertype(s) return { HasSupertype = s } end
+BASIC_LAND = { And = { { HasType = "Land" }, { HasSupertype = "Basic" } } }
+
+-- Um único símbolo de mana, para onde o IR pede ManaSymbol e não ManaCost
+-- (ex.: `mana_ability{ produces = { sym("{G}"), sym("{W}") } }`).
+function sym(spec) return mana(spec)[1] end
+
+-- Alvo em zona arbitrária — `t_creature` só olha o campo de batalha, e
+-- reanimação/regresso precisam apontar para o cemitério.
+function t_object(desc, selector)
+  return { kind = { Object = selector }, description = desc or "target object" }
+end
+
+function t_in_graveyard(desc, filter, owner)
+  return t_object(desc, sel { zone = "Graveyard", filter = filter or ANY, owner = owner or YOU })
+end
+
+function static_set_pt(p, t, affects, text)
+  return static_ability {
+    affects = affects or sel { filter = IS_SELF },
+    mod = { SetPT = { v(p), v(t) } },
+    text = text,
+  }
+end
+
+-- "Isto não pode bloquear" / "não pode atacar": restrição estática sobre a
+-- própria fonte, usada por criatura com desvantagem.
+function static_cant_block(affects, text)
+  return static_ability { affects = affects or sel { filter = IS_SELF }, mod = "CantBlock", text = text }
+end
+
+function static_cant_attack(affects, text)
+  return static_ability { affects = affects or sel { filter = IS_SELF }, mod = "CantAttack", text = text }
+end

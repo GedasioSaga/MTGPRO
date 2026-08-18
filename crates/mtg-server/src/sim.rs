@@ -17,7 +17,7 @@ use mtg_core::card::CardDatabase;
 use mtg_core::engine::{Agent, Game, GameConfig, PlayerConfig};
 use mtg_core::ids::CardDefId;
 use mtg_core::state::GameOutcome;
-use mtg_core::view::{MatchEvent, Observer};
+use mtg_core::view::Observer;
 use mtg_core::{Action, Request};
 use tokio::sync::mpsc::Sender;
 use tracing::warn;

@@ -5,5 +5,7 @@ edition.workspace = true
 
 [dependencies]
 mtg-core.workspace = true
+mtg-script.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true

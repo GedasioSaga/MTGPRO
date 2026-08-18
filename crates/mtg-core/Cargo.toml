@@ -10,3 +10,9 @@ thiserror.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
 smallvec.workspace = true
+
+# Só para o teste de fumaça: a partida precisa de cartas e decks reais para
+# exercitar resolve/triggers/combat. Ciclo de dev-dependency é permitido pelo
+# cargo e não entra no grafo de build da lib.
+[dev-dependencies]
+mtg-cards = { path = "../mtg-cards" }

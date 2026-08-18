@@ -25,7 +25,15 @@ async fn main() {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .init();
 
-    let (db, decks) = catalog::load();
+    let (db, decks) = match catalog::load() {
+        Ok(v) => v,
+        Err(err) => {
+            // Sem catálogo não há partida: falhar aqui aponta o erro para o
+            // script de carta, em vez de virar 500 no primeiro `start`.
+            tracing::error!(%err, "não foi possível carregar o catálogo de cartas");
+            std::process::exit(1);
+        }
+    };
     tracing::info!(cards = db.cards.len(), decks = decks.len(), "catálogo carregado");
     let state = Arc::new(AppState { db: Arc::new(db), decks });
 
