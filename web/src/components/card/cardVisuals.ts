@@ -171,6 +171,23 @@ const TONES: Record<FrameKind, FrameTone> = {
   },
 }
 
+/**
+ * Cor da BORDA externa da carta, o único traço que ainda se lê quando a
+ * miniatura fica do tamanho de uma unha na mesa. Mais escura que `tone.dark`
+ * porque precisa ler como borda de carta, não como faixa de tinta.
+ */
+export const EDGE_COLORS: Record<FrameKind, string> = {
+  W: '#d9c88a',
+  U: '#2f6fb8',
+  B: '#5c4a72',
+  R: '#b83c22',
+  G: '#2c8348',
+  gold: '#c9a13c',
+  artifact: '#8d9aa8',
+  colorless: '#8a8a93',
+  land: '#a07845',
+}
+
 export interface FramePaint {
   kind: FrameKind
   /** Preenchido só quando a carta é exatamente bicolor. */
@@ -359,6 +376,10 @@ export interface PtDisplay {
   toughness: number
   /** P/T impresso, só quando difere do atual. */
   printed: string | null
+  /** Poder diferente do impresso: o número é colorido sozinho. */
+  powerChanged: boolean
+  /** Resistência diferente da impressa. */
+  toughnessChanged: boolean
   buffed: boolean
   weakened: boolean
   damage: number
@@ -381,6 +402,8 @@ export function ptDisplay(card: CardView): PtDisplay | null {
     power: card.power,
     toughness: card.toughness,
     printed,
+    powerChanged: powerDelta !== 0,
+    toughnessChanged: toughnessDelta !== 0,
     buffed: changed && powerDelta + toughnessDelta >= 0,
     weakened: changed && powerDelta + toughnessDelta < 0,
     damage,
@@ -508,6 +531,57 @@ export function explainKeywords(keywords: string[]): KeywordEntry[] {
       GLOSSARY[key] ?? Object.entries(GLOSSARY).find(([term]) => key.startsWith(term))?.[1] ?? null
     return { keyword: humanizeIdentifier(keyword), explanation }
   })
+}
+
+// ---------------------------------------------------------------------------
+// Palavras-chave com ícone
+// ---------------------------------------------------------------------------
+
+export type KeywordIcon =
+  | 'flying'
+  | 'haste'
+  | 'vigilance'
+  | 'trample'
+  | 'deathtouch'
+  | 'lifelink'
+  | 'firstStrike'
+  | 'doubleStrike'
+  | 'menace'
+  | 'defender'
+
+export interface KeywordBadge {
+  icon: KeywordIcon
+  label: string
+}
+
+const KEYWORD_ICONS: Record<string, KeywordBadge> = {
+  flying: { icon: 'flying', label: 'Voar' },
+  haste: { icon: 'haste', label: 'Pressa' },
+  vigilance: { icon: 'vigilance', label: 'Vigilância' },
+  trample: { icon: 'trample', label: 'Atropelar' },
+  deathtouch: { icon: 'deathtouch', label: 'Toque mortal' },
+  lifelink: { icon: 'lifelink', label: 'Vínculo com a vida' },
+  firststrike: { icon: 'firstStrike', label: 'Primeiro golpe' },
+  doublestrike: { icon: 'doubleStrike', label: 'Golpe duplo' },
+  menace: { icon: 'menace', label: 'Ameaçar' },
+  defender: { icon: 'defender', label: 'Defensor' },
+}
+
+/**
+ * Só as palavras-chave que viram badge. As demais continuam no texto de regras:
+ * um círculo mudo por termo raro polui a mesa em vez de informar.
+ */
+export function keywordBadges(keywords: string[]): KeywordBadge[] {
+  const seen = new Set<KeywordIcon>()
+  const badges: KeywordBadge[] = []
+  for (const keyword of keywords) {
+    const key = keyword.toLowerCase().replace(/[^a-z]/g, '')
+    const badge = KEYWORD_ICONS[key]
+    if (badge === undefined || seen.has(badge.icon)) continue
+    seen.add(badge.icon)
+    badges.push(badge)
+  }
+  return badges
 }
 
 // ---------------------------------------------------------------------------
@@ -650,6 +724,8 @@ export interface CardCssVars extends CSSProperties {
   '--bar-ink'?: string
   '--plate'?: string
   '--plate-ink'?: string
+  '--edge-a'?: string
+  '--edge-b'?: string
   '--accent'?: string
   '--rarity'?: string
 }
@@ -669,6 +745,8 @@ export function cardCssVars(paint: FramePaint, size: CardSize, controller: numbe
     '--frame-dark': paint.tone.dark,
     '--frame-light-2': second.light,
     '--frame-dark-2': second.dark,
+    '--edge-a': EDGE_COLORS[paint.kind],
+    '--edge-b': EDGE_COLORS[paint.secondKind ?? paint.kind],
     '--bar': paint.tone.bar,
     '--bar-ink': paint.tone.barInk,
     '--plate': paint.tone.plate,

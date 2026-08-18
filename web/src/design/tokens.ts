@@ -83,6 +83,12 @@ export const line = {
  * escovado no metal. Simetrica vira ruido de televisao.
  */
 export interface SurfaceSpec {
+  /**
+   * `fractalNoise` soma oitavas em torno de cinzento e da fibra continua;
+   * `turbulence` toma o valor absoluto e da CELULA, com vinco entre elas. Fibra
+   * para feltro e metal, celula para couro e pedra.
+   */
+  readonly noise: 'fractalNoise' | 'turbulence'
   readonly baseFrequency: string
   readonly octaves: number
   /** Sem seed fixa o ruido muda entre navegadores e entre reloads. */
@@ -103,34 +109,50 @@ export interface SurfaceSpec {
 }
 
 export const material = {
-  /** Superficie de jogo: fibra fina com trama na vertical, luz caindo do topo. */
+  /**
+   * Superficie de jogo: fibra fina com trama deitada, luz caindo do topo.
+   *
+   * `slope` alto porque o feltro entra sempre em `soft-light` e com pouca
+   * opacidade, sobre area GRANDE. Com o ganho baixo da primeira calibragem a
+   * fibra sumia no meio do piso e a mesa voltava a ser um verde chapado — que
+   * e exatamente o defeito que este material existe para matar.
+   */
   felt: {
+    noise: 'fractalNoise',
     baseFrequency: '0.36 0.94',
     octaves: 3,
     seed: 11,
-    surfaceScale: 2.2,
+    surfaceScale: 3.2,
     azimuth: 270,
     elevation: 58,
     lightColor: '#cfe9d8',
-    slope: 1.6,
-    intercept: -0.65,
+    slope: 2,
+    intercept: -0.94,
     base: felt.base,
   },
-  /** Faixa dos terrenos: celula media, luz rasante, couro recuado. */
+  /**
+   * Faixa dos terrenos: celula media, luz rasante, couro recuado.
+   *
+   * `surfaceScale` baixo de proposito. Couro tem poro, nao cratera: com relevo
+   * alto a celula da turbulencia vira reboco batido, que foi exatamente o que
+   * a primeira calibragem produziu.
+   */
   leather: {
-    baseFrequency: '0.19 0.21',
+    noise: 'turbulence',
+    baseFrequency: '0.32 0.36',
     octaves: 2,
     seed: 29,
-    surfaceScale: 2.4,
+    surfaceScale: 1.3,
     azimuth: 258,
     elevation: 44,
     lightColor: '#c7a97e',
-    slope: 1.5,
-    intercept: -0.18,
+    slope: 1.1,
+    intercept: -0.06,
     base: '#241a12',
   },
   /** HUD embutido na moldura: risco fino no eixo horizontal. */
   brushed: {
+    noise: 'fractalNoise',
     baseFrequency: '0.005 1.2',
     octaves: 1,
     seed: 41,
@@ -143,20 +165,24 @@ export const material = {
     base: surface.metal,
   },
   /**
-   * Moldura da arena e veio da costura. Unico material OPACO: sai do filtro
-   * ja com corpo e brilho, sem depender de mistura no CSS — pedra e objeto,
-   * nao textura por cima de outra coisa.
+   * Moldura da arena e veio da costura.
+   *
+   * A rampa aqui e COMPRESSORA (`slope` < 1), nao expansora: difuso mais
+   * especular somados saem claros demais, e pedra clara em `soft-light` lava a
+   * moldura inteira em calcario. Comprimir em torno de 0.5 devolve o veio sem
+   * devolver o brilho de praia.
    */
   stone: {
+    noise: 'turbulence',
     baseFrequency: '0.013 0.021',
     octaves: 2,
     seed: 5,
-    surfaceScale: 3.6,
+    surfaceScale: 3,
     azimuth: 232,
     elevation: 46,
     lightColor: '#8f8a79',
-    slope: 1,
-    intercept: 0,
+    slope: 0.62,
+    intercept: 0.19,
     base: '#4b473c',
   },
 } as const satisfies Record<string, SurfaceSpec>
@@ -172,8 +198,8 @@ export const stoneVein = {
   warpSeed: 23,
   displace: 16,
   specularColor: '#f7f1de',
-  specularConstant: 0.7,
-  specularExponent: 22,
+  specularConstant: 0.42,
+  specularExponent: 30,
 } as const
 
 /**
@@ -182,9 +208,22 @@ export const stoneVein = {
  */
 export const materialAmount = {
   felt: 0.55,
-  leather: 0.5,
+  leather: 0.38,
   brushed: 0.4,
-  stone: 0.8,
+  stone: 0.72,
+} as const
+
+/**
+ * Lado do ladrilho, em pixels de CSS, com que cada material e assado em
+ * `--mat-*` (ver `theme.css`). O ladrilho tem que ser multiplo grande do
+ * comprimento de onda do ruido, senao a emenda do `background-repeat` aparece
+ * como grade. Pedra e a maior porque o veio dela e o padrao mais longo.
+ */
+export const materialTile = {
+  felt: 224,
+  leather: 256,
+  brushed: 320,
+  stone: 512,
 } as const
 
 export type MaterialKey = keyof typeof material

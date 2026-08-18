@@ -7,6 +7,7 @@ import { ScreenShake } from './ScreenShake'
 import { cardRect, handPoint, midpoint, playerPoint, stackPoint, stepsRect } from './fxAnchors'
 import { colorSetHex, playerAccent } from './fxColors'
 import type { FxSpec } from './fxTypes'
+import { ParticleCanvas } from './particles/ParticleCanvas'
 import { BUS_SHAKE_MS, useBusShakes } from './useBusShakes'
 import { useFxEngine } from './useFxEngine'
 import type { FxTranslateContext } from './translateEvent'
@@ -146,6 +147,7 @@ const SCENES: DemoScene[] = [
         amount: 3,
         tone: 'damage',
         lethal: false,
+        subject: 'card',
       },
       {
         kind: 'damageNumber',
@@ -154,6 +156,7 @@ const SCENES: DemoScene[] = [
         amount: 7,
         tone: 'damage',
         lethal: true,
+        subject: 'card',
       },
     ],
   },
@@ -186,6 +189,7 @@ const SCENES: DemoScene[] = [
         amount: 4,
         tone: 'life',
         lethal: false,
+        subject: 'player',
       },
     ],
   },
@@ -223,6 +227,7 @@ function burstSpecs(): FxSpec[] {
       amount: 1 + i,
       tone: 'damage',
       lethal: i === 7,
+      subject: 'card',
     })
     specs.push({ kind: 'blockClash', durationMs: 620, at: { x: rect.x, y: rect.y + i * 6 } })
     specs.push({
@@ -278,6 +283,7 @@ export function FxDemo() {
           amount,
           tone: 'damage',
           lethal: false,
+          subject: 'player',
         },
         { kind: 'vignette', durationMs: 520, tone: 'damage', intensity: Math.min(amount / 10, 0.7) },
       ])
@@ -395,6 +401,7 @@ export function FxDemo() {
         {busShakes.map((shake) => (
           <ScreenShake key={shake.id} intensity={shake.intensity} durationMs={BUS_SHAKE_MS} />
         ))}
+        <ParticleCanvas />
       </div>
     </div>
   )

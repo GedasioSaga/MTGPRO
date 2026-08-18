@@ -11,10 +11,29 @@
     color-scheme: dark;
 
     /*
-     * Ruido procedural em SVG. Sem textura, feltro e metal viram retangulo
-     * chapado, e a mesa perde o material.
+     * MATERIAL. Cada `--mat-*` e um ladrilho de material assado: uma SVG com
+     * relevo (`feTurbulence`) e luz direcional por cima (`feDiffuseLighting` +
+     * `feDistantLight`), ja recentrada em cinza medio pela rampa linear, entao
+     * misturar em `soft-light` da RELEVO sem clarear a cor de baixo.
+     *
+     * Assado como imagem, e nao aplicado com `filter: url()`, de proposito:
+     * `filter` em CSS reprocessa o elemento inteiro a cada repintura, e a mesa
+     * repinta a cada carta que entra. Ladrilho custa uma textura, uma vez.
+     *
+     * Receita identica a de `design/materials.tsx` — os dois saem de
+     * `design/tokens.ts`. Mudou um, mude os tres.
      */
-    --tex-fiber: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9 0.55' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23f)' opacity='0.42'/%3E%3C/svg%3E");
+    --mat-felt: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='224' height='224'%3E%3Cfilter id='m' x='0' y='0' width='1' height='1' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.36 0.94' numOctaves='3' seed='11' stitchTiles='stitch' result='relief'/%3E%3CfeDiffuseLighting in='relief' surfaceScale='3.2' diffuseConstant='1' lighting-color='%23cfe9d8'%3E%3CfeDistantLight azimuth='270' elevation='58'/%3E%3C/feDiffuseLighting%3E%3CfeComponentTransfer%3E%3CfeFuncR type='linear' slope='2' intercept='-0.94'/%3E%3CfeFuncG type='linear' slope='2' intercept='-0.94'/%3E%3CfeFuncB type='linear' slope='2' intercept='-0.94'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='224' height='224' filter='url(%23m)' opacity='0.55'/%3E%3C/svg%3E");
+    --mat-leather: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cfilter id='m' x='0' y='0' width='1' height='1' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.32 0.36' numOctaves='2' seed='29' stitchTiles='stitch' result='cells'/%3E%3CfeComposite in='cells' in2='cells' operator='arithmetic' k1='1.35' k2='0.25' k3='0' k4='-0.12' result='grain'/%3E%3CfeDiffuseLighting in='grain' surfaceScale='1.3' diffuseConstant='1' lighting-color='%23c7a97e'%3E%3CfeDistantLight azimuth='258' elevation='44'/%3E%3C/feDiffuseLighting%3E%3CfeComponentTransfer%3E%3CfeFuncR type='linear' slope='1.1' intercept='-0.06'/%3E%3CfeFuncG type='linear' slope='1.1' intercept='-0.06'/%3E%3CfeFuncB type='linear' slope='1.1' intercept='-0.06'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='256' height='256' filter='url(%23m)' opacity='0.38'/%3E%3C/svg%3E");
+    --mat-brushed: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='320'%3E%3Cfilter id='m' x='0' y='0' width='1' height='1' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.005 1.2' numOctaves='1' seed='41' stitchTiles='stitch' result='relief'/%3E%3CfeDiffuseLighting in='relief' surfaceScale='1.1' diffuseConstant='1' lighting-color='%23dde6f7'%3E%3CfeDistantLight azimuth='272' elevation='68'/%3E%3C/feDiffuseLighting%3E%3CfeComponentTransfer%3E%3CfeFuncR type='linear' slope='1.7' intercept='-0.91'/%3E%3CfeFuncG type='linear' slope='1.7' intercept='-0.91'/%3E%3CfeFuncB type='linear' slope='1.7' intercept='-0.91'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='320' height='320' filter='url(%23m)' opacity='0.4'/%3E%3C/svg%3E");
+    --mat-stone: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='512' height='512'%3E%3Cfilter id='m' x='0' y='0' width='1' height='1' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.013 0.021' numOctaves='2' seed='5' stitchTiles='stitch' result='vein'/%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.09' numOctaves='1' seed='23' stitchTiles='stitch' result='warp'/%3E%3CfeDisplacementMap in='vein' in2='warp' scale='16' xChannelSelector='R' yChannelSelector='G' result='rock'/%3E%3CfeDiffuseLighting in='rock' surfaceScale='3' diffuseConstant='1' lighting-color='%238f8a79' result='body'%3E%3CfeDistantLight azimuth='232' elevation='46'/%3E%3C/feDiffuseLighting%3E%3CfeSpecularLighting in='rock' surfaceScale='3' specularConstant='0.42' specularExponent='30' lighting-color='%23f7f1de' result='gloss'%3E%3CfeDistantLight azimuth='232' elevation='46'/%3E%3C/feSpecularLighting%3E%3CfeComposite in='gloss' in2='body' operator='arithmetic' k1='0' k2='1' k3='1' k4='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncR type='linear' slope='0.62' intercept='0.19'/%3E%3CfeFuncG type='linear' slope='0.62' intercept='0.19'/%3E%3CfeFuncB type='linear' slope='0.62' intercept='0.19'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='512' height='512' filter='url(%23m)' opacity='0.72'/%3E%3C/svg%3E");
+
+    --mat-felt-tile: 224px;
+    --mat-leather-tile: 256px;
+    --mat-brushed-tile: 320px;
+    --mat-stone-tile: 512px;
+
+    /* Grao fino generico, para poco de metal. Nao e material: e sujeira. */
     --tex-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23g)' opacity='0.3'/%3E%3C/svg%3E");
 
     /* Acento padrao: assento 0. `data-active-player` troca em tempo real. */
@@ -117,14 +136,26 @@
 }
 
 @layer components {
-  /* Superficie de jogo: feltro sob holofote, escurecendo para as bordas. */
+  /*
+   * Superficie de jogo: FELTRO, nao gradiente verde.
+   *
+   * Tres camadas, e a ordem importa. Em cima o holofote (luz da sala). No meio
+   * o ladrilho de material, que e o unico que tem relevo — a trama do feltro
+   * corre na horizontal porque a frequencia do ruido e assimetrica, entao a
+   * fibra tem DIRECAO e a luz do topo acha a aresta de cada fio. Embaixo a
+   * rampa de cor, que so diz de que cor e a la.
+   *
+   * `soft-light` no material: a rampa de `tokens.ts` centrou o ladrilho em
+   * cinza medio, e cinza medio em `soft-light` nao muda a cor de baixo. O que
+   * sobra e exatamente o relevo.
+   */
   .table-felt {
     position: relative;
     isolation: isolate;
     background-color: var(--color-felt);
     background-image:
       radial-gradient(135% 92% at 50% -18%, rgba(255, 238, 205, 0.14), transparent 56%),
-      var(--tex-fiber),
+      var(--mat-felt),
       linear-gradient(
         180deg,
         var(--color-felt-light) 0%,
@@ -133,9 +164,9 @@
       );
     background-size:
       auto,
-      180px 180px,
+      var(--mat-felt-tile) var(--mat-felt-tile),
       auto;
-    background-blend-mode: screen, overlay, normal;
+    background-blend-mode: screen, soft-light, normal;
   }
 
   /* Costura do tapete: fio claro por dentro da borda, como mousepad de torneio. */
@@ -149,21 +180,26 @@
     box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
   }
 
-  /* Chapa de metal escovado: grao vertical fino, gloss no topo, sombra embaixo. */
+  /*
+   * Chapa de metal ESCOVADO. O risco nao e uma listra repetida: e ruido com
+   * frequencia esticada num eixo so (0.005 em x contra 1.2 em y), o que da o
+   * risco longo e irregular que a escova deixa. Listra regular le como padrao
+   * de tabela; risco irregular le como metal.
+   */
   .metal-plate {
     background-color: var(--color-surface-metal);
     background-image:
-      repeating-linear-gradient(
-        90deg,
-        rgba(255, 255, 255, 0.035) 0 1px,
-        transparent 1px 3px
-      ),
+      var(--mat-brushed),
       linear-gradient(
         180deg,
         var(--color-surface-metal-high) 0%,
         var(--color-surface-metal) 38%,
         var(--color-surface-raised) 100%
       );
+    background-size:
+      var(--mat-brushed-tile) var(--mat-brushed-tile),
+      auto;
+    background-blend-mode: soft-light, normal;
     border: 1px solid var(--color-edge);
     box-shadow:
       var(--shadow-e2),

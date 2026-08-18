@@ -5,6 +5,7 @@ import type { CardView } from '../../types/protocol'
 import { CardArt } from './CardArt'
 import { CardBack } from './CardBack'
 import { CardDetail } from './CardDetail'
+import { KeywordBadges } from './KeywordBadges'
 import { ManaCost, ManaSymbol } from './ManaCost'
 import type { CardSize, PtDisplay, TextRun } from './cardVisuals'
 import {
@@ -73,6 +74,8 @@ export function Card({
   const role = combatRole(card)
   const counters = counterBadges(card)
   const showDetail = detailOnHover && size !== 'large'
+  // Micro nao tem area para o glifo; large ja traz a palavra no texto de regras.
+  const showKeywords = size !== 'micro' && size !== 'large'
 
   const vars: CSSProperties = {
     ...cardCssVars(paint, size, card.controller, card.rarity),
@@ -201,6 +204,7 @@ export function Card({
           deitado obriga a inclinar a cabeça para ler a informação mais
           consultada da mesa. Aqui ele fica horizontal e no rodapé em qualquer
           orientação. */}
+      {showKeywords ? <KeywordBadges keywords={card.keywords} /> : null}
       {pt !== null ? <PtBox pt={pt} incoming={incoming} doomed={doomed} /> : null}
       {pt === null && card.loyalty !== null ? (
         <div className="mtgc__loyalty">{card.loyalty}</div>
@@ -239,12 +243,16 @@ function PtBox({
       <div className="mtgc__pt">
         {total > 0 ? <span className="mtgc__ptDamage" style={{ width: `${fill}%` }} /> : null}
         <span className="mtgc__ptValue">
-          {pt.power}
+          <span className={clsx('mtgc__ptNum', pt.powerChanged && 'mtgc__ptNum--mod')}>
+            {pt.power}
+          </span>
           <span className="mtgc__ptSlash">/</span>
           {damaged ? (
-            <span className="mtgc__ptRemain">{Math.max(0, pt.remaining)}</span>
+            <span className="mtgc__ptNum mtgc__ptNum--hurt">{Math.max(0, pt.remaining)}</span>
           ) : (
-            pt.toughness
+            <span className={clsx('mtgc__ptNum', pt.toughnessChanged && 'mtgc__ptNum--mod')}>
+              {pt.toughness}
+            </span>
           )}
         </span>
       </div>

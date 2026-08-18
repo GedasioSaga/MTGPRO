@@ -8,6 +8,12 @@ const STEEL = '#ffe0a3'
 /** O choque do bloqueio ainda nao sabe o dano; vale um golpe medio. */
 const CLASH_POWER = 3
 
+/** Meia-diagonal aproximada do painel de fim de jogo, com folga. */
+function panelHalo(): number {
+  if (typeof window === 'undefined') return 300
+  return Math.max(260, Math.min(window.innerWidth, window.innerHeight) * 0.32)
+}
+
 /**
  * Ponte entre o que a camada de efeitos ja decidiu desenhar e a camada de
  * particulas. Ler o `FxSpec` (e nao o `MatchEvent`) mantem UM ponto de ligacao
@@ -61,7 +67,7 @@ export function burstsForSpec(spec: FxSpec): FxBurst[] {
       return [{ kind: 'converge', rect: spec.rect, color: FX_TONES.trigger }]
 
     case 'gameOver':
-      return [{ kind: 'victory', at: viewportCenter(), color: FX_TONES.victory }]
+      return [{ kind: 'victory', at: viewportCenter(), radius: panelHalo(), color: FX_TONES.victory }]
 
     default:
       return []

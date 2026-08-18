@@ -127,6 +127,9 @@ export function createParticleField(canvas: HTMLCanvasElement): ParticleField | 
       const radius = p.a0 + (p.a1 - p.a0) * easeOut(t)
 
       if (p.shape === SHAPE.ring) {
+        // O anel pinta pelo `strokeStyle`, entao precisa zerar o `globalAlpha`
+        // que a particula anterior deixou — senao pisca conforme a ordem.
+        ctx.globalAlpha = 1
         // Duas passadas de espessura diferente fazem o brilho ter volume —
         // um traco unico com sombra sairia chapado e caro.
         ctx.strokeStyle = withAlpha(p.color, alpha * 0.22)

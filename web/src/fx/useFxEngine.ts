@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MatchEvent } from '../types/protocol'
+import { emitBursts } from './fxBus'
 import { clamp } from './fxMotion'
+import { burstsForSpec } from './particles/specBursts'
 import type { FxEffect, FxSpec } from './fxTypes'
 import { FX_PRIORITY } from './fxTypes'
 import { translateEvent } from './translateEvent'
@@ -41,6 +43,9 @@ export function useFxEngine(ctx: FxTranslateContext): FxEngine {
 
   const push = useCallback((specs: readonly FxSpec[]) => {
     if (specs.length === 0) return
+    // Fora do updater de proposito: em StrictMode o updater roda duas vezes, e
+    // particula emitida la sairia dobrada.
+    emitBursts(specs.flatMap(burstsForSpec))
     setEffects((prev) => {
       const now = performance.now()
       const alive = prev.filter((e) => e.persistent || now - e.startedAt < e.durationMs)

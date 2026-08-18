@@ -294,19 +294,19 @@
     /* holofote alto sobre a linha de combate */
     radial-gradient(92% 58% at 50% 50%, rgba(206, 255, 226, 0.15), transparent 80%),
     radial-gradient(120% 54% at 50% -6%, rgba(255, 238, 198, 0.13), transparent 62%),
-    var(--tex-fiber),
-    var(--tex-grain),
+    /* MATERIAL: relevo de fibra com luz vindo do topo, nao ruido chapado. A
+       trama corre na horizontal porque a frequencia do ruido e assimetrica. */
+    var(--mat-felt),
     /* vinheta do próprio tapete: as quatro bordas caem meio tom */
     radial-gradient(112% 88% at 50% 50%, transparent 42%, rgba(0, 0, 0, 0.5) 100%),
     linear-gradient(178deg, #1c4033 0%, #143028 46%, #0b1e18 100%);
   background-size:
     auto,
     auto,
-    190px 190px,
-    110px 110px,
+    var(--mat-felt-tile) var(--mat-felt-tile),
     auto,
     auto;
-  background-blend-mode: screen, screen, overlay, soft-light, multiply, normal;
+  background-blend-mode: screen, screen, soft-light, multiply, normal;
   box-shadow:
     0 calc(26px * var(--board-scale, 1)) calc(64px * var(--board-scale, 1))
       rgba(0, 0, 0, 0.7),
@@ -327,11 +327,136 @@
   opacity: 0.7;
 }
 
+/* --------------------------------------------------------------------------
+ * Arena
+ *
+ * A zona deixou de ser sinalizada (contorno = painel; nada = vazio) e passou a
+ * NASCER da forma: `ArenaFrame` desenha um objeto de pedra atrás das cartas, e
+ * cada camada é um item desta mesma grade. É por isso que patamar e fileira
+ * batem sem medir nada em JS — a geometria do desenho e a das faixas são a
+ * mesma grade. O piso cobre `foe-field → own-field`, simétrico em torno da
+ * costura, então o eixo do desenho É a linha de combate por construção.
+ * ----------------------------------------------------------------------- */
+
+/* Só carrega filtros e gradientes; não ocupa lugar na grade. */
+.arena-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.arena-layer {
+  z-index: 0;
+  min-width: 0;
+  min-height: 0;
+  pointer-events: none;
+}
+
+/* `overflow: visible` é o que deixa a moldura transbordar a faixa que ela
+   contorna — o anel de pedra é maior que o piso, essa é a graça. */
+.arena-layer > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* O tampo: cobre o tapete inteiro, inclusive o padding. */
+.arena-layer--apron {
+  grid-row: 1 / -1;
+  grid-column: 1 / -1;
+  margin-block: calc(-10px * var(--board-scale, 1));
+  margin-inline: calc(-20px * var(--board-scale, 1));
+}
+
+.arena-layer--floor {
+  grid-column: 1 / -1;
+  grid-row: foe-field-start / own-field-end;
+}
+
+/* Os nichos moram na MESMA célula da faixa do jogador, atrás dela: é isso que
+   faz o retrato encaixar em vez de flutuar. */
+.arena-layer--niche {
+  grid-column: 1 / -1;
+}
+
+.arena-layer--niche-top {
+  grid-row: foe-strip-start / foe-strip-end;
+}
+
+.arena-layer--niche-bottom {
+  grid-row: own-strip-start / own-strip-end;
+}
+
 .board-area {
   position: relative;
   z-index: 1;
   min-width: 0;
   min-height: 0;
+}
+
+/* --------------------------------------------------------------------------
+ * Arena
+ *
+ * `ArenaFrame` desenha o objeto fisico — moldura de pedra, patamares, nichos —
+ * como filhos da PROPRIA grade. Aqui so mora a geometria: cada camada ocupa a
+ * faixa da grade que ela sustenta, entao o desenho bate com as fileiras sem
+ * ninguem medir nada em JS. Todas ficam em `z-index: 0`, abaixo das cartas.
+ * ----------------------------------------------------------------------- */
+
+/* Biblioteca de filtros: existe no documento, nunca ocupa espaco nele. */
+.arena-defs,
+.material-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.arena-layer {
+  position: relative;
+  z-index: 0;
+  min-width: 0;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.arena-layer > svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* A sombra projetada da moldura e o cartucho do nicho passam da caixa de
+     proposito: e o transbordo que faz uma pousar sobre a outra. */
+  overflow: visible;
+}
+
+/* A saia da arena: o tampo em volta, do topo do oponente ate a base do
+   jogador. O rodape de telemetria fica de fora — ele nao e parte do objeto. */
+.arena-layer--apron {
+  grid-row: foe-strip-start / own-strip-end;
+  grid-column: 1 / -1;
+  /* Sangra para dentro do padding do tapete: o tampo nao tem margem branca. */
+  margin: calc(-10px * var(--board-scale, 1)) calc(-20px * var(--board-scale, 1));
+}
+
+/* O piso e simetrico em torno da costura por CONSTRUCAO: ocupa exatamente o
+   intervalo `foe-field -> own-field`, e a costura e o meio desse intervalo. */
+.arena-layer--floor {
+  grid-row: foe-field-start / own-field-end;
+  grid-column: 1 / -1;
+}
+
+/* O nicho divide a linha com a `PlayerBar`: e a cavidade em que ela encaixa. */
+.arena-layer--niche-top {
+  grid-area: foe-strip;
+}
+
+.arena-layer--niche-bottom {
+  grid-area: own-strip;
 }
 
 .board-area--foe-strip {
@@ -389,26 +514,53 @@
   }
 }
 
+/*
+ * A costura e um VEIO DE PEDRA embutido no piso, nao um fio de luz solto.
+ * O material vem de `--mat-stone` (turbulencia deslocada + brilho especular),
+ * a rampa por cima da o volume — aresta de cima acesa, aresta de baixo na
+ * sombra — e a mascara come as duas pontas, para a faixa morrer no piso em vez
+ * de terminar num canto.
+ */
+/* A hairline vive DENTRO do piso da arena: passar por cima da pedra riscava a
+   moldura de ponta a ponta. */
 .board-area--seam::before {
   content: "";
   position: absolute;
-  inset-inline: 3%;
+  inset-inline: 12%;
   top: 50%;
-  height: 1px;
+  height: calc(13px * var(--board-scale, 1));
+  translate: 0 -50%;
   pointer-events: none;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    color-mix(in oklab, var(--color-felt-seam) 92%, white 34%) 22%,
-    color-mix(in oklab, var(--color-felt-seam) 92%, white 34%) 78%,
-    transparent
-  );
-  box-shadow: 0 0 14px 1px rgba(154, 230, 194, 0.16);
+  background-color: #14170f;
+  background-image:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.2) 0,
+      rgba(255, 255, 255, 0.02) 34%,
+      rgba(0, 0, 0, 0.55) 100%
+    ),
+    var(--mat-stone);
+  background-size:
+    auto,
+    var(--mat-stone-tile) var(--mat-stone-tile);
+  background-position:
+    center,
+    center;
+  background-blend-mode: overlay, normal;
+  /* A pedra e o material mais claro da mesa. Sem recuo ela vira a manchete de
+     um tabuleiro vazio, e a costura e marca de campo, nao protagonista. */
+  opacity: 0.72;
+  mask-image: linear-gradient(90deg, transparent, #000 11%, #000 89%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 11%, #000 89%, transparent);
+  transition: opacity var(--duration-base) var(--ease-standard);
 }
 
-/* Em combate o placar dos duelos ocupa a costura; a marca de mesa sairia por
-   cima dele e viraria ruido. */
-.board-grid[data-combat="true"] .board-area--seam::before,
+/* Em combate o veio continua — e o trilho onde os chips de duelo pousam —, mas
+   recua: quem manda ali passa a ser o placar. O losango de mesa some. */
+.board-grid[data-combat="true"] .board-area--seam::before {
+  opacity: 0.34;
+}
+
 .board-grid[data-combat="true"] .board-area--seam::after {
   opacity: 0;
 }
@@ -613,10 +765,27 @@
   height: var(--lands-h);
 }
 
-/* Recuo: a borda externa da mesa afunda na sombra, sem linha nenhuma. */
+/*
+ * Recuo em COURO: a faixa externa afunda e troca de material. Couro e celula
+ * media (`turbulence`, nao `fractalNoise`) com luz rasante — poro grande, sem
+ * a trama do feltro —, entao a diferenca entre batalha e terreno passa a ser
+ * de MATERIAL, e nao de contorno. A mascara herdada de `.board-zone` continua
+ * comendo as bordas, entao a faixa nunca fecha em caixa.
+ */
 .board-zone[data-zone="lands"]::before {
-  background:
-    radial-gradient(120% 150% at 50% 50%, rgba(0, 0, 0, 0.58), rgba(0, 0, 0, 0.2) 70%, transparent 92%);
+  background-color: rgba(30, 21, 13, 0.5);
+  background-image:
+    var(--mat-leather),
+    radial-gradient(
+      120% 150% at 50% 50%,
+      rgba(0, 0, 0, 0.58),
+      rgba(0, 0, 0, 0.2) 70%,
+      transparent 92%
+    );
+  background-size:
+    var(--mat-leather-tile) var(--mat-leather-tile),
+    auto;
+  background-blend-mode: soft-light, normal;
 }
 
 .board-zone__inner {
@@ -986,28 +1155,24 @@
  * contadores ficam na cauda da faixa, pequenos e apagados.
  * ----------------------------------------------------------------------- */
 
+/* A faixa NÃO tem fundo: o nicho de pedra da arena é o fundo dela. Painel
+   próprio aqui devolveria a caixa flutuante que o nicho veio resolver. */
 .player-strip {
   position: relative;
   display: block;
   height: var(--strip-h);
   padding-inline: calc(14px * var(--board-scale, 1));
-  border-radius: calc(11px * var(--board-scale, 1));
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.28)),
-    rgba(6, 14, 11, 0.5);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 calc(4px * var(--board-scale, 1)) calc(14px * var(--board-scale, 1))
-      rgba(0, 0, 0, 0.35);
+  border-radius: calc(24px * var(--board-scale, 1));
+  border: 0;
+  background: none;
 }
 
-/* Assento do turno acende a própria borda: quem joga agora se lê sem texto. */
+/* Assento do turno acende a CAVIDADE, não uma borda: luz dentro da pedra. */
 .player-strip[data-active="true"] {
-  border-color: color-mix(in oklab, var(--seat) 42%, transparent);
-  background:
-    linear-gradient(180deg, var(--seat-soft), rgba(0, 0, 0, 0.3)),
-    rgba(6, 14, 11, 0.5);
+  box-shadow:
+    inset 0 0 calc(44px * var(--board-scale, 1))
+      color-mix(in oklab, var(--seat) 24%, transparent),
+    inset 0 0 0 1px color-mix(in oklab, var(--seat) 26%, transparent);
 }
 
 /*
@@ -1134,6 +1299,8 @@
 }
 
 /* Vida é a manchete da faixa: o único número grande da mesa. */
+/* Vida é a manchete, mas mora gravada no cartucho: sem borda e sem placa, só
+   a régua de vida correndo por baixo do número. */
 .player-strip__life {
   position: relative;
   display: flex;
@@ -1143,20 +1310,20 @@
   padding: calc(2px * var(--board-scale, 1)) calc(12px * var(--board-scale, 1));
   border-radius: calc(9px * var(--board-scale, 1));
   overflow: hidden;
-  border: 1px solid color-mix(in oklab, var(--life) 34%, transparent);
-  background: linear-gradient(
-    135deg,
-    color-mix(in oklab, var(--life) 18%, transparent) 0%,
-    rgba(8, 12, 10, 0.6) 66%
-  );
+  border: 0;
+  background: none;
 }
 
 .player-strip__life-bar {
   position: absolute;
-  inset-block: 0;
+  bottom: 0;
   left: 0;
+  height: calc(2px * var(--board-scale, 1));
   width: var(--life-fill);
-  background: color-mix(in oklab, var(--life) 14%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--life) 68%, transparent);
+  box-shadow: 0 0 calc(10px * var(--board-scale, 1))
+    color-mix(in oklab, var(--life) 40%, transparent);
   pointer-events: none;
 }
 

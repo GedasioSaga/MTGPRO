@@ -40,12 +40,21 @@
   inset: 0;
   border-radius: var(--r);
   padding: var(--bezel);
+  /* A borda externa e a unica parte da carta que sobrevive a distancia de
+     tabuleiro: ela carrega a identidade de cor, misturada com preto o bastante
+     para continuar lendo como borda de carta e nao como faixa de tinta. */
   background:
-    radial-gradient(130% 90% at 50% -10%, #2a2731 0%, #0d0b12 55%, #050409 100%);
+    linear-gradient(
+      152deg,
+      color-mix(in srgb, var(--edge-a, #2a2731) 62%, #0b0910) 0%,
+      color-mix(in srgb, var(--edge-a, #2a2731) 34%, #07060c) 40%,
+      color-mix(in srgb, var(--edge-b, var(--edge-a, #2a2731)) 34%, #07060c) 60%,
+      color-mix(in srgb, var(--edge-b, var(--edge-a, #2a2731)) 62%, #0b0910) 100%
+    );
   box-shadow:
     0 calc(var(--cw) * 0.018) calc(var(--cw) * 0.05) rgba(3, 2, 8, 0.55),
     0 calc(var(--cw) * 0.004) calc(var(--cw) * 0.012) rgba(3, 2, 8, 0.5),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    inset 0 0 0 1px color-mix(in srgb, var(--edge-a, #fff) 55%, rgba(255, 255, 255, 0.16));
   transition: box-shadow 380ms ease;
 }
 
@@ -473,23 +482,25 @@
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
 }
 
-.mtgc--buffed .mtgc__ptValue {
-  color: #fff3c4;
+/*
+ * Cada numero se pinta sozinho: azul quando difere do impresso, tom neutro
+ * quando e o valor natural. E a leitura instantanea de "essa criatura esta
+ * alterada" sem comparar com carta nenhuma.
+ */
+.mtgc__ptNum--mod {
+  color: #56a8ff;
   text-shadow:
-    0 0 calc(var(--cw) * 0.045) rgba(255, 214, 92, 0.95),
-    0 1px 2px rgba(0, 0, 0, 0.8);
+    0 0 calc(var(--cw) * 0.04) rgba(60, 140, 255, 0.7),
+    0 1px 2px rgba(0, 0, 0, 0.85);
 }
 
-.mtgc--buffed .mtgc__pt {
+.mtgc--buffed .mtgc__pt,
+.mtgc--weakened .mtgc__pt {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.3),
     0 0 0 1px rgba(0, 0, 0, 0.85),
-    0 0 0 calc(var(--cw) * 0.008) rgba(255, 214, 92, 0.9),
+    0 0 0 calc(var(--cw) * 0.008) rgba(86, 168, 255, 0.85),
     0 calc(var(--cw) * 0.014) calc(var(--cw) * 0.03) rgba(0, 0, 0, 0.7);
-}
-
-.mtgc--weakened .mtgc__ptValue {
-  color: #d9c2ff;
 }
 
 /* Lealdade de planeswalker: escudo no lugar do quadro de P/T. */
@@ -515,11 +526,13 @@
 /* Marcadores                                                            */
 /* --------------------------------------------------------------------- */
 
+/* Sobe acima da barra de P/T: no rodape os marcadores cobriam o valor impresso
+   riscado, que e justamente a referencia de "alterada em quanto". */
 .mtgc__counters {
   position: absolute;
   z-index: 6;
   left: calc(var(--cw) * 0.038);
-  bottom: calc(var(--cw) * 0.032);
+  bottom: calc(var(--cw) * 0.14);
   display: flex;
   flex-direction: column-reverse;
   gap: calc(var(--cw) * 0.014);
@@ -615,6 +628,62 @@
 
 .mtgc__badge--sick svg {
   opacity: 0.85;
+}
+
+/* --------------------------------------------------------------------- */
+/* Badges de palavra-chave na borda esquerda                             */
+/* --------------------------------------------------------------------- */
+
+/*
+ * Voar, pressa, atropelar e companhia como circulo escuro com glifo branco,
+ * empilhados na aresta esquerda. Mora FORA de `__tilt` pelo mesmo motivo do
+ * quadro de P/T: a carta virada gira 90 graus e um glifo deitado nao se le.
+ */
+.mtgc__kws {
+  position: absolute;
+  z-index: 7;
+  top: calc(var(--cw) * 0.2);
+  left: calc(var(--cw) * -0.05);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--cw) * 0.022);
+  pointer-events: none;
+}
+
+/* Virada, a carta visivel avanca 0.158cw para fora do footprint na horizontal
+   e recua 0.23cw na vertical. A coluna acompanha a nova aresta. */
+.mtgc--tapped .mtgc__kws {
+  top: calc(var(--cw) * 0.3);
+  left: calc(var(--cw) * -0.21);
+}
+
+.mtgc__kw {
+  display: grid;
+  place-items: center;
+  width: calc(var(--cw) * 0.17);
+  height: calc(var(--cw) * 0.17);
+  border-radius: 999px;
+  color: #f2f5fb;
+  background: linear-gradient(180deg, #2d2937 0%, #15121d 55%, #0a080f 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 0 0 1px rgba(0, 0, 0, 0.85),
+    0 0 0 calc(var(--cw) * 0.006) rgba(226, 232, 244, 0.5),
+    0 calc(var(--cw) * 0.012) calc(var(--cw) * 0.026) rgba(0, 0, 0, 0.7);
+}
+
+.mtgc__kw svg {
+  width: 62%;
+  height: 62%;
+  display: block;
+}
+
+.mtgc__kw--more {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: calc(var(--cw) * 0.072);
+  line-height: 1;
+  color: #c9d2e2;
 }
 
 /* --------------------------------------------------------------------- */
@@ -914,19 +983,26 @@
   font-size: calc(var(--sym) * 0.66);
   line-height: 1;
   color: #150e07;
+  /* Disco pleno, sem contorno: so uma sombra de contato para o simbolo nao
+     boiar sobre a placa. */
   box-shadow:
-    inset 0 calc(var(--sym) * 0.06) calc(var(--sym) * 0.09) rgba(255, 255, 255, 0.65),
-    inset 0 calc(var(--sym) * -0.09) calc(var(--sym) * 0.12) rgba(0, 0, 0, 0.32),
-    0 calc(var(--sym) * 0.04) calc(var(--sym) * 0.08) rgba(0, 0, 0, 0.5);
+    inset 0 calc(var(--sym) * -0.1) calc(var(--sym) * 0.14) rgba(0, 0, 0, 0.22),
+    0 calc(var(--sym) * 0.03) calc(var(--sym) * 0.07) rgba(0, 0, 0, 0.45);
   vertical-align: -0.12em;
+}
+
+/* Glifo vazado em branco sobre o disco colorido. */
+.mtgc-sym--color,
+.mtgc-sym--split {
+  color: #ffffff;
 }
 
 .mtgc-sym__glyph {
   position: relative;
-  width: 72%;
-  height: 72%;
+  width: 76%;
+  height: 76%;
   display: block;
-  fill: #150e07;
+  fill: currentColor;
 }
 
 .mtgc-sym__text {
@@ -952,7 +1028,12 @@
   position: absolute;
   width: 42%;
   height: 42%;
-  fill: #150e07;
+  fill: currentColor;
+}
+
+/* Metade generica do hibrido monocolor: cinza com o numero em tinta escura. */
+.mtgc-sym__half--grey {
+  background: linear-gradient(180deg, #d7cfcc, #b3a8a4);
 }
 
 .mtgc-sym__mini--a {
@@ -967,6 +1048,7 @@
 
 .mtgc-sym__miniText {
   position: absolute;
+  color: #150e07;
   top: 6%;
   left: 12%;
   font-size: calc(var(--sym) * 0.44);
@@ -982,7 +1064,7 @@
 .mtgc-sym--variable,
 .mtgc-sym--colorless,
 .mtgc-sym--snow {
-  background: linear-gradient(180deg, #d7cfcc, #b3a8a4);
+  background: linear-gradient(180deg, #cdc6c3, #a9a09c);
 }
 
 .mtgc-sym--text {
@@ -1154,8 +1236,9 @@
 /* Resistência efetiva e ícones de estado                                */
 /* --------------------------------------------------------------------- */
 
-/* Com dano marcado o quadro mostra o que ainda resta, em vermelho. */
-.mtgc__ptRemain {
+/* Com dano marcado o quadro mostra o que ainda resta, em vermelho. Vermelho
+   ganha do azul de modificado: morrer importa mais que estar buffada. */
+.mtgc__ptNum--hurt {
   color: #ff7059;
   text-shadow:
     0 0 calc(var(--cw) * 0.05) rgba(240, 60, 40, 0.85),

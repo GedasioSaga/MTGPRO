@@ -25,23 +25,31 @@ import {
  * para cima acende, aresta virada para baixo escurece, dos dois lados da mesa.
  */
 
-/** Silhueta do piso. Ponto mais largo em y=500, que é a linha de combate. */
+/**
+ * Silhueta do piso: hexágono alongado de arena. Arestas retas em cima e
+ * embaixo, laterais que ABREM até o ponto mais largo em y=500 — que é a linha
+ * de combate. Retângulo arredondado aqui vira painel; esta forma não vira.
+ */
 const FLOOR =
-  'M200 26 L800 26 C866 26 906 54 918 110 C952 260 976 380 984 500 ' +
-  'C976 620 952 740 918 890 C906 946 866 974 800 974 L200 974 ' +
-  'C134 974 94 946 82 890 C48 740 24 620 16 500 ' +
-  'C24 380 48 260 82 110 C94 54 134 26 200 26 Z'
+  'M262 42 L738 42 C812 42 862 90 884 170 C932 302 960 402 962 500 ' +
+  'C960 598 932 698 884 830 C862 910 812 958 738 958 L262 958 ' +
+  'C188 958 138 910 116 830 C68 698 40 598 38 500 ' +
+  'C40 402 68 302 116 170 C138 90 188 42 262 42 Z'
 
-/** Patamar do oponente: estreito na borda externa, cheio na linha de combate. */
-const TERRACE_TOP =
-  'M158 44 L842 44 C894 44 930 72 940 124 L996 458 L4 458 L60 124 C70 72 106 44 158 44 Z'
-/** Aresta virada para cima do patamar de cima — é a que pega luz. */
-const TERRACE_TOP_LIP = 'M60 124 C70 72 106 44 158 44 L842 44 C894 44 930 72 940 124'
-
-const TERRACE_BOTTOM =
-  'M4 542 L996 542 L940 876 C930 928 894 956 842 956 L158 956 C106 956 70 928 60 876 Z'
+/** Patamar do oponente: estreito na aresta externa, cheio na linha de combate. */
+/*
+ * Patamares: BANDAS de largura cheia, recortadas pela silhueta do piso. Dar
+ * contorno próprio a cada patamar desenhava um trapézio dentro da arena — e
+ * trapézio com aresta visível é exatamente a caixa que esta rodada veio tirar.
+ * Cada banda acende na aresta externa e apaga na costura: as duas caem para o
+ * centro, e o degrau nasce do encontro delas.
+ */
+const TERRACE_TOP = 'M0 0 H1000 V462 H0 Z'
+const TERRACE_BOTTOM = 'M0 538 H1000 V1000 H0 Z'
 /** Lábio do patamar de baixo, rente à costura: é o degrau que o olho lê. */
-const TERRACE_BOTTOM_LIP = 'M4 542 L996 542'
+const TERRACE_BOTTOM_LIP = 'M42 538 L958 538'
+/** Queda do patamar de cima para a vala. Escura, não desenhada. */
+const TERRACE_TOP_FALL = 'M42 462 L958 462'
 
 /** Cartucho onde o retrato encaixa. Aponta para FORA da mesa dos dois lados. */
 const KEYSTONE_BOTTOM =
@@ -49,9 +57,14 @@ const KEYSTONE_BOTTOM =
 const KEYSTONE_TOP =
   'M278 106 L722 106 L722 42 C722 28 714 14 700 6 L656 -20 L344 -20 L300 6 C286 14 278 28 278 42 Z'
 
-const STONE_LIT = '#7d8c81'
-const STONE_MID = '#46534b'
-const STONE_DEEP = '#131b18'
+const RIM_SCALE = 'translate(500 500) scale(1.055 1.078) translate(-500 -500)'
+
+/** Juntas do anel. 0° e 180° caem na linha de combate: o eixo vira desenho. */
+const RIM_JOINTS = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]
+
+const STONE_LIT = '#5f6d63'
+const STONE_MID = '#333e37'
+const STONE_DEEP = '#0d1310'
 
 /** A textura procedural entra como VÉU sobre a base pintada, nunca como fundo:
  *  se o filtro de material não resolver, some só a textura e a base continua. */
@@ -78,10 +91,12 @@ function MaterialVeil({
 export function ArenaFrame() {
   return (
     <>
+      {/* Biblioteca de materiais: monta solta, fora do `<defs>` da arena, para
+          os ids valerem no documento sem depender de aninhamento de `<svg>`. */}
+      <MaterialDefs />
+
       <svg className="arena-defs" aria-hidden="true" focusable="false">
         <defs>
-          <MaterialDefs />
-
           {/* Pedra iluminada de cima: face clara na aresta superior, escura na
               inferior. É esse par que faz a moldura ler como volume. */}
           <linearGradient id="arena-rim-face" x1="0" y1="0" x2="0" y2="1">
@@ -108,11 +123,11 @@ export function ArenaFrame() {
             id="arena-terrace-top"
             gradientUnits="userSpaceOnUse"
             x1="0"
-            y1="44"
+            y1="0"
             x2="0"
-            y2="458"
+            y2="462"
           >
-            <stop offset="0" stopColor="rgba(216,255,236,0.15)" />
+            <stop offset="0" stopColor="rgba(216,255,236,0.1)" />
             <stop offset="0.5" stopColor="rgba(150,214,182,0.05)" />
             <stop offset="1" stopColor="rgba(0,0,0,0.34)" />
           </linearGradient>
@@ -121,13 +136,27 @@ export function ArenaFrame() {
             id="arena-terrace-bottom"
             gradientUnits="userSpaceOnUse"
             x1="0"
-            y1="542"
+            y1="538"
             x2="0"
-            y2="956"
+            y2="1000"
           >
-            <stop offset="0" stopColor="rgba(226,255,242,0.17)" />
+            <stop offset="0" stopColor="rgba(226,255,242,0.15)" />
             <stop offset="0.5" stopColor="rgba(150,214,182,0.05)" />
-            <stop offset="1" stopColor="rgba(0,0,0,0.36)" />
+            <stop offset="1" stopColor="rgba(0,0,0,0.32)" />
+          </linearGradient>
+
+          {/* Sombra do degrau: densa rente à costura, dissolvida acima dela.
+              Barra chapada aqui vira listra; gradiente vira profundidade. */}
+          <linearGradient
+            id="arena-step-shade"
+            gradientUnits="userSpaceOnUse"
+            x1="0"
+            y1="430"
+            x2="0"
+            y2="502"
+          >
+            <stop offset="0" stopColor="rgba(0,0,0,0)" />
+            <stop offset="1" stopColor="rgba(0,0,0,0.5)" />
           </linearGradient>
 
           <radialGradient id="arena-medallion" cx="0.5" cy="0.5" r="0.5">
@@ -137,9 +166,9 @@ export function ArenaFrame() {
           </radialGradient>
 
           <linearGradient id="arena-apron-face" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#2b332c" />
-            <stop offset="0.4" stopColor="#161d19" />
-            <stop offset="1" stopColor="#080c0a" />
+            <stop offset="0" stopColor="#1d2420" />
+            <stop offset="0.4" stopColor="#0f1512" />
+            <stop offset="1" stopColor="#070a09" />
           </linearGradient>
 
           <linearGradient id="arena-keystone-face" x1="0" y1="0" x2="0" y2="1">
@@ -157,12 +186,18 @@ export function ArenaFrame() {
           <clipPath id="arena-floor-clip">
             <path d={FLOOR} />
           </clipPath>
+
+          {/* Só o anel de pedra: moldura menos piso. É onde as juntas moram. */}
+          <mask id="arena-rim-mask" maskUnits="userSpaceOnUse" x="-100" y="-160" width="1200" height="1320">
+            <path d={FLOOR} transform={RIM_SCALE} fill="#fff" />
+            <path d={FLOOR} fill="#000" />
+          </mask>
         </defs>
       </svg>
 
       <div className="arena-layer arena-layer--apron" aria-hidden="true">
         <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" focusable="false">
-          <g style={{ isolation: 'isolate' }}>
+          <g opacity="0.88" style={{ isolation: 'isolate' }}>
             <rect
               x="0"
               y="0"
@@ -172,7 +207,7 @@ export function ArenaFrame() {
               ry="22"
               fill="url(#arena-apron-face)"
             />
-            <MaterialVeil path="M0 0 H1000 V1000 H0 Z" filter={MATERIAL_LEATHER} opacity={0.5} />
+            <MaterialVeil path="M0 0 H1000 V1000 H0 Z" filter={MATERIAL_LEATHER} opacity={0.16} />
           </g>
           {/* Aresta externa do tampo: fio de luz em cima, queda embaixo. */}
           <rect
@@ -194,36 +229,62 @@ export function ArenaFrame() {
       <div className="arena-layer arena-layer--floor" aria-hidden="true">
         <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" focusable="false">
           {/* Sombra da moldura caindo no chão, deslocada para baixo. */}
-          <g transform="translate(500 512) scale(1.075 1.13) translate(-500 -500)">
+          <g transform="translate(500 512) scale(1.075 1.11) translate(-500 -500)">
             <path d={FLOOR} fill="rgba(0,0,0,0.62)" filter="url(#arena-cast)" />
           </g>
 
           {/* Moldura esculpida: a mesma silhueta, um pouco maior. O anel que
               sobra entre ela e o piso É a pedra. */}
           <g
-            transform="translate(500 500) scale(1.058 1.105) translate(-500 -500)"
+            transform={RIM_SCALE}
             style={{ isolation: 'isolate' }}
           >
             <path d={FLOOR} fill="url(#arena-rim-face)" />
-            <MaterialVeil path={FLOOR} filter={MATERIAL_STONE} opacity={0.62} />
+            <MaterialVeil path={FLOOR} filter={MATERIAL_STONE} opacity={0.26} />
+          </g>
+
+          {/* Juntas radiais: é o que separa pedra ESCULPIDA de borda arredondada.
+              A máscara recorta no anel, então nada invade o piso. */}
+          <g mask="url(#arena-rim-mask)">
+            {RIM_JOINTS.map((deg) => {
+              const rad = (deg * Math.PI) / 180
+              const x = 500 + Math.cos(rad) * 700
+              const y = 500 + Math.sin(rad) * 700
+              return (
+                <g key={deg}>
+                  <path
+                    d={`M500 500 L${x.toFixed(1)} ${y.toFixed(1)}`}
+                    stroke="rgba(0,0,0,0.55)"
+                    strokeWidth="4"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <path
+                    d={`M501.5 502 L${(x + 1.5).toFixed(1)} ${(y + 2).toFixed(1)}`}
+                    stroke="rgba(226,255,242,0.16)"
+                    strokeWidth="1"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </g>
+              )
+            })}
           </g>
 
           <g style={{ isolation: 'isolate' }}>
             <path d={FLOOR} fill="url(#arena-floor-face)" />
-            <MaterialVeil path={FLOOR} filter={MATERIAL_FELT} opacity={0.34} />
+            <MaterialVeil path={FLOOR} filter={MATERIAL_FELT} opacity={0.2} />
           </g>
 
           <g clipPath="url(#arena-floor-clip)">
             <path d={TERRACE_TOP} fill="url(#arena-terrace-top)" />
             <path
-              d={TERRACE_TOP_LIP}
+              d={TERRACE_TOP_FALL}
               fill="none"
-              stroke="rgba(226,255,242,0.32)"
-              strokeWidth="1.5"
+              stroke="rgba(0,0,0,0.5)"
+              strokeWidth="2"
               vectorEffect="non-scaling-stroke"
             />
             {/* Vala entre o degrau de cima e a costura: sombra, não linha. */}
-            <rect x="0" y="452" width="1000" height="46" fill="rgba(0,0,0,0.42)" />
+            <rect x="0" y="430" width="1000" height="72" fill="url(#arena-step-shade)" />
 
             <path d={TERRACE_BOTTOM} fill="url(#arena-terrace-bottom)" />
             <path
@@ -236,12 +297,12 @@ export function ArenaFrame() {
 
             {/* Eixo da arena: o medalhão é a marca de centro, e as duas sulcas
                 correm até a borda amarrando os dois patamares. */}
-            <ellipse cx="500" cy="500" rx="212" ry="48" fill="url(#arena-medallion)" />
+            <ellipse cx="500" cy="500" rx="262" ry="52" fill="url(#arena-medallion)" />
             <ellipse
               cx="500"
               cy="500"
-              rx="212"
-              ry="48"
+              rx="262"
+              ry="52"
               fill="none"
               stroke="rgba(210,255,232,0.16)"
               strokeWidth="1"
@@ -250,15 +311,15 @@ export function ArenaFrame() {
             <ellipse
               cx="500"
               cy="500"
-              rx="148"
-              ry="32"
+              rx="182"
+              ry="34"
               fill="none"
               stroke="rgba(210,255,232,0.09)"
               strokeWidth="1"
               vectorEffect="non-scaling-stroke"
             />
             <path
-              d="M28 500 H272 M728 500 H972"
+              d="M46 500 H222 M778 500 H954"
               stroke="rgba(206,250,228,0.14)"
               strokeWidth="1"
               vectorEffect="non-scaling-stroke"
@@ -310,7 +371,7 @@ function ArenaNiche({ side }: { side: 'top' | 'bottom' }) {
 
         <g style={{ isolation: 'isolate' }}>
           <path d={keystone} fill="url(#arena-keystone-face)" />
-          <MaterialVeil path={keystone} filter={MATERIAL_METAL} opacity={0.55} />
+          <MaterialVeil path={keystone} filter={MATERIAL_METAL} opacity={0.3} />
         </g>
         <path
           d={keystone}

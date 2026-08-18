@@ -16,8 +16,9 @@ export type FxBurst =
   | { kind: 'shock'; at: FxPoint; power: number; color: string }
   /** Materializacao: particulas convergindo para a carta. */
   | { kind: 'converge'; rect: FxRect; color: string }
-  /** Explosao contida da tela final. */
-  | { kind: 'victory'; at: FxPoint; color: string }
+  /** Explosao contida da tela final; `radius` e o vao livre no miolo,
+   *  onde o painel de resultado fica — a luz estoura em volta dele. */
+  | { kind: 'victory'; at: FxPoint; radius: number; color: string }
 
 /** Teto duro do pool. Acima disso o quadro custa mais que o efeito entrega. */
 export const MAX_PARTICLES = 720

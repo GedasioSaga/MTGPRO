@@ -11,6 +11,16 @@
   font-family: var(--fx-font, ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif);
 }
 
+/* Camada de particulas: um unico canvas cobrindo a viewport. O buffer real e
+   dimensionado em JS pelo devicePixelRatio; aqui so se estica sobre a area. */
+.fx-particles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
 /* Todo overlay e ancorado em (0,0) e posicionado por transform — nunca por
    top/left, que forcariam layout a cada quadro. */
 .fx-node {
@@ -402,14 +412,6 @@
   box-shadow:
     inset 0 0 32px var(--fx-dissolve-soft, rgba(255, 138, 76, 0.4)),
     0 0 26px var(--fx-dissolve-soft, rgba(255, 138, 76, 0.4));
-}
-
-.fx-ember {
-  width: 5px;
-  height: 5px;
-  border-radius: 999px;
-  background: var(--fx-dissolve-color, #ff8a4c);
-  box-shadow: 0 0 12px var(--fx-dissolve-color, #ff8a4c);
 }
 
 /* --- entrada em campo / gatilho --- */

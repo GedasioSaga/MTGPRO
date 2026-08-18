@@ -16,6 +16,7 @@ import { TokenSpawn } from './TokenSpawn'
 import { TriggerFlash } from './TriggerFlash'
 import { TurnBanner } from './TurnBanner'
 import { Vignette } from './Vignette'
+import { ParticleCanvas } from './particles/ParticleCanvas'
 import type { FxEffect } from './fxTypes'
 import { BUS_SHAKE_MS, useBusShakes } from './useBusShakes'
 import { useEventChoreographer } from './useEventChoreographer'
@@ -80,6 +81,9 @@ export function FxLayer() {
       {busShakes.map((shake) => (
         <ScreenShake key={shake.id} intensity={shake.intensity} durationMs={BUS_SHAKE_MS} />
       ))}
+      {/* Ultimo filho de proposito: a particula tem de aparecer POR CIMA do
+          escurecimento da tela final, senao a explosao de vitoria some. */}
+      <ParticleCanvas />
     </div>
   )
 }

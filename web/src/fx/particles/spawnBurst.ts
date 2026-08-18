@@ -310,35 +310,39 @@ function converge(acquire: Acquire, burst: Extract<FxBurst, { kind: 'converge' }
 }
 
 function victory(acquire: Acquire, burst: Extract<FxBurst, { kind: 'victory' }>): void {
+  const { at, radius, color } = burst
+
+  // Tres aneis partindo da borda do painel para fora: a luz cerca o placar em
+  // vez de passar por cima dele, e o texto do resultado continua legivel.
   for (let i = 0; i < 3; i += 1) {
     put(acquire, {
       shape: SHAPE.ring,
-      x: burst.at.x,
-      y: burst.at.y,
+      x: at.x,
+      y: at.y,
       delay: i * 110,
       life: 620 + i * 120,
-      a0: 12,
-      a1: 150 + i * 46,
+      a0: radius * 0.86,
+      a1: radius * (1.5 + i * 0.34),
       width: 4 - i,
-      color: burst.color,
+      color,
       fade: 1.5,
     })
   }
 
-  for (let i = 0; i < 80; i += 1) {
+  for (let i = 0; i < 74; i += 1) {
     const angle = rand(0, Math.PI * 2)
-    const speed = rand(160, 560)
+    const speed = rand(160, 520)
     put(acquire, {
-      x: burst.at.x,
-      y: burst.at.y,
+      x: at.x + Math.cos(angle) * radius,
+      y: at.y + Math.sin(angle) * radius,
       vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
+      vy: Math.sin(angle) * speed - rand(0, 140),
       gravity: 620,
       drag: 1.15,
       delay: rand(0, 90),
       life: rand(700, 1300),
       a0: rand(1.6, 4),
-      color: i % 3 === 0 ? HOT : burst.color,
+      color: i % 3 === 0 ? HOT : color,
       fade: 1.25,
     })
   }
@@ -348,24 +352,25 @@ function victory(acquire: Acquire, burst: Extract<FxBurst, { kind: 'victory' }>)
     const speed = rand(420, 720)
     put(acquire, {
       shape: SHAPE.streak,
-      x: burst.at.x,
-      y: burst.at.y,
+      x: at.x + Math.cos(angle) * radius,
+      y: at.y + Math.sin(angle) * radius * 0.9,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
       gravity: 900,
       drag: 0.9,
       life: rand(520, 900),
       a0: rand(2, 3.4),
-      color: burst.color,
+      color,
       fade: 1.2,
     })
   }
 
   // Poeira lenta que sobe depois do estouro: da o "assentar" da explosao.
   for (let i = 0; i < 22; i += 1) {
+    const side = i % 2 === 0 ? -1 : 1
     put(acquire, {
-      x: burst.at.x + rand(-160, 160),
-      y: burst.at.y + rand(-60, 90),
+      x: at.x + side * rand(radius * 0.9, radius * 1.7),
+      y: at.y + rand(-radius * 0.5, radius * 0.8),
       vx: rand(-24, 24),
       vy: -rand(18, 54),
       gravity: -14,
@@ -373,7 +378,7 @@ function victory(acquire: Acquire, burst: Extract<FxBurst, { kind: 'victory' }>)
       delay: rand(120, 520),
       life: rand(900, 1400),
       a0: rand(1.2, 2.4),
-      color: burst.color,
+      color,
       fade: 1.1,
     })
   }

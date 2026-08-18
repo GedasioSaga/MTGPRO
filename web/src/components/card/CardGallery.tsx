@@ -1,6 +1,8 @@
-import type { ReactElement } from 'react'
+import type { CSSProperties, ReactElement } from 'react'
 import type { CardView } from '../../types/protocol'
 import { Card } from './Card'
+import { ManaSymbol } from './ManaCost'
+import { parseManaSymbol } from './cardVisuals'
 import { CardBack } from './CardBack'
 import type { CardSize } from './cardVisuals'
 import { font, surface, text } from '../../design/tokens'
@@ -304,6 +306,152 @@ const TILES: Tile[] = [
     }),
   },
   {
+    label: 'Mono azul',
+    note: 'moldura azul, disco de mana pleno',
+    card: makeCard({
+      id: 16,
+      name: 'Counterspell',
+      manaCost: '{U}{U}',
+      manaValue: 2,
+      typeLine: 'Instant',
+      oracleText: 'Counter target spell.',
+      colors: U,
+      zone: 'Stack',
+      rarity: 'Common',
+      setCode: 'MH2',
+    }),
+  },
+  {
+    label: 'Mono preta',
+    note: 'moldura preta e caveira no disco',
+    card: makeCard({
+      id: 17,
+      name: 'Dark Ritual',
+      manaCost: '{B}',
+      manaValue: 1,
+      typeLine: 'Instant',
+      oracleText: 'Add {B}{B}{B}.',
+      colors: B,
+      zone: 'Stack',
+      rarity: 'Common',
+      setCode: 'ICE',
+    }),
+  },
+  {
+    label: 'Mono branca',
+    note: 'moldura branca e sol de raios curvos',
+    card: makeCard({
+      id: 18,
+      name: 'Wrath of God',
+      manaCost: '{2}{W}{W}',
+      manaValue: 4,
+      typeLine: 'Sorcery',
+      oracleText: 'Destroy all creatures. They cannot be regenerated.',
+      colors: W,
+      zone: 'Stack',
+      rarity: 'Rare',
+      setCode: 'DOM',
+    }),
+  },
+  {
+    label: 'Quatro palavras-chave',
+    note: 'coluna de badges com transbordo +N',
+    card: makeCard({
+      id: 19,
+      name: 'Akroma, Angel of Wrath',
+      manaCost: '{5}{W}{W}{W}',
+      manaValue: 8,
+      typeLine: 'Legendary Creature — Angel',
+      oracleText: 'Flying, first strike, vigilance, trample, haste, protection from black and from red',
+      colors: W,
+      power: 6,
+      toughness: 6,
+      basePower: 6,
+      baseToughness: 6,
+      keywords: ['Flying', 'FirstStrike', 'Vigilance', 'Trample', 'Haste'],
+      rarity: 'Mythic',
+      setCode: 'LGN',
+    }),
+  },
+  {
+    label: 'Ameaçar e defensor',
+    note: 'glifos de ameaçar, defensor e vínculo com a vida',
+    card: makeCard({
+      id: 20,
+      name: 'Guardião do Portão',
+      manaCost: '{2}{B}{G}',
+      manaValue: 4,
+      typeLine: 'Creature — Golem',
+      oracleText: 'Menace, defender, lifelink, deathtouch',
+      colors: B | G,
+      power: 2,
+      toughness: 6,
+      basePower: 2,
+      baseToughness: 6,
+      keywords: ['Menace', 'Defender', 'Lifelink', 'Deathtouch'],
+      rarity: 'Rare',
+      setCode: 'GRN',
+    }),
+  },
+  {
+    label: 'Virada com badges',
+    note: 'glifos e P/T seguem horizontais na rotação de 90°',
+    card: makeCard({
+      id: 21,
+      name: 'Colossal Dreadmaw',
+      manaCost: '{4}{G}{G}',
+      manaValue: 6,
+      typeLine: 'Creature — Dinosaur',
+      oracleText: 'Trample',
+      colors: G,
+      power: 6,
+      toughness: 6,
+      basePower: 6,
+      baseToughness: 6,
+      keywords: ['Trample'],
+      tapped: true,
+      rarity: 'Common',
+      setCode: 'XLN',
+    }),
+  },
+  {
+    label: 'Só o poder alterado',
+    note: 'o 5 fica azul, o 4 continua neutro',
+    card: makeCard({
+      id: 22,
+      name: 'Fathom Fleet Captain',
+      manaCost: '{1}{U}{B}',
+      manaValue: 3,
+      typeLine: 'Creature — Orc Pirate',
+      oracleText: 'Menace',
+      colors: U | B,
+      power: 5,
+      toughness: 4,
+      basePower: 3,
+      baseToughness: 4,
+      keywords: ['Menace'],
+      counters: [['PlusOnePlusOne', 2]],
+      rarity: 'Rare',
+      setCode: 'XLN',
+    }),
+  },
+  {
+    label: 'Híbrido e phyrexiano',
+    note: 'disco dividido na diagonal com as duas cores',
+    card: makeCard({
+      id: 23,
+      name: 'Ruína do Bosque',
+      manaCost: '{2}{G/W}{R/P}{X}',
+      manaValue: 4,
+      typeLine: 'Sorcery',
+      oracleText: 'Choose one — {T}: Add {C}. • Deal {X} damage. ({S} counts as snow.)',
+      colors: G | W | R,
+      zone: 'Stack',
+      rarity: 'Rare',
+      setCode: 'MH1',
+    }),
+  },
+  {
     label: 'Planeswalker',
     note: 'escudo de lealdade no lugar do P/T',
     card: makeCard({
@@ -323,6 +471,8 @@ const TILES: Tile[] = [
 ]
 
 const LADDER: CardSize[] = ['micro', 'small', 'medium', 'large']
+
+const SYMBOLS = ['W', 'U', 'B', 'R', 'G', '3', 'X', 'C', 'S', 'T', 'W/U', 'B/R', '2/G', 'G/P']
 
 /**
  * Bancada visual da carta, sem rede e sem store: um lugar onde todo estado que
@@ -368,6 +518,20 @@ export function CardGallery(): ReactElement {
               verso
             </figcaption>
           </figure>
+        </div>
+      </section>
+
+      <section className="mx-auto mb-12 max-w-[1440px]">
+        <SectionTitle>Símbolos de mana</SectionTitle>
+        <div className="flex flex-wrap items-center gap-5" style={{ '--sym': '38px' } as CSSProperties}>
+          {SYMBOLS.map((raw) => (
+            <figure key={raw} className="m-0 flex flex-col items-center gap-2">
+              <ManaSymbol token={parseManaSymbol(raw)} />
+              <figcaption className="text-[11px]" style={{ color: text.faint }}>
+                {`{${raw}}`}
+              </figcaption>
+            </figure>
+          ))}
         </div>
       </section>
 
