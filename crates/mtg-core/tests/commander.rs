@@ -7,10 +7,11 @@ mod common;
 use common::*;
 
 use mtg_core::action::{Action, Request};
-use mtg_core::engine::{cast, combat, commander, turn, Agent, Game};
-use mtg_core::event::{Defender, Step};
+use mtg_core::engine::{cast, combat, commander, sba, turn, Agent, Game};
+use mtg_core::event::{Defender, LossReason, Step};
 use mtg_core::ids::{ObjectId, PlayerId};
 use mtg_core::mana::{Color, ColorSet};
+use mtg_core::state::GameOutcome;
 use mtg_core::types::{CardType, Supertype};
 use mtg_core::zone::ZoneId;
 
@@ -340,6 +341,48 @@ fn vinte_e_um_de_dano_do_mesmo_comandante_mata() {
         commander::lethal_commander_damage(&game.state),
         vec![P1],
         "CR 903.10 — no vigésimo primeiro ponto o jogador é derrotado"
+    );
+}
+
+#[test]
+fn a_sba_derrota_quem_levou_vinte_e_um_do_mesmo_comandante() {
+    // CR 704.5v — a derrota por dano de comandante é ação baseada em estado, e
+    // quem a aplica é `sba`, não `commander`. Este teste é a ponte entre os
+    // dois: `commander` conta, `sba` derrota. Sem ele, a matriz dos 21 podia
+    // encher para sempre sem ninguém nunca perder.
+    let mut game = one_commander_game("{1}", 2, 2, passing_agents());
+    let commander_id = commander_object(&game, P0);
+    // Vida alta: quem tem de derrotar aqui é CR 704.5v, não CR 704.5a.
+    set_life(&mut game, P1, 60);
+
+    commander::note_combat_damage(&mut game.state, commander_id, P1, 20);
+    sba::check_until_stable(&mut game);
+    assert!(
+        !game.state.player(P1).has_lost,
+        "CR 704.5v — 20 não é 21; a SBA não podia derrotar ninguém"
+    );
+
+    commander::note_combat_damage(&mut game.state, commander_id, P1, 1);
+    sba::check_until_stable(&mut game);
+
+    assert!(
+        game.state.player(P1).has_lost,
+        "CR 704.5v — a SBA tem de derrotar quem chegou a 21"
+    );
+    assert_eq!(
+        game.state.player(P1).loss_reason,
+        Some(LossReason::CommanderDamage),
+        "a derrota tem de ser atribuída ao dano de comandante, não à vida"
+    );
+    assert_eq!(
+        life(&game, P1),
+        60,
+        "CR 903.10 — a derrota vem da matriz; a vida continua onde estava"
+    );
+    assert_eq!(
+        game.state.outcome,
+        GameOutcome::Winner(P0),
+        "CR 104.2a — num duelo, sobrar um é vencer"
     );
 }
 

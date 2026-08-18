@@ -324,7 +324,7 @@ mod tests {
     /// Um assento pronto: biblioteca não-vazia, e comandante só onde o
     /// formato exige. Bots alternados para o pedido não sair uniforme.
     fn seat(index: usize, format: Format) -> Seat {
-        let bot = if index % 2 == 0 { "heuristic" } else { "random" };
+        let bot = if index.is_multiple_of(2) { "heuristic" } else { "random" };
         let s = Seat::new(format!("P{index}"), vec![CardDefId(0); 40]).with_bot(bot);
         if format.requires_commander() {
             s.with_commander(CardDefId(1))

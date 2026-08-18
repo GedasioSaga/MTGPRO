@@ -430,6 +430,114 @@ impl ScryfallCard {
     pub fn is_multiface(&self) -> bool {
         self.card_faces.as_ref().map(|f| f.len() > 1).unwrap_or(false)
     }
+
+    // -----------------------------------------------------------------------
+    // Leitura por face
+    //
+    // Os `effective_*` acima existem para *metadado*: eles caem na face da
+    // frente só para não perder informação. Os `face_*` abaixo existem para
+    // *compilação*, e a diferença importa: quando o compilador escolheu ler a
+    // face 0 de "Fire // Ice", o custo é `{1}{R}`, nunca `{1}{R} // {1}{U}`
+    // da raiz. Por isso aqui não há queda para a raiz nos campos de regra
+    // (custo, tipo, texto, P/T, cor) — só nos de apresentação (artista,
+    // imagem), onde a raiz é a fonte certa em carta dividida.
+    // -----------------------------------------------------------------------
+
+    /// Quantas faces vieram em `card_faces`. Zero quando o campo não veio.
+    pub fn face_count(&self) -> usize {
+        self.card_faces.as_ref().map(|f| f.len()).unwrap_or(0)
+    }
+
+    /// A face de índice `i`, se existir. Índice fora da lista é caso normal —
+    /// o Scryfall muda a quantidade de faces sem aviso —, nunca panic.
+    pub fn face(&self, i: usize) -> Option<&CardFace> {
+        self.card_faces.as_ref().and_then(|f| f.get(i))
+    }
+
+    /// Resolve `face` para a `CardFace` correspondente. `None` (raiz) e índice
+    /// inexistente dão o mesmo resultado: nenhuma face.
+    fn chosen(&self, face: Option<usize>) -> Option<&CardFace> {
+        face.and_then(|i| self.face(i))
+    }
+
+    /// Nome da face escolhida — é ele que o texto de oráculo usa para falar de
+    /// si. Cai no nome da carta inteira quando não há face.
+    pub fn face_name(&self, face: Option<usize>) -> &str {
+        match self.chosen(face).and_then(|f| f.name.as_deref()) {
+            Some(n) if !n.is_empty() => n,
+            _ => self.name.as_deref().unwrap_or(""),
+        }
+    }
+
+    pub fn face_mana_cost(&self, face: Option<usize>) -> Option<&str> {
+        match self.chosen(face) {
+            Some(f) => f.mana_cost.as_deref(),
+            None => self.mana_cost.as_deref(),
+        }
+    }
+
+    pub fn face_type_line(&self, face: Option<usize>) -> Option<&str> {
+        match self.chosen(face) {
+            Some(f) => f.type_line.as_deref(),
+            None => self.type_line.as_deref(),
+        }
+    }
+
+    pub fn face_oracle_text(&self, face: Option<usize>) -> &str {
+        match self.chosen(face) {
+            Some(f) => f.oracle_text.as_deref().unwrap_or(""),
+            None => self.oracle_text.as_deref().unwrap_or(""),
+        }
+    }
+
+    pub fn face_power(&self, face: Option<usize>) -> Option<&str> {
+        match self.chosen(face) {
+            Some(f) => f.power.as_deref(),
+            None => self.power.as_deref(),
+        }
+    }
+
+    pub fn face_toughness(&self, face: Option<usize>) -> Option<&str> {
+        match self.chosen(face) {
+            Some(f) => f.toughness.as_deref(),
+            None => self.toughness.as_deref(),
+        }
+    }
+
+    pub fn face_loyalty(&self, face: Option<usize>) -> Option<&str> {
+        match self.chosen(face) {
+            Some(f) => f.loyalty.as_deref(),
+            None => self.loyalty.as_deref(),
+        }
+    }
+
+    /// Cores impressas da face. Carta de duas faces não traz `colors` na raiz,
+    /// e sem esta queda um Delver azul viraria incolor no banco.
+    pub fn face_colors(&self, face: Option<usize>) -> Option<&Vec<String>> {
+        match self.chosen(face).and_then(|f| f.colors.as_ref()) {
+            Some(c) => Some(c),
+            None => self.colors.as_ref(),
+        }
+    }
+
+    /// Artista e imagem são apresentação: carta dividida traz os dois só na
+    /// raiz, carta de duas faces só na face. Aqui a queda vale nos dois
+    /// sentidos.
+    pub fn face_artist(&self, face: Option<usize>) -> Option<&str> {
+        self.chosen(face).and_then(|f| f.artist.as_deref()).or(self.artist.as_deref())
+    }
+
+    pub fn face_image(&self, face: Option<usize>, key: &str) -> Option<&str> {
+        let from_face = self
+            .chosen(face)
+            .and_then(|f| f.image_uris.as_ref())
+            .and_then(|m| m.get(key))
+            .map(String::as_str);
+        match from_face {
+            Some(url) => Some(url),
+            None => self.image_uris.as_ref().and_then(|m| m.get(key)).map(String::as_str),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -453,7 +561,7 @@ pub enum Reject {
 impl Reject {
     pub fn label(self) -> &'static str {
         match self {
-            Reject::NonCardLayout => "layout nao-carta (ficha/emblema/art series)",
+            Reject::NonCardLayout => "layout nao-carta (ficha/emblema/art series/front card)",
             Reject::UnsupportedFormat => "formato sem regras no motor (plano/esquema/vanguard)",
             Reject::NotPaper => "nao existe em papel",
             Reject::Malformed => "registro sem nome ou sem linha de tipo",
@@ -462,8 +570,20 @@ impl Reject {
 }
 
 /// Layouts que não são cartas de jogo — nunca entram no catálogo.
-const NON_CARD_LAYOUTS: [&str; 6] =
-    ["token", "double_faced_token", "emblem", "art_series", "reversible_card", "minigame"];
+///
+/// `front_card` é a capa de tema de Jumpstart: linha de tipo literalmente
+/// `"Card"`, sem custo e sem texto de regras. Entrava no catálogo e virava a
+/// segunda maior causa de "não jogável" (`tipo 'Card'`), escondendo trabalho
+/// real atrás de 291 linhas que nunca serão carta.
+const NON_CARD_LAYOUTS: [&str; 7] = [
+    "token",
+    "double_faced_token",
+    "emblem",
+    "art_series",
+    "reversible_card",
+    "minigame",
+    "front_card",
+];
 
 /// Layouts de formatos casuais que o motor não implementa.
 const UNSUPPORTED_FORMAT_LAYOUTS: [&str; 6] =

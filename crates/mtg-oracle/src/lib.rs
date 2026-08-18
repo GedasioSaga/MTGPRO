@@ -21,6 +21,7 @@
 
 mod effects;
 mod keywords;
+pub mod layouts;
 mod parse;
 mod text;
 

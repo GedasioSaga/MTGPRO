@@ -11,7 +11,9 @@ determinísticos), semente fixa, ferramental único em
 **Onde cada teste vive** — itens 1–41 em `tests/interactions_core.rs`, 42–60 em
 `tests/interactions_combat.rs`, 61–65 em `tests/fuzz.rs`, 66–73 nos testes de
 unidade de `engine/turn.rs` e `engine/stack.rs` (precisam de função privada e da
-fábrica de partida com 3 e 4 jogadores).
+fábrica de partida com 3 e 4 jogadores), 74–79 em `tests/multiplayer.rs` e
+`tests/commander.rs`, 80–86 nos testes de unidade de `mtg-server/src/sim.rs`,
+87–91 nos de `mtg-format/src/scryfall_legality.rs` e `mtg-core/src/types.rs`.
 
 ## Legenda
 
@@ -20,9 +22,9 @@ fábrica de partida com 3 e 4 jogadores).
 
 ## Estado real em 18/08/2026
 
-**73/73 `[x]`.** Nenhum `[~]`, nenhum `[ ]`, nenhum `[!]` em aberto. Verificado
-com `cargo test --workspace` (175 testes, 0 falhas, 4 `#[ignore]` só por lentidão)
-e `cargo test --workspace -- --ignored` (4 testes, 0 falhas).
+**91/91 `[x]`.** Nenhum `[~]`, nenhum `[ ]`, nenhum `[!]` em aberto. Verificado
+com `cargo test --workspace` (361 testes, 0 falhas, 5 `#[ignore]` só por lentidão)
+e `cargo test --workspace -- --ignored` (5 testes, 0 falhas).
 
 Dois itens estavam `[!]` e o motor foi corrigido nesta rodada:
 
@@ -133,11 +135,12 @@ falha.
     estado com mana infinita e confirmar que a carta aparece nas ações legais e
     resolve sem erro.
 
-## 9. Multijogador (CR 101.4, 117, 800.4)
+## 9. Multijogador e Commander (CR 101.4, 117, 704.5v, 800.4, 903)
 
-Mesa de 3 e 4 jogadores. O motor já era multijogador por construção (`players` é
-`Vec`, `opponents` devolve todos, `next_player` faz módulo pela contagem real);
-estes itens cobrem o comportamento que só aparece acima de dois.
+Mesa de 3 e 4 jogadores, e as regras próprias de Commander. O motor já era
+multijogador por construção (`players` é `Vec`, `opponents` devolve todos,
+`next_player` faz módulo pela contagem real); estes itens cobrem o comportamento
+que só aparece acima de dois, e o que Commander acrescenta em cima disso.
 
 66. [x] `passo_so_termina_quando_todos_os_quatro_passam` — CR 117.4: com quatro na mesa,
     o passo só acaba com quatro passes em sequência, começando pelo jogador ativo.
@@ -156,12 +159,78 @@ estes itens cobrem o comportamento que só aparece acima de dois.
     determinísticos: termina com vencedor único e com ao menos uma eliminação aplicada
     com a mesa ainda de pé.
 
+### 9b. Dano de comandante como ação baseada em estado
+
+`commander` conta o dano (CR 903.10) e `sba` aplica a derrota (CR 704.5v). Os
+dois itens abaixo são a ponte: sem eles a matriz dos 21 podia encher para sempre
+sem ninguém nunca perder.
+
+74. [x] `a_sba_derrota_quem_levou_vinte_e_um_do_mesmo_comandante` — CR 704.5v: aos 21 a
+    SBA derrota, com `LossReason::CommanderDamage` e a vida intacta; aos 20, não.
+75. [x] `dano_de_comandante_derrota_um_so_e_a_mesa_continua` — CR 704.5v + CR 104.2a: numa
+    mesa de quatro só o alvo sai, os outros três seguem jogando, e ele não deixa órfão.
+
+### 9c. Mesa de quatro de ponta a ponta
+
+76. [x] `cem_mesas_de_commander_com_quatro_jogadores_terminam_sem_panico_nem_orfao` —
+    CR 104.2a + CR 800.4a: 100 partidas de Commander com 4 jogadores, sementes 0..99,
+    bots aleatórios. Nenhum pânico; toda partida termina dentro do teto de 160 turnos;
+    um vigia em cada agente confere, a cada decisão, que ninguém que já saiu deixou
+    permanente ou item de pilha para trás. Medido: 100 vencedores, 0 empates, média de
+    82,5 turnos (máximo 138), 3,00 eliminações por mesa.
+77. [x] `a_mesma_semente_repete_a_mesa_de_quatro` — determinismo: mesma semente, mesmo
+    resultado, mesmo número de turnos e mesmas eliminações.
+78. [x] `cada_jogador_comeca_com_quarenta_de_vida_e_o_comandante_na_zona_de_comando` —
+    CR 903.6 e CR 903.7 nos quatro assentos, não só nos dois primeiros; o comandante
+    sai da biblioteca antes do embaralho.
+79. [x] `eliminacao_no_meio_da_mesa_leva_junto_o_que_era_do_jogador` — CR 800.4a com três
+    vivos: os permanentes dele saem do jogo e o que ele controlava sem possuir volta ao
+    controle do dono, que continua na partida.
+
+### 9d. Montagem da mesa no servidor (`sim.rs`)
+
+80. [x] `aceita_de_dois_a_quatro_assentos_e_recusa_o_resto` — CR 100.4a: duelo é o mínimo,
+    quatro é o teto; 0, 1, 5 e 8 assentos são recusados antes de montar o `Game`.
+81. [x] `commander_sem_comandante_e_recusado_e_constructed_nao_exige` — CR 903.3: sem
+    comandante não existe deck de Commander; Standard/Modern/Pauper não exigem nenhum.
+82. [x] `deck_vazio_e_recusado_antes_de_montar_a_partida` — validação estrutural vira
+    mensagem de erro no cliente, não pânico no motor.
+83. [x] `formato_escolhe_regra_de_motor_vida_e_teto_de_turnos` — CR 903.7: Commander com 40
+    de vida e teto de 160 turnos na mesa; os três construídos com 20 e teto de 60.
+84. [x] `cada_assento_ganha_semente_propria_e_reproduzivel` — semente de bot é função pura
+    da semente da partida e distinta por assento, senão a mesa vira espelho.
+85. [x] `assento_leva_o_bot_pedido_e_o_comandante_declarado` — o `Seat` carrega bot e
+    comandante; sem escolha explícita cai no bot padrão do servidor.
+86. [x] `duelo_antigo_vira_mesa_de_dois` — o `MatchRequest` de duas cadeiras é um
+    `TableRequest` de dois assentos: não há um segundo motor de partida escondido.
+
+### 9e. Legalidade de carta por formato (CR 100.2, 903.5)
+
+Banimento e rotação são dado externo, não regra de motor. A fonte é o campo
+`legalities` do Scryfall, já importado para a tabela `cards` do catálogo.
+
+87. [x] `banimento_e_rotacao_valem_e_carta_ausente_e_ilegal` — `banned` e `not_legal` não
+    passam, `legal` e `restricted` passam, Casual não tem lista, e carta desconhecida é
+    ilegal em todo formato (nome digitado errado tem de aparecer como problema).
+88. [x] `carrega_do_catalogo_em_sqlite_com_a_mesma_select_da_producao` — a `SELECT` de
+    produção rodada contra um banco em memória com o mesmo esquema; linha sem
+    `legalities` não entra no índice.
+89. [x] `objeto_legalities_do_scryfall_e_lido_par_a_par` — o parser do objeto plano,
+    contra uma linha copiada do banco de verdade.
+90. [x] `linha_com_raridade_desconhecida_e_descartada` — raridade não é adivinhada:
+    adivinhar faria uma carta passar ou falhar em Pauper por engano.
+91. [x] `raridade_faz_ida_e_volta_pelo_slug` — `Rarity::slug`/`from_slug` fecham o ciclo
+    para as cinco raridades; `bonus` do Scryfall cai em `Special`.
+
 ## Metas
 
 | Métrica | Alvo | Aferido em 18/08/2026 | Como medir |
 |---|---|---|---|
-| Pass rate da suíte | 100% dos itens 1–73 | 73/73 | `cargo test --workspace` |
+| Pass rate da suíte | 100% dos itens 1–91 | 91/91 | `cargo test --workspace` |
 | Partidas sem pânico | 200/200 | 200/200 | teste 63 (`--ignored`) |
 | Determinismo | 100% | 100% | teste 61 |
 | Cartas jogáveis | 100% do catálogo | 100% | teste 65 (`--ignored`) |
 | Tempo de partida completa | < 150 ms com bot heurístico | não medido | benchmark em `mtg-server` |
+| Mesa de 4 sem pânico | 100/100 | 100/100 | teste 76 |
+| Mesa de 4 que decide sozinha | > 90% com vencedor | 100/100 | teste 76 |
+| Mesa de 4 sem objeto órfão | 100% | 100% | teste 76 (vigia por decisão) |
