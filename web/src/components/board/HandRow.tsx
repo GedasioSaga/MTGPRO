@@ -1,9 +1,16 @@
 import clsx from 'clsx'
 import { motion, useReducedMotion } from 'motion/react'
-import { CARD_SIZES } from '../card/cardVisuals'
 import type { CardView, ObjectId, PlayerId } from '../../types/protocol'
 import { CardSlot } from './CardSlot'
 import type { CardSlotSize } from './CardSlot'
+
+/*
+ * Largura da carta na mão, em variável da mesa (`App.css`). A mão é MENOR que
+ * o campo de propósito: o que já está em jogo decide a partida, o que está na
+ * mão é promessa.
+ */
+const OWN_WIDTH = 'var(--card-hand-own)'
+const FOE_WIDTH = 'var(--card-hand-foe)'
 
 export interface HandRowProps {
   player: PlayerId
@@ -24,8 +31,8 @@ export function HandRow({ player, ids, cards, side, count }: HandRowProps) {
   const slots: (ObjectId | null)[] =
     ids.length > 0 ? ids : Array.from({ length: count }, () => null)
 
-  const size: CardSlotSize = isOwn ? 'medium' : 'small'
-  const scale = isOwn ? 1 : 0.62
+  const size: CardSlotSize = 'small'
+  const cardWidth = isOwn ? OWN_WIDTH : FOE_WIDTH
 
   if (slots.length === 0) {
     return (
@@ -41,7 +48,6 @@ export function HandRow({ player, ids, cards, side, count }: HandRowProps) {
   const center = (total - 1) / 2
   const spread = Math.min(4.2, 26 / Math.max(1, total))
   const overlapRatio = total <= 6 ? 0.16 : Math.min(0.62, 0.16 + (total - 6) * 0.07)
-  const cardWidth = `calc(${CARD_SIZES[size].width}px * var(--board-scale, 1) * ${scale})`
   // O leque nunca pode passar da fileira: se não couber pelo recuo natural, o
   // recuo aperta até caber. `94cqw` deixa a folga que a inclinação consome.
   const fit = `calc((94cqw - ${cardWidth}) / ${Math.max(1, total - 1)} - ${cardWidth})`
@@ -87,7 +93,7 @@ export function HandRow({ player, ids, cards, side, count }: HandRowProps) {
               id={id ?? -1 - index}
               card={card}
               size={size}
-              scale={scale}
+              width={cardWidth}
               revealed={card !== null && card.name !== null}
               title={card?.name ?? undefined}
             />

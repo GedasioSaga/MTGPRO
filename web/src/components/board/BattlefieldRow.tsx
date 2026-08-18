@@ -1,10 +1,18 @@
 import clsx from 'clsx'
+import type { ReactNode } from 'react'
 import { isCreature, isLand } from '../../types/protocol'
 import type { CardView, ObjectId, PlayerId } from '../../types/protocol'
 import { CardSlot } from './CardSlot'
 
-const LAND_SCALE = 0.78
-const OTHER_SCALE = 0.82
+/*
+ * Largura das cartas do campo. Vem de variável da mesa (`App.css`) em vez de
+ * `CARD_SIZES`, porque o que manda no tamanho aqui é a ALTURA da faixa: quem
+ * está em jogo tem que dominar quem está na mão, e essa proporção é decisão de
+ * composição, não do catálogo de tamanhos.
+ */
+const FIELD_WIDTH = 'var(--card-field)'
+const LAND_WIDTH = 'var(--card-land)'
+const OTHER_WIDTH = 'var(--card-other)'
 
 export interface BattlefieldRowProps {
   player: PlayerId
@@ -19,9 +27,10 @@ interface LandGroup {
 }
 
 /**
- * Metade do campo de batalha de um jogador. Criaturas ficam junto da linha
- * central (é onde o combate acontece) e terrenos ficam atrás, agrupados por
- * nome — vinte Florestas soltas viram ruído e roubam a fileira das criaturas.
+ * Metade do campo de batalha de um jogador, desenhada como duas zonas da mesa:
+ * a faixa de batalha, colada na linha central (é onde o combate acontece), e a
+ * faixa de terrenos na borda externa. As duas existem mesmo vazias — o jogador
+ * precisa ver ONDE as coisas vão cair antes de elas caírem.
  */
 export function BattlefieldRow({ player, side, permanents, cards }: BattlefieldRowProps) {
   const creatures: CardView[] = []
@@ -48,44 +57,70 @@ export function BattlefieldRow({ player, side, permanents, cards }: BattlefieldR
       )}
       data-seat={player}
     >
-      {/* Campo sem criaturas não vira cartaz de vazio: a fileira não é
-          renderizada, e a linha de combate recua absorvendo o espaço. */}
-      <div className="board-field__creatures">
-        {creatures.map((card) => (
-          <CardSlot
-            key={card.id}
-            id={card.id}
-            card={card}
-            size="small"
-            tapped={card.tapped}
-            title={card.name ?? undefined}
-            className={combatClass(card)}
-            overlay={<AttachmentBadge count={card.attachments.length} />}
-          />
-        ))}
-      </div>
-
-      <div className="board-field__back">
-        <div className="board-field__lands">
-          {landGroups.map((group) => (
-            <LandStack key={group.key} group={group} cards={cards} />
-          ))}
-        </div>
-        <div className="board-field__others">
-          {others.map((card) => (
+      <Zone kind="battle" label="campo de batalha">
+        <div className="board-field__creatures">
+          {creatures.map((card) => (
             <CardSlot
               key={card.id}
               id={card.id}
               card={card}
-              size="small"
-              scale={OTHER_SCALE}
+              size="medium"
+              width={FIELD_WIDTH}
               tapped={card.tapped}
               title={card.name ?? undefined}
+              className={combatClass(card)}
+              overlay={<AttachmentBadge count={card.attachments.length} />}
             />
           ))}
         </div>
-      </div>
+      </Zone>
+
+      <Zone kind="lands" label="terrenos">
+        <div className="board-field__back">
+          <div className="board-field__lands">
+            {landGroups.map((group) => (
+              <LandStack key={group.key} group={group} cards={cards} />
+            ))}
+          </div>
+          <div className="board-field__others">
+            {others.map((card) => (
+              <CardSlot
+                key={card.id}
+                id={card.id}
+                card={card}
+                size="small"
+                width={OTHER_WIDTH}
+                tapped={card.tapped}
+                title={card.name ?? undefined}
+              />
+            ))}
+          </div>
+        </div>
+      </Zone>
     </div>
+  )
+}
+
+/**
+ * Área impressa na mesa. O rótulo é serigrafia de playmat: fica sempre lá,
+ * apagado, e some sob as cartas quando a zona enche.
+ */
+function Zone({
+  kind,
+  label,
+  children,
+}: {
+  kind: 'battle' | 'lands'
+  label: string
+  children: ReactNode
+}) {
+  return (
+    <section className="board-zone" data-zone={kind} aria-label={label}>
+      <span className="board-zone__label" aria-hidden="true">
+        {label}
+      </span>
+      <div className="board-zone__inner">{children}</div>
+    </section>
   )
 }
 
@@ -101,7 +136,7 @@ function LandStack({ group, cards }: { group: LandGroup; cards: Record<ObjectId,
             id={id}
             card={card}
             size="small"
-            scale={LAND_SCALE}
+            width={LAND_WIDTH}
             tapped={card.tapped}
             title={card.name ?? undefined}
             className={index === 0 ? undefined : 'board-lands__overlap'}

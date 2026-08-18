@@ -13,12 +13,15 @@ import { cssVars, useBoardScale } from './boardVisuals'
 /**
  * A mesa inteira.
  *
- * Grade de áreas nomeadas em cinco faixas: oponente (barra, mão, zonas), campo
- * do oponente, faixa central fina (fases + pilha), campo de baixo e barra de
- * baixo. O espelhamento do lado de cima é na ORDEM das fileiras, nunca em
- * rotação de carta. O tamanho de tudo sai de `--board-scale` (ver
- * `useBoardScale`), então 1920x1080 e 1280x800 são a mesma composição em dois
- * tamanhos — nenhuma área rola, nenhuma some.
+ * Do topo para a base: borda do oponente (nome + vida), mão dele, o campo
+ * dele, a costura central, o campo de baixo, a mão de baixo, a borda de baixo
+ * e o rodapé de telemetria (fases + pilha). Cada campo é um par de zonas
+ * DESENHADAS na mesa — batalha e terrenos —, visíveis mesmo vazias, porque
+ * mesa sem zona marcada é fundo, não tabuleiro.
+ *
+ * O espelhamento do lado de cima é na ORDEM das fileiras, nunca em rotação de
+ * carta. O tamanho de tudo sai de `--board-scale` (ver `useBoardScale`), então
+ * 1920x1080 e 1280x800 são a mesma composição em dois tamanhos.
  */
 export function BoardLayout() {
   const view = useMatchStore((s) => s.view)
@@ -39,7 +42,7 @@ export function BoardLayout() {
       data-active-player={view.activePlayer}
       style={cssVars({ '--board-scale': String(scale) })}
     >
-      <div className="board-area board-area--foe-bar" data-seat={top.id}>
+      <div className="board-area board-area--foe-strip" data-seat={top.id}>
         <PlayerBar player={top} side="top" />
       </div>
 
@@ -68,7 +71,7 @@ export function BoardLayout() {
         />
       </div>
 
-      <div className="board-area board-area--foe-field">
+      <div className="board-area board-area--foe-field" data-seat={top.id}>
         <BattlefieldRow
           player={top.id}
           side="top"
@@ -77,17 +80,9 @@ export function BoardLayout() {
         />
       </div>
 
-      <div className="board-area board-area--band">
-        <PhaseTrack
-          turn={view.turn}
-          step={view.step}
-          activePlayer={view.activePlayer}
-          players={view.players}
-        />
-        <StackPanel stack={view.stack} cards={cards} players={view.players} />
-      </div>
+      <div className="board-area board-area--seam" aria-hidden="true" />
 
-      <div className="board-area board-area--own-field">
+      <div className="board-area board-area--own-field" data-seat={bottom.id}>
         <BattlefieldRow
           player={bottom.id}
           side="bottom"
@@ -96,8 +91,14 @@ export function BoardLayout() {
         />
       </div>
 
-      <div className="board-area board-area--own-bar" data-seat={bottom.id}>
-        <PlayerBar player={bottom} side="bottom" />
+      <div className="board-area board-area--own-hand">
+        <HandRow
+          player={bottom.id}
+          ids={view.hands[bottom.id] ?? []}
+          cards={cards}
+          side="bottom"
+          count={bottom.handCount}
+        />
       </div>
 
       <div className="board-area board-area--own-zones">
@@ -115,14 +116,20 @@ export function BoardLayout() {
         />
       </div>
 
-      <div className="board-area board-area--own-hand">
-        <HandRow
-          player={bottom.id}
-          ids={view.hands[bottom.id] ?? []}
-          cards={cards}
-          side="bottom"
-          count={bottom.handCount}
+      <div className="board-area board-area--own-strip" data-seat={bottom.id}>
+        <PlayerBar player={bottom} side="bottom" />
+      </div>
+
+      {/* Rodapé: motor da partida, não manchete. Fica rente à borda de baixo,
+          num tom abaixo da mesa, para o olho passar por ele só quando procura. */}
+      <div className="board-area board-area--footer">
+        <PhaseTrack
+          turn={view.turn}
+          step={view.step}
+          activePlayer={view.activePlayer}
+          players={view.players}
         />
+        <StackPanel stack={view.stack} cards={cards} players={view.players} />
       </div>
 
       <TargetArrows view={view} cards={cards} />

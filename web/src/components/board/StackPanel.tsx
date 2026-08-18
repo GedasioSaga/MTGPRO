@@ -23,7 +23,12 @@ export function StackPanel({ stack, cards, players }: StackPanelProps) {
   const top = [...stack].reverse()
 
   return (
-    <section className="stack-panel" data-fx-stack aria-label="Pilha">
+    <section
+      className="stack-panel"
+      data-fx-stack
+      data-empty={stack.length === 0 ? 'true' : 'false'}
+      aria-label="Pilha"
+    >
       <header className="stack-panel__head">
         <span className="stack-panel__title">pilha</span>
         <span className="stack-panel__count">{stack.length}</span>
@@ -31,18 +36,9 @@ export function StackPanel({ stack, cards, players }: StackPanelProps) {
 
       <div className="stack-panel__body">
         <AnimatePresence initial={false}>
-          {top.length === 0 ? (
-            <motion.p
-              key="empty"
-              className="stack-panel__empty"
-              initial={reduceMotion ? false : { opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
-              nada resolvendo
-            </motion.p>
-          ) : (
-            top.map((item, index) => (
+          {top.length === 0
+            ? null
+            : top.map((item, index) => (
               <motion.article
                 key={item.id}
                 className="stack-item"
@@ -82,9 +78,8 @@ export function StackPanel({ stack, cards, players }: StackPanelProps) {
                   ) : null}
                   <TargetLine item={item} cards={cards} players={players} />
                 </div>
-              </motion.article>
-            ))
-          )}
+                </motion.article>
+              ))}
         </AnimatePresence>
       </div>
     </section>

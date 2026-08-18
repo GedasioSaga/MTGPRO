@@ -16,6 +16,13 @@
   --rail-log: clamp(268px, 21vw, 360px);
   --rail-stats: clamp(276px, 22vw, 368px);
 
+  /* O TAMPO é mais escuro que o tapete: sem essa diferença o tapete não existe
+     como objeto, e a mesa volta a ser fundo chapado. */
+  --color-felt-deep: #0b0805;
+  --color-felt: #17110a;
+  --color-felt-light: #241a0f;
+  --color-felt-seam: #3d2c19;
+
   position: relative;
   height: 100dvh;
   width: 100%;
@@ -29,6 +36,9 @@
   margin: calc(6px * var(--board-scale, 1));
   border-radius: var(--radius-2xl);
   overflow: hidden;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+    inset 0 calc(2px * var(--board-scale, 1)) 0 rgba(255, 255, 255, 0.04);
 }
 
 /* --------------------------------------------------------------------------
@@ -214,72 +224,119 @@
   z-index: 0;
   pointer-events: none;
   background-image:
-    radial-gradient(40% 24% at 50% 50%, rgba(198, 255, 224, 0.17), transparent 74%),
-    linear-gradient(180deg, rgba(255, 244, 214, 0.07), transparent 32%),
+    radial-gradient(46% 30% at 50% 46%, rgba(198, 255, 224, 0.13), transparent 76%),
+    linear-gradient(180deg, rgba(255, 244, 214, 0.09), transparent 28%),
     radial-gradient(
-      34% 26% at 50% 50%,
-      transparent 0 88%,
-      rgba(160, 232, 198, 0.09) 89% 91%,
-      transparent 92%
-    ),
-    radial-gradient(
-      80% 62% at 50% 50%,
-      transparent 26%,
-      rgba(0, 0, 0, 0.4) 66%,
-      rgba(0, 0, 0, 0.82) 100%
+      86% 70% at 50% 48%,
+      transparent 34%,
+      rgba(0, 0, 0, 0.3) 72%,
+      rgba(0, 0, 0, 0.66) 100%
     );
 }
 
 /* --------------------------------------------------------------------------
- * Grade
+ * Tapete
+ *
+ * O `.board-grid` não é só uma grade: é o PLAYMAT, um objeto pousado no tampo.
+ * Feltro mais claro que a mesa, costura tracejada por dentro da borda, sombra
+ * projetada embaixo. É ele que dá superfície às cartas — sem ele elas flutuam
+ * sobre um vazio verde.
  * ----------------------------------------------------------------------- */
 
 .board-grid {
-  /* A barra do jogador e as pilhas de zona têm largura mínima própria: abaixo
-     dela o número de vida e os contadores começam a ser cortados. */
-  --rail-bar: clamp(200px, calc(224px * var(--board-scale, 1)), 224px);
-  --rail-zones: clamp(150px, calc(184px * var(--board-scale, 1)), 184px);
-  --board-gap: calc(10px * var(--board-scale, 1));
-  /* Faixa livre embaixo para a PlaybackBar flutuante não comer a mão. Ela não
-     acompanha `--board-scale` porque a própria barra também não acompanha. */
-  --playback-reserve: 112px;
+  /* Largura das cartas em cada zona. Uma linha muda a hierarquia inteira: o
+     que está em jogo TEM que ser maior do que o que está na mão. */
+  --card-field: calc(150px * var(--board-scale, 1));
+  --card-land: calc(52px * var(--board-scale, 1));
+  --card-other: calc(60px * var(--board-scale, 1));
+  --card-hand-own: calc(72px * var(--board-scale, 1));
+  --card-hand-foe: calc(46px * var(--board-scale, 1));
+
+  --board-gap: calc(8px * var(--board-scale, 1));
+  --strip-h: calc(44px * var(--board-scale, 1));
+  --lands-h: calc(78px * var(--board-scale, 1));
+  --mat-round: calc(20px * var(--board-scale, 1));
+  /* Faixa livre embaixo para a PlaybackBar flutuante não comer o tapete. Ela
+     não acompanha `--board-scale` porque a própria barra também não acompanha. */
+  --playback-reserve: 98px;
 
   position: relative;
   /* Acima da luz de arena (`.app-shell__table::after`), que é `z-index: 0`. */
   z-index: 1;
   display: grid;
-  height: 100%;
-  width: 100%;
-  /* A mesa é a tela inteira, mas a COMPOSIÇÃO tem largura útil: espalhar as
-     barras até 1920px deixa o centro rarefeito e quebra a leitura do combate. */
-  max-width: 1600px;
+  height: calc(100% - var(--playback-reserve));
+  /* A mesa é a tela inteira, mas o TAPETE tem largura útil: espalhar as faixas
+     até 1920px deixa o centro rarefeito e quebra a leitura do combate. A folga
+     mínima existe para o tampo aparecer dos dois lados mesmo em tela estreita —
+     sem ela o tapete encosta na borda e volta a ser fundo. */
+  width: min(1560px, calc(100% - 48px));
   margin-inline: auto;
-  padding: calc(12px * var(--board-scale, 1));
-  padding-bottom: calc(12px * var(--board-scale, 1) + var(--playback-reserve));
+  margin-block: calc(10px * var(--board-scale, 1));
+  padding: calc(10px * var(--board-scale, 1));
   gap: var(--board-gap);
-  grid-template-columns: var(--rail-bar) minmax(0, 1fr) var(--rail-zones);
-  grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
-  /* A barra ocupa duas faixas de propósito: a coluna dela é vertical, e sem o
-     span a faixa 'auto' cresceria até a altura da barra e comeria o campo. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto minmax(0, 1fr) auto auto auto;
   grid-template-areas:
-    "foe-bar   foe-hand  foe-zones"
-    "foe-bar   foe-field foe-field"
-    "band      band      band"
-    "own-bar   own-field own-field"
-    "own-bar   own-hand  own-zones";
+    "foe-strip"
+    "foe-hand"
+    "foe-field"
+    "seam"
+    "own-field"
+    "own-hand"
+    "own-strip"
+    "footer";
+
+  border-radius: var(--mat-round);
+  background-color: #10281f;
+  background-image:
+    /* holofote alto sobre a linha de combate */
+    radial-gradient(78% 42% at 50% 50%, rgba(206, 255, 226, 0.11), transparent 78%),
+    radial-gradient(120% 54% at 50% -6%, rgba(255, 238, 198, 0.11), transparent 62%),
+    var(--tex-fiber),
+    var(--tex-grain),
+    /* vinheta do próprio tapete: as quatro bordas caem meio tom */
+    radial-gradient(112% 88% at 50% 50%, transparent 42%, rgba(0, 0, 0, 0.5) 100%),
+    linear-gradient(178deg, #1c4033 0%, #143028 46%, #0b1e18 100%);
+  background-size:
+    auto,
+    auto,
+    190px 190px,
+    110px 110px,
+    auto,
+    auto;
+  background-blend-mode: screen, screen, overlay, soft-light, multiply, normal;
+  box-shadow:
+    0 calc(26px * var(--board-scale, 1)) calc(64px * var(--board-scale, 1))
+      rgba(0, 0, 0, 0.7),
+    0 calc(2px * var(--board-scale, 1)) 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 0 1px rgba(206, 255, 228, 0.09),
+    inset 0 0 calc(130px * var(--board-scale, 1)) rgba(0, 0, 0, 0.42);
+}
+
+/* Costura do tapete, como playmat de torneio. */
+.board-grid::before {
+  content: "";
+  position: absolute;
+  inset: calc(6px * var(--board-scale, 1));
+  z-index: 0;
+  pointer-events: none;
+  border-radius: calc(var(--mat-round) - 4px);
+  border: 1px dashed color-mix(in oklab, var(--color-felt-seam) 78%, white 22%);
+  opacity: 0.42;
 }
 
 .board-area {
   position: relative;
+  z-index: 1;
   min-width: 0;
   min-height: 0;
 }
 
-.board-area--foe-bar {
-  grid-area: foe-bar;
+.board-area--foe-strip {
+  grid-area: foe-strip;
 }
-.board-area--own-bar {
-  grid-area: own-bar;
+.board-area--own-strip {
+  grid-area: own-strip;
 }
 .board-area--foe-hand {
   grid-area: foe-hand;
@@ -293,48 +350,89 @@
 .board-area--own-field {
   grid-area: own-field;
 }
-.board-area--band {
-  grid-area: band;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--board-gap);
-  min-height: 0;
-}
+
+/* As duas pilhas moram na MESMA faixa da mão, coladas na borda direita do
+   tapete: são zonas do jogo, não widgets de barra lateral. */
 .board-area--foe-zones,
 .board-area--own-zones {
-  grid-area: foe-zones;
+  grid-area: foe-hand;
+  z-index: 5;
+  justify-self: end;
+  align-self: center;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: calc(6px * var(--board-scale, 1));
+  padding-inline: calc(6px * var(--board-scale, 1));
 }
 .board-area--own-zones {
-  grid-area: own-zones;
+  grid-area: own-hand;
 }
 
-/* A faixa central é a costura entre as duas metades do campo. */
-.board-area--band::before,
-.board-area--band::after {
+/* A costura é a linha de meio-campo: onde os dois exércitos se encontram. */
+.board-area--seam {
+  grid-area: seam;
+  height: calc(10px * var(--board-scale, 1));
+}
+
+.board-area--seam::before {
   content: "";
   position: absolute;
-  inset-inline: 4%;
+  inset-inline: 3%;
+  top: 50%;
   height: 1px;
   pointer-events: none;
   background: linear-gradient(
     90deg,
     transparent,
-    color-mix(in oklab, var(--color-felt-seam) 92%, white 18%) 26%,
-    color-mix(in oklab, var(--color-felt-seam) 92%, white 18%) 74%,
+    color-mix(in oklab, var(--color-felt-seam) 92%, white 34%) 22%,
+    color-mix(in oklab, var(--color-felt-seam) 92%, white 34%) 78%,
     transparent
   );
-  box-shadow: 0 0 12px 1px rgba(154, 230, 194, 0.14);
+  box-shadow: 0 0 14px 1px rgba(154, 230, 194, 0.16);
 }
-.board-area--band::before {
-  top: 0;
+
+/* Losango no centro da costura: marca de mesa, e âncora do olho. */
+.board-area--seam::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(11px * var(--board-scale, 1));
+  height: calc(11px * var(--board-scale, 1));
+  translate: -50% -50%;
+  rotate: 45deg;
+  border: 1px solid color-mix(in oklab, var(--color-felt-seam) 90%, white 30%);
+  background: rgba(10, 26, 20, 0.6);
 }
-.board-area--band::after {
-  bottom: 0;
+
+/* --------------------------------------------------------------------------
+ * Rodapé de motor
+ *
+ * Fases e pilha. Rente à base do tapete, um tom abaixo de tudo: quem quiser
+ * lê, quem não quiser não tropeça.
+ * ----------------------------------------------------------------------- */
+
+.board-area--footer {
+  grid-area: footer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(10px * var(--board-scale, 1));
+  min-height: calc(26px * var(--board-scale, 1));
+  padding-top: calc(4px * var(--board-scale, 1));
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  opacity: 0.62;
+  transition: opacity var(--duration-base) var(--ease-standard);
+}
+
+.board-area--footer:hover {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-area--footer {
+    transition: none;
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -352,6 +450,28 @@
   container-type: inline-size;
   width: calc(var(--slot-natural) * var(--slot-factor));
   aspect-ratio: 5 / 7;
+  /* Toda carta na mesa projeta sombra. É o que separa "pousada sobre feltro"
+     de "recortada sobre um fundo". */
+  filter:
+    drop-shadow(0 calc(5px * var(--board-scale, 1)) calc(7px * var(--board-scale, 1))
+      rgba(0, 0, 0, 0.5))
+    drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5));
+}
+
+/* Sombra de contato: a elipse escura logo abaixo da borda de baixo da carta,
+   que é o que o olho usa para decidir que existe um plano embaixo dela. */
+.board-zone .board-card-slot::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: -10%;
+  right: -10%;
+  bottom: calc(-14px * var(--board-scale, 1));
+  height: calc(28px * var(--board-scale, 1));
+  border-radius: 50%;
+  background: radial-gradient(50% 50% at 50% 50%, rgba(0, 0, 0, 0.95), transparent 70%);
+  filter: blur(calc(5px * var(--board-scale, 1)));
+  pointer-events: none;
 }
 
 .board-card-slot__pivot {
@@ -389,60 +509,111 @@
 
 /* --------------------------------------------------------------------------
  * Campo de batalha
+ *
+ * Cada metade do campo são DUAS zonas desenhadas no tapete: batalha (colada na
+ * costura) e terrenos (na borda externa). As duas existem mesmo vazias — é
+ * assim que a mesa continua legível antes da primeira carta cair.
  * ----------------------------------------------------------------------- */
 
-/*
- * Metade do campo: criaturas coladas na linha de combate, terrenos empurrados
- * para a borda externa, e a folga que sobra fica ENTRE as duas — nunca em volta
- * das criaturas. Sem criaturas, a fileira tem altura zero e some.
- */
 .board-field {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: calc(8px * var(--board-scale, 1));
+  gap: calc(6px * var(--board-scale, 1));
   height: 100%;
   min-height: 0;
-  padding-inline: calc(16px * var(--board-scale, 1));
 }
 
-/* Espelho do lado de cima: só a ordem das fileiras inverte, nunca a carta. */
+/* Espelho do lado de cima: só a ordem das zonas inverte, nunca a carta. */
 .board-field--top {
   flex-direction: column-reverse;
 }
 
+/* Área impressa no tapete: rebaixo de tom, moldura interna e rótulo apagado. */
+.board-zone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: calc(12px * var(--board-scale, 1));
+  border: 1px solid rgba(180, 240, 210, 0.09);
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0.05) 42%, rgba(0, 0, 0, 0.2));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 0 calc(26px * var(--board-scale, 1)) rgba(0, 0, 0, 0.22);
+}
+
+.board-zone[data-zone="battle"] {
+  flex: 1 1 auto;
+  border-color: rgba(180, 240, 210, 0.15);
+  background:
+    radial-gradient(58% 72% at 50% 58%, rgba(214, 255, 232, 0.13), transparent 74%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0) 46%, rgba(0, 0, 0, 0.2));
+}
+
+.board-zone[data-zone="lands"] {
+  flex: 0 0 auto;
+  height: var(--lands-h);
+}
+
+/* Serigrafia de playmat: sempre lá, nunca competindo com as cartas. */
+.board-zone__label {
+  position: absolute;
+  top: 50%;
+  left: calc(14px * var(--board-scale, 1));
+  translate: 0 -50%;
+  z-index: 0;
+  font-family: var(--font-display);
+  font-size: calc(8.5px * var(--board-scale, 1));
+  letter-spacing: var(--tracking-wide-caps);
+  text-transform: uppercase;
+  color: rgba(214, 255, 234, 0.13);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.board-zone__inner {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(6px * var(--board-scale, 1)) calc(12px * var(--board-scale, 1));
+  overflow: hidden;
+}
+
 .board-field__creatures {
   display: flex;
-  flex: 0 1 auto;
-  min-height: 0;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  align-items: flex-start;
+  height: 100%;
+  min-width: 0;
+  align-items: center;
   justify-content: center;
-  gap: calc(9px * var(--board-scale, 1));
-  padding-block: calc(6px * var(--board-scale, 1));
-}
-
-/* Criatura combate na costura: os dois lados encostam na faixa central. */
-.board-field--top .board-field__creatures {
-  align-content: flex-end;
-  align-items: flex-end;
-}
-
-/* Sem criaturas não há cartaz de vazio: a fileira simplesmente não existe. */
-.board-field__creatures:empty {
-  display: none;
+  gap: calc(10px * var(--board-scale, 1));
 }
 
 /*
- * Criatura é o elemento mais nítido da mesa: sombra projetada no feltro, e
- * o resto do campo (terreno, encantamento) recua meio tom.
+ * A criatura é medida pela ALTURA da zona, não por uma largura fixa: assim ela
+ * ocupa a faixa inteira em qualquer tela e nunca transborda. O teto existe para
+ * que duas criaturas numa mesa alta não virem cartazes.
+ */
+.board-zone[data-zone="battle"] .board-card-slot {
+  width: auto;
+  height: 100%;
+  max-height: calc(212px * var(--board-scale, 1));
+}
+
+/*
+ * Criatura é o elemento mais nítido da mesa: sombra funda no feltro, e o resto
+ * do campo (terreno, encantamento) recua meio tom.
  */
 .board-field__creatures .board-card-slot {
   filter:
-    drop-shadow(0 calc(9px * var(--board-scale, 1)) calc(13px * var(--board-scale, 1))
-      rgba(0, 0, 0, 0.6))
-    drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+    drop-shadow(0 calc(18px * var(--board-scale, 1)) calc(20px * var(--board-scale, 1))
+      rgba(0, 0, 0, 0.8))
+    drop-shadow(0 calc(2px * var(--board-scale, 1)) calc(3px * var(--board-scale, 1))
+      rgba(0, 0, 0, 0.65));
 }
 
 .board-creature {
@@ -460,15 +631,15 @@
 
 .board-field__creatures .board-creature--attacking {
   filter:
-    drop-shadow(0 calc(11px * var(--board-scale, 1)) calc(15px * var(--board-scale, 1))
-      rgba(0, 0, 0, 0.66))
+    drop-shadow(0 calc(13px * var(--board-scale, 1)) calc(17px * var(--board-scale, 1))
+      rgba(0, 0, 0, 0.68))
     drop-shadow(0 0 calc(16px * var(--board-scale, 1)) rgba(242, 104, 94, 0.5));
 }
 
 .board-field__creatures .board-creature--blocking {
   filter:
-    drop-shadow(0 calc(11px * var(--board-scale, 1)) calc(15px * var(--board-scale, 1))
-      rgba(0, 0, 0, 0.66))
+    drop-shadow(0 calc(13px * var(--board-scale, 1)) calc(17px * var(--board-scale, 1))
+      rgba(0, 0, 0, 0.68))
     drop-shadow(0 0 calc(16px * var(--board-scale, 1)) rgba(111, 156, 245, 0.5));
 }
 
@@ -480,27 +651,33 @@
 
 .board-field__back {
   display: flex;
-  flex: 0 0 auto;
-  align-items: flex-end;
-  gap: calc(22px * var(--board-scale, 1));
-  /* Retaguarda: presente, mas nunca disputando o olho com o combate. */
-  opacity: 0.84;
+  flex: 1 1 auto;
+  height: 100%;
+  width: 100%;
+  align-items: center;
+  gap: calc(20px * var(--board-scale, 1));
 }
 
 .board-field__lands {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
+  height: 100%;
+  align-items: center;
   gap: calc(12px * var(--board-scale, 1));
+  padding-left: calc(88px * var(--board-scale, 1));
 }
 
 .board-field__others {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  align-items: flex-end;
+  height: 100%;
+  align-items: center;
   gap: calc(6px * var(--board-scale, 1));
   margin-left: auto;
+}
+
+/* Terreno e permanente de retaguarda também saem da altura da faixa. */
+.board-zone[data-zone="lands"] .board-card-slot {
+  width: auto;
+  height: 88%;
 }
 
 .board-field__attached {
@@ -522,28 +699,29 @@
 .board-lands__stack {
   position: relative;
   display: flex;
-  align-items: flex-end;
+  height: 100%;
+  align-items: center;
 }
 
 .board-lands__overlap {
-  margin-left: calc(var(--slot-natural) * var(--slot-factor) * -0.62);
+  margin-left: calc(var(--card-land) * -0.62);
 }
 
 .board-lands__count {
   position: absolute;
-  top: -6px;
-  right: -6px;
+  top: calc(-6px * var(--board-scale, 1));
+  right: calc(-6px * var(--board-scale, 1));
   z-index: 20;
   display: grid;
   place-items: center;
-  height: 19px;
-  min-width: 19px;
+  height: calc(18px * var(--board-scale, 1));
+  min-width: calc(18px * var(--board-scale, 1));
   padding-inline: 4px;
   border-radius: 999px;
   background: #0d101a;
   box-shadow: inset 0 0 0 1px var(--color-edge-strong);
   color: var(--color-ink-strong);
-  font-size: 11px;
+  font-size: calc(11px * var(--board-scale, 1));
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
@@ -563,12 +741,12 @@
 
 .board-hand--own {
   align-items: flex-end;
-  padding-bottom: calc(4px * var(--board-scale, 1));
+  padding-bottom: calc(2px * var(--board-scale, 1));
 }
 
 .board-hand--foe {
   align-items: flex-start;
-  padding-top: calc(4px * var(--board-scale, 1));
+  padding-top: calc(2px * var(--board-scale, 1));
 }
 
 .board-hand--empty {
@@ -577,6 +755,273 @@
 
 .board-hand__card {
   position: relative;
+}
+
+/* --------------------------------------------------------------------------
+ * Borda da mesa (faixa do jogador)
+ *
+ * Quem senta na mesa senta numa BORDA: nome e vida vivem na aresta superior e
+ * inferior do tapete, à altura de quem olha, e não numa coluna de HUD. Os
+ * contadores ficam na cauda da faixa, pequenos e apagados.
+ * ----------------------------------------------------------------------- */
+
+.player-strip {
+  position: relative;
+  display: flex;
+  height: var(--strip-h);
+  align-items: center;
+  gap: calc(14px * var(--board-scale, 1));
+  padding-inline: calc(14px * var(--board-scale, 1));
+  border-radius: calc(11px * var(--board-scale, 1));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.28)),
+    rgba(6, 14, 11, 0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 calc(4px * var(--board-scale, 1)) calc(14px * var(--board-scale, 1))
+      rgba(0, 0, 0, 0.35);
+}
+
+/* Assento do turno acende a própria borda: quem joga agora se lê sem texto. */
+.player-strip[data-active="true"] {
+  border-color: color-mix(in oklab, var(--seat) 42%, transparent);
+  background:
+    linear-gradient(180deg, var(--seat-soft), rgba(0, 0, 0, 0.3)),
+    rgba(6, 14, 11, 0.5);
+}
+
+.player-strip__id {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: calc(9px * var(--board-scale, 1));
+}
+
+.player-strip__avatar-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.player-strip__avatar {
+  display: grid;
+  place-items: center;
+  width: calc(30px * var(--board-scale, 1));
+  height: calc(30px * var(--board-scale, 1));
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+.player-strip__initials {
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  padding: calc(2px * var(--board-scale, 1)) calc(5px * var(--board-scale, 1));
+  font-size: calc(11px * var(--board-scale, 1));
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.player-strip__dot {
+  position: absolute;
+  right: calc(-2px * var(--board-scale, 1));
+  bottom: calc(-2px * var(--board-scale, 1));
+  width: calc(10px * var(--board-scale, 1));
+  height: calc(10px * var(--board-scale, 1));
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px #0a0c14;
+}
+
+.player-strip__name-block {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: calc(8px * var(--board-scale, 1));
+}
+
+.player-strip__name {
+  margin: 0;
+  max-width: calc(230px * var(--board-scale, 1));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-size: calc(15px * var(--board-scale, 1));
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.player-strip__tags {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.player-strip__badge {
+  border-radius: var(--radius-xs);
+  padding: 1px calc(5px * var(--board-scale, 1));
+  font-size: calc(9px * var(--board-scale, 1));
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.player-strip__lost {
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  background: rgba(239, 68, 68, 0.18);
+  border-radius: var(--radius-xs);
+  padding: 1px calc(5px * var(--board-scale, 1));
+  font-size: calc(9px * var(--board-scale, 1));
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #fecaca;
+}
+
+/* Vida é a manchete da faixa: o único número grande da mesa. */
+.player-strip__life {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: calc(8px * var(--board-scale, 1));
+  padding: calc(2px * var(--board-scale, 1)) calc(12px * var(--board-scale, 1));
+  border-radius: calc(9px * var(--board-scale, 1));
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--life) 34%, transparent);
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--life) 18%, transparent) 0%,
+    rgba(8, 12, 10, 0.6) 66%
+  );
+}
+
+.player-strip__life-bar {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: var(--life-fill);
+  background: color-mix(in oklab, var(--life) 14%, transparent);
+  pointer-events: none;
+}
+
+.player-strip__life-label {
+  position: relative;
+  font-size: calc(10px * var(--board-scale, 1));
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide-caps);
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--life) 72%, transparent);
+}
+
+.player-strip__life-value {
+  position: relative;
+  font-family: var(--font-display);
+  font-size: calc(30px * var(--board-scale, 1));
+  line-height: 1;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--life);
+  text-shadow: 0 0 calc(22px * var(--board-scale, 1))
+    color-mix(in oklab, var(--life) 55%, transparent);
+}
+
+/* Cauda da faixa: motor, não manchete. */
+.player-strip__meters {
+  display: flex;
+  margin-left: auto;
+  align-items: center;
+  gap: calc(12px * var(--board-scale, 1));
+}
+
+.player-strip__mana {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.player-strip__pip {
+  display: grid;
+  place-items: center;
+  width: calc(17px * var(--board-scale, 1));
+  height: calc(17px * var(--board-scale, 1));
+  border-radius: 999px;
+  font-size: calc(10px * var(--board-scale, 1));
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: rgba(0, 0, 0, 0.75);
+}
+
+.player-strip__poison {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  border-radius: 999px;
+  border: 1px solid rgba(163, 230, 53, 0.35);
+  background: rgba(132, 204, 22, 0.12);
+  padding: 1px calc(7px * var(--board-scale, 1));
+  font-size: calc(10px * var(--board-scale, 1));
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #d9f99d;
+}
+
+.player-strip__poison--lethal {
+  border-color: rgba(190, 242, 100, 0.6);
+  background: rgba(163, 230, 53, 0.25);
+  color: #ecfccb;
+}
+
+.player-strip__lands {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.player-strip__lands-label {
+  margin-right: 3px;
+  font-size: calc(9px * var(--board-scale, 1));
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.28);
+}
+
+.player-strip__land-pip {
+  width: calc(14px * var(--board-scale, 1));
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.player-strip__land-pip[data-on="true"] {
+  background: var(--seat);
+}
+
+.player-strip__counts {
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--board-scale, 1));
+  padding-left: calc(12px * var(--board-scale, 1));
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.34);
+}
+
+.player-strip__count {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.player-strip__count-value {
+  font-size: calc(11px * var(--board-scale, 1));
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.player-strip__count--warn,
+.player-strip__count--warn .player-strip__count-value {
+  color: #fcd34d;
 }
 
 /* --------------------------------------------------------------------------
@@ -608,16 +1053,25 @@
 .stack-panel {
   display: flex;
   flex: 0 1 auto;
-  max-width: 32%;
+  max-width: 34%;
   min-width: 0;
   align-items: center;
-  gap: calc(10px * var(--board-scale, 1));
-  padding: calc(5px * var(--board-scale, 1)) calc(12px * var(--board-scale, 1));
+  gap: calc(8px * var(--board-scale, 1));
+  padding: calc(2px * var(--board-scale, 1)) calc(10px * var(--board-scale, 1));
   border-radius: 999px;
-  background: color-mix(in oklab, var(--color-surface-base) 74%, transparent);
+  background: color-mix(in oklab, var(--color-surface-base) 60%, transparent);
   border: 1px solid var(--color-edge-hair);
-  box-shadow: var(--shadow-e2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
+}
+
+/* Pilha vazia não anuncia o próprio vazio: encolhe até virar rótulo. */
+.stack-panel[data-empty="true"] {
+  border-color: transparent;
+  background: transparent;
+  opacity: 0.7;
+}
+
+.stack-panel[data-empty="true"] .stack-panel__body {
+  display: none;
 }
 
 .stack-panel__head {
@@ -629,7 +1083,7 @@
 
 .stack-panel__title {
   font-family: var(--font-display);
-  font-size: calc(11px * var(--board-scale, 1));
+  font-size: calc(9.5px * var(--board-scale, 1));
   letter-spacing: var(--tracking-wide-caps);
   text-transform: uppercase;
   color: var(--color-ink-muted);
@@ -637,7 +1091,7 @@
 
 .stack-panel__count {
   font-family: var(--font-display);
-  font-size: calc(15px * var(--board-scale, 1));
+  font-size: calc(12px * var(--board-scale, 1));
   font-variant-numeric: tabular-nums;
   color: var(--color-ink-strong);
 }
@@ -771,8 +1225,8 @@
   position: relative;
   display: grid;
   place-items: center;
-  width: calc(62px * var(--board-scale, 1));
-  height: calc(84px * var(--board-scale, 1));
+  width: calc(46px * var(--board-scale, 1));
+  height: calc(62px * var(--board-scale, 1));
   border-radius: var(--radius-sm);
   background: rgba(0, 0, 0, 0.45);
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6);
@@ -815,14 +1269,14 @@
 
 .zone-pile__label {
   font-family: var(--font-display);
-  font-size: calc(9.5px * var(--board-scale, 1));
+  font-size: calc(8.5px * var(--board-scale, 1));
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
 }
 
 .zone-pile__count {
   font-family: var(--font-display);
-  font-size: calc(19px * var(--board-scale, 1));
+  font-size: calc(15px * var(--board-scale, 1));
   font-variant-numeric: tabular-nums;
   color: var(--color-ink-strong);
 }
@@ -889,18 +1343,15 @@
  * Trilha de fases
  * ----------------------------------------------------------------------- */
 
+/* Régua de fases no rodapé: sem painel, sem moldura. Vira legenda da mesa. */
 .phase-track {
   display: flex;
   flex: 0 1 auto;
-  width: calc(1120px * var(--board-scale, 1));
+  width: calc(900px * var(--board-scale, 1));
   min-width: 0;
   align-items: center;
-  gap: calc(9px * var(--board-scale, 1));
-  padding: calc(5px * var(--board-scale, 1)) calc(10px * var(--board-scale, 1));
-  border-radius: 999px;
-  border: 1px solid var(--color-edge-hair);
-  background: linear-gradient(180deg, rgba(28, 35, 50, 0.78), rgba(10, 13, 21, 0.86));
-  box-shadow: var(--shadow-e2), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  gap: calc(8px * var(--board-scale, 1));
+  padding: 0 calc(6px * var(--board-scale, 1));
 }
 
 .phase-track__turn {
@@ -920,13 +1371,13 @@
 
 .phase-track__turn-number {
   font-family: var(--font-display);
-  font-size: calc(19px * var(--board-scale, 1));
+  font-size: calc(14px * var(--board-scale, 1));
   font-variant-numeric: tabular-nums;
   color: var(--color-ink-strong);
 }
 
 .phase-track__turn-player {
-  font-size: calc(12px * var(--board-scale, 1));
+  font-size: calc(11px * var(--board-scale, 1));
   font-weight: 600;
   max-width: calc(118px * var(--board-scale, 1));
   overflow: hidden;
@@ -950,7 +1401,7 @@
   min-width: 0;
   display: grid;
   place-items: center;
-  padding: calc(5px * var(--board-scale, 1)) calc(3px * var(--board-scale, 1));
+  padding: calc(2px * var(--board-scale, 1)) calc(3px * var(--board-scale, 1));
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   color: var(--color-ink-faint);
@@ -986,7 +1437,7 @@
   z-index: 1;
   max-width: 100%;
   font-family: var(--font-display);
-  font-size: calc(9.5px * var(--board-scale, 1));
+  font-size: calc(8.5px * var(--board-scale, 1));
   letter-spacing: 0.1em;
   white-space: nowrap;
   overflow: hidden;
@@ -996,7 +1447,7 @@
 .phase-track__now {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: calc(150px * var(--board-scale, 1));
+  max-width: calc(130px * var(--board-scale, 1));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

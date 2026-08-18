@@ -809,17 +809,20 @@ mod tests {
             None => panic!("objeto {id} não existe"),
         };
         let from_key = (from.kind, from.owner.map_or(u8::MAX, |p| p.0));
-        if let Some(zone) = game.state.zones.get_mut(&from_key) {
-            zone.remove(id);
-        }
-        if let Some(obj) = game.state.object_mut(id) {
-            obj.zone = to;
-            obj.timestamp = ts;
-        }
+        let Some(zone) = game.state.zones.get_mut(&from_key) else {
+            panic!("zona de origem {from_key:?} não existe")
+        };
+        zone.remove(id);
+        let Some(obj) = game.state.object_mut(id) else {
+            panic!("objeto {id} sumiu no meio da montagem")
+        };
+        obj.zone = to;
+        obj.timestamp = ts;
         let to_key = (to.kind, to.owner.map_or(u8::MAX, |p| p.0));
-        if let Some(zone) = game.state.zones.get_mut(&to_key) {
-            zone.push_bottom(id);
-        }
+        let Some(zone) = game.state.zones.get_mut(&to_key) else {
+            panic!("zona de destino {to_key:?} não existe")
+        };
+        zone.push_bottom(id);
     }
 
     fn battlefield(game: &mut Game, id: ObjectId, ts: u64) {
@@ -864,9 +867,10 @@ mod tests {
         let mut game = game_with(vec![bear], 8);
         let id = take(&mut game, PlayerId::P0, CardDefId(0));
         battlefield(&mut game, id, 5);
-        if let Some(o) = game.state.object_mut(id) {
-            o.add_counter(CounterKind::PlusOnePlusOne, 2);
-        }
+        let Some(o) = game.state.object_mut(id) else {
+            panic!("criatura de teste não existe")
+        };
+        o.add_counter(CounterKind::PlusOnePlusOne, 2);
         let ctx = ctx_of(id, PlayerId::P0);
         assert!(matches_filter(&game, id, &Filter::PowerAtLeast(4), &ctx));
         assert!(!matches_filter(&game, id, &Filter::PowerAtLeast(5), &ctx));
@@ -1196,9 +1200,10 @@ mod tests {
         let anexo = nth(&game, PlayerId::P0, CardDefId(0), 1);
         battlefield(&mut game, fonte, 1);
         battlefield(&mut game, anexo, 2);
-        if let Some(o) = game.state.object_mut(fonte) {
-            o.attached_to = Some(anexo);
-        }
+        let Some(o) = game.state.object_mut(fonte) else {
+            panic!("fonte de teste não existe")
+        };
+        o.attached_to = Some(anexo);
 
         let mut ctx = ctx_of(fonte, PlayerId::P0);
         ctx.targets = vec![TargetChoice::Object(anexo)];

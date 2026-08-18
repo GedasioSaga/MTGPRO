@@ -635,6 +635,38 @@ mod tests {
         );
     }
 
+    /// A mesma regra, agora pela via completa: o gatilho vai à pilha e resolve.
+    /// CR 603.6d — a vida ganha é 4 (a resistência com que ela morreu).
+    #[test]
+    fn efeito_do_gatilho_de_morte_usa_a_resistencia_de_quando_morreu() {
+        let mut game = game_with(lki_dies_card());
+        let owner = PlayerId::P0;
+        let id = put_on_battlefield(&mut game, owner);
+        let Some(obj) = game.state.object_mut(id) else {
+            panic!("objeto de teste não existe")
+        };
+        obj.add_counter(CounterKind::PlusOnePlusOne, 2);
+        let life_before = game.state.player(owner).life;
+
+        turn::move_object(&mut game, id, ZoneId::graveyard(owner));
+        collect(&mut game);
+        stack::put_triggers_on_stack(&mut game);
+        let Some(item) = stack::peek(&game) else {
+            panic!("gatilho de morte não chegou à pilha")
+        };
+        assert!(
+            matches!(item.kind, StackItemKind::TriggeredAbility { .. }),
+            "o item do topo tem que ser a habilidade disparada"
+        );
+        stack::resolve_top(&mut game);
+
+        assert_eq!(
+            game.state.player(owner).life - life_before,
+            4,
+            "ganhou vida igual à resistência da última existência (4), não à impressa (2)"
+        );
+    }
+
     #[test]
     fn contexto_de_morte_guarda_o_controlador_do_evento() {
         let game = game_with(dies_trigger_card());
@@ -643,13 +675,13 @@ mod tests {
             object: ObjectId(0),
             controller: PlayerId::P1,
         };
-        // `matches_filter` ainda pode estar em construção em `query`; o que este
-        // teste garante é que, casando, o contexto vem do evento e não do
-        // estado atual do objeto (que já foi para o cemitério).
-        if let Some(ctx) = matches(&game, &cond, &ev, ObjectId(0)) {
-            assert_eq!(ctx.trigger_object, Some(ObjectId(0)));
-            assert_eq!(ctx.trigger_player, Some(PlayerId::P1));
-        }
+        // O contexto tem que vir do evento, não do estado atual do objeto (que
+        // já foi para o cemitério). Não casar é falha do motor, não "sem teste".
+        let Some(ctx) = matches(&game, &cond, &ev, ObjectId(0)) else {
+            panic!("gatilho de morte não casou com o evento de morte")
+        };
+        assert_eq!(ctx.trigger_object, Some(ObjectId(0)));
+        assert_eq!(ctx.trigger_player, Some(PlayerId::P1));
     }
 
     #[test]
@@ -695,9 +727,10 @@ mod tests {
     #[test]
     fn once_per_turn_zera_no_comeco_do_turno() {
         let mut game = game_with(dies_trigger_card());
-        if let Some(obj) = game.state.object_mut(ObjectId(0)) {
-            obj.triggers_fired.insert(0, 1);
-        }
+        let Some(obj) = game.state.object_mut(ObjectId(0)) else {
+            panic!("objeto de teste não existe")
+        };
+        obj.triggers_fired.insert(0, 1);
         assert!(already_fired(&game, ObjectId(0), 0));
         game.state.event_queue = vec![GameEvent::TurnBegan {
             player: PlayerId::P0,
