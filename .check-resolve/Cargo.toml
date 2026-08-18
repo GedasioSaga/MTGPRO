@@ -1,0 +1,17 @@
+[workspace]
+
+[package]
+name = "mtg-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "crates/mtg-core/src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
+thiserror = "2"
+rand = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
+rand_chacha = "0.3"
+smallvec = { version = "1", features = ["serde", "union"] }

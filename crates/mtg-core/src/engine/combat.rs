@@ -834,15 +834,13 @@ pub fn has_first_strike_creatures(game: &Game) -> bool {
     })
 }
 
-fn defender_target(game: &Game, defender: Defender) -> DamageTarget {
+/// CR 506.2 — dano vai ao jogador, ao planeswalker ou ao battle atacado.
+/// Se o permanente defensor já saiu do campo, `apply_damage_to_object`
+/// descarta o dano: nada é redirecionado ao controlador.
+fn defender_target(defender: Defender) -> DamageTarget {
     match defender {
         Defender::Player(p) => DamageTarget::Player(p),
-        Defender::Planeswalker(o) | Defender::Battle(o) => {
-            // Planeswalker/battle que já saiu do campo devolve o dano ao seu
-            // controlador não é regra: o dano simplesmente não é causado.
-            let _ = game;
-            DamageTarget::Object(o)
-        }
+        Defender::Planeswalker(o) | Defender::Battle(o) => DamageTarget::Object(o),
     }
 }
 
@@ -886,7 +884,7 @@ fn collect_attacker_damage(game: &mut Game, attacker: ObjectId, out: &mut Vec<Da
     if !was_blocked {
         out.push(DamageAssign {
             source: attacker,
-            target: defender_target(game, defender),
+            target: defender_target(defender),
             amount: power,
             deathtouch,
             lifelink,
@@ -901,7 +899,7 @@ fn collect_attacker_damage(game: &mut Game, attacker: ObjectId, out: &mut Vec<Da
             // ...salvo Atropelar, que manda tudo ao defensor (CR 702.19b).
             out.push(DamageAssign {
                 source: attacker,
-                target: defender_target(game, defender),
+                target: defender_target(defender),
                 amount: power,
                 deathtouch,
                 lifelink,
@@ -957,7 +955,7 @@ fn collect_attacker_damage(game: &mut Game, attacker: ObjectId, out: &mut Vec<Da
     if to_defender > 0 {
         out.push(DamageAssign {
             source: attacker,
-            target: defender_target(game, defender),
+            target: defender_target(defender),
             amount: to_defender,
             deathtouch,
             lifelink,

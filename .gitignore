@@ -4,3 +4,4 @@ web/dist/
 *.db
 *.sqlite
 .claude-trail.md
+graphify-out/
