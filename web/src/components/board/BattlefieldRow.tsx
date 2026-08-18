@@ -4,9 +4,8 @@ import type { CardView, ObjectId, PlayerId } from '../../types/protocol'
 import { CardSlot } from './CardSlot'
 import { seatAccent, withAlpha } from './boardVisuals'
 
-const CREATURE_WIDTH = 'clamp(70px, 5.2vw, 98px)'
-const LAND_WIDTH = 'clamp(52px, 3.6vw, 68px)'
-const OTHER_WIDTH = 'clamp(58px, 4.1vw, 78px)'
+const LAND_SCALE = 0.78
+const OTHER_SCALE = 0.82
 
 export interface BattlefieldRowProps {
   player: PlayerId
@@ -46,15 +45,16 @@ export function BattlefieldRow({ player, side, permanents, cards }: BattlefieldR
   return (
     <div
       className={clsx(
-        'flex h-full min-h-0 flex-col gap-2 px-6 py-2',
-        side === 'top' ? 'flex-col-reverse' : 'flex-col',
+        'board-field',
+        side === 'top' ? 'board-field--top' : 'board-field--bottom',
       )}
+      data-seat={player}
     >
-      <div className="flex min-h-0 flex-1 flex-wrap content-center items-center justify-center gap-2">
+      <div className="board-field__creatures">
         {creatures.length === 0 ? (
           <span
-            className="rounded-full border border-dashed px-4 py-1 text-[11px] tracking-[0.16em] uppercase"
-            style={{ borderColor: withAlpha(accent, 0.16), color: withAlpha(accent, 0.35) }}
+            className="board-field__empty"
+            style={{ borderColor: withAlpha(accent, 0.16), color: withAlpha(accent, 0.38) }}
           >
             sem criaturas
           </span>
@@ -64,30 +64,31 @@ export function BattlefieldRow({ player, side, permanents, cards }: BattlefieldR
               key={card.id}
               id={card.id}
               card={card}
-              width={CREATURE_WIDTH}
               size="small"
               tapped={card.tapped}
+              title={card.name ?? undefined}
               overlay={<AttachmentBadge count={card.attachments.length} />}
             />
           ))
         )}
       </div>
 
-      <div className="flex shrink-0 items-end gap-5">
-        <div className="flex flex-wrap items-end gap-3">
+      <div className="board-field__back">
+        <div className="board-field__lands">
           {landGroups.map((group) => (
             <LandStack key={group.key} group={group} cards={cards} />
           ))}
         </div>
-        <div className="ml-auto flex flex-wrap items-end justify-end gap-1.5">
+        <div className="board-field__others">
           {others.map((card) => (
             <CardSlot
               key={card.id}
               id={card.id}
               card={card}
-              width={OTHER_WIDTH}
-              size="micro"
+              size="small"
+              scale={OTHER_SCALE}
               tapped={card.tapped}
+              title={card.name ?? undefined}
             />
           ))}
         </div>
@@ -98,7 +99,7 @@ export function BattlefieldRow({ player, side, permanents, cards }: BattlefieldR
 
 function LandStack({ group, cards }: { group: LandGroup; cards: Record<ObjectId, CardView> }) {
   return (
-    <div className="relative flex items-end">
+    <div className="board-lands__stack">
       {group.ids.map((id, index) => {
         const card = cards[id]
         if (card === undefined) return null
@@ -107,18 +108,17 @@ function LandStack({ group, cards }: { group: LandGroup; cards: Record<ObjectId,
             key={id}
             id={id}
             card={card}
-            width={LAND_WIDTH}
-            size="micro"
+            size="small"
+            scale={LAND_SCALE}
             tapped={card.tapped}
-            className={index === 0 ? undefined : '-ml-[62%]'}
+            title={card.name ?? undefined}
+            className={index === 0 ? undefined : 'board-lands__overlap'}
             style={{ zIndex: index }}
           />
         )
       })}
       {group.ids.length > 1 ? (
-        <span className="pointer-events-none absolute -top-1.5 -right-1.5 z-20 grid size-5 place-items-center rounded-full bg-[#0d101a] text-[11px] font-semibold tabular-nums text-white/80 ring-1 ring-white/20">
-          {group.ids.length}
-        </span>
+        <span className="board-lands__count">{group.ids.length}</span>
       ) : null}
     </div>
   )
@@ -127,10 +127,7 @@ function LandStack({ group, cards }: { group: LandGroup; cards: Record<ObjectId,
 function AttachmentBadge({ count }: { count: number }) {
   if (count === 0) return null
   return (
-    <span
-      className="pointer-events-none absolute -top-1 -left-1 grid size-4.5 place-items-center rounded-full bg-violet-400/90 text-[10px] font-bold text-black/80"
-      title={`${count} anexo(s)`}
-    >
+    <span className="board-field__attached" title={`${count} anexo(s)`}>
       {count}
     </span>
   )

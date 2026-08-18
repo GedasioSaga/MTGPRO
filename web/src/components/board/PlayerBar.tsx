@@ -157,6 +157,7 @@ function LifeOrb({
   return (
     <div
       data-player-id={player.id}
+      data-fx-player={player.id}
       className={clsx(
         'relative flex items-center gap-3 overflow-hidden rounded-xl border px-3.5 py-2.5',
         pulse && 'board-life-pulse',

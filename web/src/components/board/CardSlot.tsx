@@ -1,71 +1,90 @@
 import clsx from 'clsx'
 import type { CSSProperties, ReactNode } from 'react'
 import { Card } from '../card/Card'
+import { CARD_SIZES } from '../card/cardVisuals'
 import type { CardView, ObjectId } from '../../types/protocol'
 import { CardBack } from './CardBack'
+import { cssVars } from './boardVisuals'
 
 export type CardSlotSize = 'micro' | 'small' | 'medium' | 'large'
 
 export interface CardSlotProps {
   id: ObjectId
   card: CardView | null
-  width: string
   size: CardSlotSize
+  /** Multiplicador local sobre `--board-scale`, para afinar uma fileira só. */
+  scale?: number
+  /** Largura CSS explícita; ignora a escala da mesa. Para uso fora do tabuleiro. */
+  width?: string
   revealed?: boolean
   /** Gira 90° como uma carta virada de verdade, sem alargar a fileira. */
   tapped?: boolean
   className?: string
   style?: CSSProperties
   overlay?: ReactNode
+  title?: string
 }
 
 /**
- * Moldura de tamanho fixo em volta de `Card`. A geometria mora aqui porque o
- * tabuleiro precisa de fileiras previsíveis e porque as setas de alvo procuram
- * o elemento por `data-card-id`.
+ * Moldura de tamanho previsível em volta de `Card`.
+ *
+ * Quem manda no tamanho é o slot: ele é um container query (ver `App.css`), e
+ * `card.css` faz a carta derivar tudo — tipografia, molduras, badges — de
+ * `100cqw`. Assim uma carta encolhe inteira, em vez de virar um retângulo com
+ * letra grande demais. É também este nó que as setas de alvo e a camada de
+ * efeitos encontram, por `data-card-id` / `data-fx-card`.
  */
 export function CardSlot({
   id,
   card,
-  width,
   size,
+  scale = 1,
+  width,
   revealed = true,
   tapped = false,
   className,
   style,
   overlay,
+  title,
 }: CardSlotProps) {
+  const natural = CARD_SIZES[size].width
   const ring = ringFor(card)
 
   return (
     <div
       data-card-id={id}
-      className={clsx('board-card-slot relative shrink-0', className)}
-      style={{ width, aspectRatio: '63 / 88', ...style }}
+      data-fx-card={id}
+      title={title}
+      className={clsx('board-card-slot', className)}
+      style={cssVars(
+        {
+          '--slot-natural': width ?? `${natural}px`,
+          '--slot-factor':
+            width === undefined ? `calc(var(--board-scale, 1) * ${scale})` : '1',
+        },
+        style,
+      )}
     >
       <div
         className={clsx(
-          'relative size-full origin-center transition-transform duration-300 ease-out',
-          tapped && 'rotate-90 scale-[0.72]',
+          'board-card-slot__pivot',
+          tapped && 'board-card-slot__pivot--tapped',
         )}
       >
         {card === null ? (
           <CardBack seed={String(id)} />
         ) : (
-          <Card card={card} size={size} revealed={revealed} className="size-full" />
+          <Card card={card} size={size} revealed={revealed} />
         )}
         {ring !== null ? (
           <span
             aria-hidden="true"
-            className="pointer-events-none absolute -inset-px rounded-[7px]"
+            className="board-card-slot__ring"
             style={{ boxShadow: ring }}
           />
         ) : null}
         {card !== null && card.summoningSick ? (
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 rounded-[7px] bg-sky-200/8 mix-blend-screen"
-          />
+          <span aria-hidden="true" className="board-card-slot__sick" />
         ) : null}
       </div>
       {overlay}

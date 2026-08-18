@@ -46,6 +46,23 @@ fn has_kw(ch: &Characteristics, k: &Keyword) -> bool {
     ch.has_keyword(k)
 }
 
+/// Nome do jogador para o log. Só leitura: nenhuma regra depende disto.
+fn player_label(game: &Game, player: PlayerId) -> String {
+    game.state
+        .players
+        .get(player.index())
+        .map(|p| p.name.clone())
+        .unwrap_or_else(|| player.to_string())
+}
+
+/// Contra quem o ataque foi declarado, em texto.
+fn defender_label(game: &Game, defender: Defender) -> String {
+    match defender {
+        Defender::Player(p) => player_label(game, p),
+        Defender::Planeswalker(id) | Defender::Battle(id) => game.card_name(id),
+    }
+}
+
 fn power_of(game: &Game, id: ObjectId) -> i32 {
     chars(game, id).map(|c| c.power).unwrap_or(0)
 }
@@ -702,7 +719,9 @@ pub fn declare_attackers(game: &mut Game, assignments: &[(ObjectId, Defender)]) 
             defender: *defender,
         });
         let name = game.card_name(*creature);
-        game.state.push_log(format!("{name} ataca"), Some(active));
+        let against = defender_label(game, *defender);
+        game.state
+            .push_log(format!("{name} ataca {against}"), Some(active));
     }
 
     let ids: Vec<ObjectId> = declared.iter().map(|(id, _)| *id).collect();
@@ -801,6 +820,16 @@ pub fn declare_blockers(game: &mut Game, assignments: &[(ObjectId, ObjectId)]) {
         if list.is_empty() {
             continue;
         }
+        let attacker_name = game.card_name(*attacker);
+        let blocker_names: Vec<String> = list.iter().map(|b| game.card_name(*b)).collect();
+        let blocker_controller = list
+            .first()
+            .and_then(|b| game.state.object(*b))
+            .map(|o| o.controller);
+        game.state.push_log(
+            format!("{} bloqueia {attacker_name}", blocker_names.join(" e ")),
+            blocker_controller,
+        );
         game.state.emit(GameEvent::Blocked {
             attacker: *attacker,
             blockers: list.clone(),
@@ -881,6 +910,14 @@ pub fn combat_damage_step(game: &mut Game, first_strike: bool) {
     }
 
     // CR 510.2 — só agora o dano acontece, e acontece tudo ao mesmo tempo.
+    if !assigns.is_empty() {
+        let label = if first_strike {
+            "dano de primeiro golpe"
+        } else {
+            "dano de combate"
+        };
+        game.state.push_log(label, None);
+    }
     apply_damage(game, &assigns);
     game.state.emit(GameEvent::CombatDamageDealt);
     triggers::collect(game);
@@ -1158,6 +1195,16 @@ fn apply_damage_to_object(game: &mut Game, assign: &Assign, target: ObjectId) ->
         lethal = lethal || (current > 0 && removed >= current);
     }
 
+    let source_name = game.card_name(assign.source);
+    let target_name = game.card_name(target);
+    game.state.push_log(
+        format!(
+            "{source_name} causa {} de dano a {target_name}{}",
+            assign.amount,
+            if lethal { " (letal)" } else { "" }
+        ),
+        Some(assign.controller),
+    );
     game.state.emit(GameEvent::DamageDealt {
         source: assign.source,
         target,
@@ -1184,6 +1231,15 @@ fn apply_damage_to_player(game: &mut Game, assign: &Assign, player: PlayerId) {
     p.damage_taken_this_turn += assign.amount;
     let total = p.life;
 
+    let source_name = game.card_name(assign.source);
+    let player_name = player_label(game, player);
+    game.state.push_log(
+        format!(
+            "{source_name} causa {} de dano a {player_name} (vida: {total})",
+            assign.amount
+        ),
+        Some(assign.controller),
+    );
     game.state.emit(GameEvent::DamageDealtToPlayer {
         source: assign.source,
         player,

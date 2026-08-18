@@ -632,10 +632,12 @@ export function setStamp(card: Pick<CardView, 'setCode' | 'name'>): string {
 
 /**
  * Todo o dimensionamento da carta é derivado de `--cw`, então uma única
- * variável escala tipografia, molduras e sombras juntas.
+ * variável escala tipografia, molduras e sombras juntas. O que sai daqui é a
+ * largura *nominal* do tamanho: o CSS a promove a `--cw`, e pode trocá-la por
+ * uma unidade de container query quando a carta preenche um slot.
  */
 export interface CardCssVars extends CSSProperties {
-  '--cw'?: string
+  '--cw-nominal'?: string
   '--frame-light'?: string
   '--frame-dark'?: string
   '--frame-light-2'?: string
@@ -658,7 +660,7 @@ export function playerAccent(playerId: number): string {
 export function cardCssVars(paint: FramePaint, size: CardSize, controller: number, rarity: string | null): CardCssVars {
   const second = paint.secondTone ?? paint.tone
   return {
-    '--cw': `${CARD_SIZES[size].width}px`,
+    '--cw-nominal': `${CARD_SIZES[size].width}px`,
     '--frame-light': paint.tone.light,
     '--frame-dark': paint.tone.dark,
     '--frame-light-2': second.light,
