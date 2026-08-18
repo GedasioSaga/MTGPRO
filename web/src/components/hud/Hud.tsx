@@ -4,10 +4,11 @@ import { Toast } from './Toast'
 /**
  * Moldura flutuante da partida.
  *
- * Só o que é transitório vive aqui. O registro e a leitura da partida moram em
- * colunas do grid (`App.tsx`), justamente para não cobrir a mesa; a barra de
- * reprodução continua flutuando na base, e o grid da mesa reserva a faixa
- * abaixo da mão para ela (`--playback-reserve` em `App.css`).
+ * Só o que é transitório vive aqui. O registro e a leitura da partida são
+ * overlays sob demanda (`App.tsx`), fechados por padrão para a mesa ficar com a
+ * tela inteira; a barra de reprodução continua flutuando na base, e o grid da
+ * mesa reserva a faixa abaixo da mão para ela (`--playback-reserve` em
+ * `App.css`).
  */
 export function Hud() {
   return (

@@ -1,6 +1,6 @@
 # HANDOFF — MTGPRO (simulador automático de Magic)
 
-**Atualizado:** 2026-08-18 (motor completo)
+**Atualizado:** 2026-08-18 (gauntlet rodada 1 fechada)
 **Diretório:** `C:\Users\gedasio.filho\OneDrive - Vertis Capital\Área de Trabalho\Tudo\Jogo Magic`
 **Remoto:** https://github.com/GedasioSaga/MTGPRO — público, MIT, branch `main`
 
@@ -50,18 +50,41 @@ Diagnostico de 20 sementes (Goblin Onslaught x Azorius Control) com bots **aleat
 O log mostra Counterspell anulando Shock, ETB de `Wall of Omens`, fichas de
 `Krenko's Command`, remocao e combate. A partida e real.
 
-### Lacunas conhecidas (em tratamento por `wf_ccb144a6-20c`)
+### Auditoria independente (verificador-realidade) — VEREDITO: NECESSITA TRABALHO
 
-1. **Nenhum `impl Agent` heuristico ligado.** `mtg-ai` expoe `Snapshot`, `evaluate`,
-   `simulate_combat`, `plan_blocks` — mas `mtg-server/src/bot.rs` ainda sorteia
-   uniformemente. O simulador e automatico, nao inteligente. Maior peca aberta.
-   (Causa raiz descoberta na integracao: `mtg-ai/src/lib.rs` tinha so um `\n`, entao
-   1798 linhas de `cards.rs`/`eval.rs`/`sim.rs` nunca eram compiladas.)
-2. **Dano de combate nao entra em `state.log`.** Aparece em `MatchEvent` e `GameEvent`,
-   mas o log sozinho nao reconstroi o combate.
-3. **Cliente web incompleto** — faltam `Card.tsx`, `BoardLayout`, `StackPanel`,
-   `PhaseTrack`, `TargetArrows`, todo o `components/hud/` e `mock/`.
-4. 24 warnings de clippy, todas cosmeticas (nenhuma aponta defeito).
+"109 testes passam" e "o motor esta correto" medem coisas diferentes. Numeros reais:
+
+| Metrica | Valor |
+|---|---|
+| Dos 65 itens de `docs/RULES_TESTS.md` | **22 coberto · 14 parcial · 29 ausente** |
+| `crates/mtg-core/tests/interactions.rs` | **nunca foi escrito** |
+| `turn.rs` (35 KB) e `cast.rs` (64 KB) | **zero `#[test]`** |
+| Fuzzing 200 sementes | 187 vencedor · 13 empate no teto · **0 panicos** |
+
+Tres achados que valem mais que o resto:
+
+1. **Bug de regra confirmado, nao so lacuna** — CR 603.6d (*last known information*) nao
+   existe. `turn.rs:845` chama `reset_for_zone_change` (zera marcadores, dano, combate) e
+   so em `turn.rs:877` emite `Died`; como `emit` enfileira, o gatilho le o objeto ja limpo.
+   "Quando morrer, ganhe vida igual a resistencia" devolve o valor base.
+2. **Teste vacuoso** — `triggers.rs:516` embrulha as assercoes em `if let Some(ctx) = ...`.
+   Nao casou, passa verde tendo afirmado nada.
+3. **Cobertura emprestada** — itens de indestrutivel/atropelar/vigilancia so aparecem
+   testados em `mtg-ai/src/sim.rs`, que declara ser aproximacao e **nao dispara gatilhos**.
+
+Confirmado CERTO pela auditoria (nao mexer): item 27 (biblioteca vazia perde na SBA
+seguinte), item 31 (indestrutivel com resistencia 0 morre), itens 47 e 49 (bloqueador que
+sumiu; atropelar com toque mortal).
+
+### Gauntlet — rodada 1 (UI): PERDEMOS, e isso e o mecanismo funcionando
+
+Comparacao cega contra `docs/bar/arena-board-01.jpg`, ambas as imagens em JPEG (formato
+diferente vazaria qual e a referencia). Critic escolheu a bar.
+
+Gap unico nomeado: *"o tabuleiro e uma superficie vazia e sem luz, cercado por dois paineis
+de telemetria que ficam com o peso visual da tela — o jogo virou moldura do seu proprio HUD."*
+Correcao prescrita: paineis viram overlay sob demanda, mesa recebe a largura inteira,
+textura de arena com vinheta e luz direcional, criaturas frente a frente na linha de combate.
 
 ## Camada Lua (adicionada 18/08, a pedido)
 
@@ -149,7 +172,8 @@ JSON em camelCase. `MatchEvent` usa tag interna `"type"`.
 | `wf_b256501a-a2e` | motor, 10 builders + integração | 5 retornaram, 6 morreram no limite de sessão; integração nunca rodou; **stubs vazios plantados** |
 | `wf_0e9383c5-e1c` | cliente, 5 builders + integração | todos morreram no limite; arquivos parciais no disco |
 | `wf_401ec653-103` | 7 módulos stub + catálogo Lua + integração | **6/6 verde** — motor completo, 104 testes |
-| `wf_ccb144a6-20c` | **em execução** — IA jogável + cliente web + prova ponta a ponta | — |
+| `wf_ccb144a6-20c` | IA jogável + cliente web + ponta a ponta | 3/6; UI carta/mesa/fx entregues |
+| `wf_4a9eea53-246` | **em execução** — corrige LKI + escreve as 65 interações | — |
 
 Retomar qualquer um: `Workflow({scriptPath: "<script>", resumeFromRunId: "<run id>"})`.
 Scripts em `...\workflows\scripts\`. Antes de diagnosticar resultado vazio, ler

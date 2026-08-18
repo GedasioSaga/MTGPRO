@@ -9,63 +9,66 @@ import { FxLayer } from './fx/FxLayer'
 import { useMatchStore } from './state/matchStore'
 import './App.css'
 
-/** Abaixo disto as duas colunas laterais roubam largura demais da mesa. */
-const RAIL_BREAKPOINT_PX = 1440
+/** Tecla que abre/fecha cada painel. Espaço, seta e 1-4 já são da PlaybackBar. */
+const LOG_KEY = 'r'
+const STATS_KEY = 'l'
 
-/** `true` enquanto a janela for estreita demais para mesa + duas colunas. */
-function useNarrowViewport(): boolean {
-  const [narrow, setNarrow] = useState(
-    () =>
-      typeof window !== 'undefined' &&
-      window.matchMedia(`(max-width: ${RAIL_BREAKPOINT_PX - 1}px)`).matches,
+function isTyping(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
   )
-
-  useEffect(() => {
-    const query = window.matchMedia(`(max-width: ${RAIL_BREAKPOINT_PX - 1}px)`)
-    const update = (): void => setNarrow(query.matches)
-    update()
-    query.addEventListener('change', update)
-    return () => query.removeEventListener('change', update)
-  }, [])
-
-  return narrow
 }
 
 export default function App() {
   const activePlayer = useMatchStore((s) => s.view?.activePlayer ?? 0)
   const teardown = useMatchStore((s) => s.teardown)
-  const narrow = useNarrowViewport()
-  const [logOpen, setLogOpen] = useState(true)
-  const [statsOpen, setStatsOpen] = useState(true)
+  // Fechados por padrão: a mesa é o espetáculo, telemetria é consulta.
+  const [logOpen, setLogOpen] = useState(false)
+  const [statsOpen, setStatsOpen] = useState(false)
 
   // Isto é um simulador: ninguém joga, mas alguém escolhe o confronto. Quem
   // dispara `start` é a tela de abertura; daí em diante o HUD assume.
   useEffect(() => teardown, [teardown])
 
-  // Em tela estreita as colunas recolhem sozinhas; o usuário ainda pode abrir.
   useEffect(() => {
-    setLogOpen(!narrow)
-    setStatsOpen(!narrow)
-  }, [narrow])
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.ctrlKey || event.metaKey || event.altKey) return
+      if (isTyping(event.target)) return
+
+      if (event.key === 'Escape') {
+        setLogOpen(false)
+        setStatsOpen(false)
+        return
+      }
+      const key = event.key.toLowerCase()
+      if (key === LOG_KEY) setLogOpen((value) => !value)
+      else if (key === STATS_KEY) setStatsOpen((value) => !value)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   return (
     <div className="app-shell" data-active-player={activePlayer}>
+      <div className="app-shell__table table-felt" data-fx-shake>
+        <BoardLayout />
+      </div>
+
       <Rail
         side="left"
         title="Registro"
+        hotkey={LOG_KEY}
         open={logOpen}
         onToggle={() => setLogOpen((value) => !value)}
       >
         <GameLog />
       </Rail>
 
-      <div className="app-shell__table table-felt" data-fx-shake>
-        <BoardLayout />
-      </div>
-
       <Rail
         side="right"
         title="Leitura"
+        hotkey={STATS_KEY}
         open={statsOpen}
         onToggle={() => setStatsOpen((value) => !value)}
       >
@@ -82,37 +85,57 @@ export default function App() {
 interface RailProps {
   side: 'left' | 'right'
   title: string
+  hotkey: string
   open: boolean
   onToggle: () => void
   children: ReactNode
 }
 
-function pointsInward(side: 'left' | 'right', open: boolean): boolean {
-  return side === 'left' ? open : !open
-}
-
 /**
- * Coluna lateral da moldura. É coluna do grid, não overlay: o que estiver aqui
- * nunca cobre a mesa, e recolher devolve a largura para o tabuleiro.
+ * Painel de telemetria em overlay.
+ *
+ * Deixou de ser coluna do grid: fechado, devolve a largura INTEIRA à mesa e
+ * some numa aba fina na borda; aberto, desliza por cima do tabuleiro com fundo
+ * translúcido. A mesa nunca reflui — o que muda é só o que está por cima dela.
  */
-function Rail({ side, title, open, onToggle, children }: RailProps) {
+function Rail({ side, title, hotkey, open, onToggle, children }: RailProps) {
   const id = `rail-${side}`
+  const label = open ? `Fechar ${title.toLowerCase()}` : `Abrir ${title.toLowerCase()}`
+
   return (
-    <aside className="app-rail" data-side={side} data-open={open}>
+    <>
       <button
         type="button"
-        className="app-rail__toggle"
+        className="app-rail-tab"
+        data-side={side}
+        data-open={open}
         aria-expanded={open}
         aria-controls={id}
-        title={open ? `Recolher ${title.toLowerCase()}` : `Abrir ${title.toLowerCase()}`}
+        title={`${label} (${hotkey.toUpperCase()})`}
         onClick={onToggle}
       >
-        <span className="app-rail__toggle-text">{title}</span>
-        <span aria-hidden="true">{pointsInward(side, open) ? '‹' : '›'}</span>
+        <span className="app-rail-tab__text">{title}</span>
+        <span className="app-rail-tab__key" aria-hidden="true">
+          {hotkey.toUpperCase()}
+        </span>
       </button>
-      <div className="app-rail__body" id={id} hidden={!open}>
-        {children}
-      </div>
-    </aside>
+
+      <aside
+        className="app-rail"
+        id={id}
+        data-side={side}
+        data-open={open}
+        aria-label={title}
+        inert={!open}
+      >
+        <div className="app-rail__head">
+          <span className="app-rail__title">{title}</span>
+          <button type="button" className="app-rail__close" onClick={onToggle} title={label}>
+            {side === 'left' ? '‹' : '›'}
+          </button>
+        </div>
+        <div className="app-rail__body">{children}</div>
+      </aside>
+    </>
   )
 }

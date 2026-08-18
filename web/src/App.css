@@ -1,9 +1,9 @@
 /*
  * Geometria da moldura e da mesa.
  *
- * Duas grades encaixadas, nenhuma sobreposição:
- *   1. `.app-shell` divide a janela em três colunas — registro, mesa, leitura.
- *      As laterais são COLUNAS, não overlays; recolher devolve largura à mesa.
+ * A mesa é a tela inteira:
+ *   1. `.app-shell__table` ocupa toda a janela. Registro e leitura são OVERLAYS
+ *      (`.app-rail`), fechados por padrão — telemetria nunca rouba largura.
  *   2. `.board-grid` divide a mesa em cinco faixas, do oponente (topo) ao
  *      jogador de baixo, com a faixa fina de fases + pilha no meio.
  *
@@ -13,84 +13,158 @@
  */
 
 .app-shell {
-  --rail-log: clamp(232px, 17vw, 312px);
-  --rail-stats: clamp(248px, 18vw, 320px);
-  --rail-collapsed: 30px;
+  --rail-log: clamp(268px, 21vw, 360px);
+  --rail-stats: clamp(276px, 22vw, 368px);
 
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-areas: "log table stats";
+  position: relative;
   height: 100dvh;
   width: 100%;
   overflow: hidden;
 }
 
+/* A mesa ocupa a janela inteira. Telemetria é overlay: nunca rouba largura. */
 .app-shell__table {
-  grid-area: table;
-  position: relative;
-  margin: calc(8px * var(--board-scale, 1));
+  position: absolute;
+  inset: 0;
+  margin: calc(6px * var(--board-scale, 1));
   border-radius: var(--radius-2xl);
   overflow: hidden;
 }
 
 /* --------------------------------------------------------------------------
- * Colunas laterais (registro e leitura)
+ * Painéis laterais em overlay (registro e leitura)
  * ----------------------------------------------------------------------- */
 
-.app-rail {
-  position: relative;
+/* Aba fina colada na borda: a única presença do painel quando ele está fechado. */
+.app-rail-tab {
+  position: fixed;
+  top: 50%;
+  z-index: 90;
   display: flex;
-  min-height: 0;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 8px;
-  width: var(--rail-collapsed);
-  transition: width var(--duration-base) var(--ease-standard);
-}
-
-.app-rail[data-side="left"] {
-  grid-area: log;
-}
-
-.app-rail[data-side="right"] {
-  grid-area: stats;
-}
-
-.app-rail[data-side="left"][data-open="true"] {
-  width: var(--rail-log);
-}
-
-.app-rail[data-side="right"][data-open="true"] {
-  width: var(--rail-stats);
-}
-
-.app-rail__toggle {
-  display: flex;
-  flex: 0 0 auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 4px 6px;
+  gap: 10px;
+  padding: 12px 5px;
   border: 1px solid var(--color-edge-hair);
-  border-radius: var(--radius-sm);
-  background: rgba(10, 13, 21, 0.6);
-  color: var(--color-ink-muted);
+  background: rgba(10, 13, 21, 0.55);
+  color: var(--color-ink-faint);
   cursor: pointer;
   font-family: var(--font-display);
   font-size: 10px;
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   white-space: nowrap;
-  overflow: hidden;
+  writing-mode: vertical-rl;
+  backdrop-filter: blur(6px);
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-base) var(--ease-standard);
 }
 
-.app-rail__toggle:hover {
+.app-rail-tab[data-side="left"] {
+  left: 0;
+  border-left: 0;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  transform: translateY(-50%);
+}
+
+.app-rail-tab[data-side="right"] {
+  right: 0;
+  border-right: 0;
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  transform: translateY(-50%) rotate(180deg);
+}
+
+.app-rail-tab:hover {
   border-color: var(--color-edge-strong);
   color: var(--color-ink-strong);
 }
 
-.app-rail[data-open="false"] .app-rail__toggle-text {
-  display: none;
+.app-rail-tab[data-open="true"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.app-rail-tab__key {
+  display: grid;
+  place-items: center;
+  min-height: 15px;
+  min-width: 15px;
+  border-radius: var(--radius-xs);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 9px;
+}
+
+.app-rail {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  z-index: 95;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 10px;
+  background: color-mix(in oklab, var(--color-surface-void) 82%, transparent);
+  backdrop-filter: blur(16px) saturate(1.2);
+  box-shadow: var(--shadow-e4);
+  transition:
+    transform var(--duration-base) var(--ease-standard),
+    opacity var(--duration-base) var(--ease-standard);
+}
+
+.app-rail[data-side="left"] {
+  left: 0;
+  width: var(--rail-log);
+  border-right: 1px solid var(--color-edge);
+  transform: translateX(-101%);
+}
+
+.app-rail[data-side="right"] {
+  right: 0;
+  width: var(--rail-stats);
+  border-left: 1px solid var(--color-edge);
+  transform: translateX(101%);
+}
+
+.app-rail[data-open="false"] {
+  opacity: 0;
+}
+
+.app-rail[data-open="true"] {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.app-rail__head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.app-rail__title {
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: var(--tracking-wide-caps);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
+
+.app-rail__close {
+  border: 1px solid var(--color-edge-hair);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  line-height: 1;
+  padding: 2px 8px;
+}
+
+.app-rail__close:hover {
+  border-color: var(--color-edge-strong);
+  color: var(--color-ink-strong);
 }
 
 .app-rail__body {
@@ -100,7 +174,7 @@
   flex-direction: column;
   border: 1px solid var(--color-edge-hair);
   border-radius: var(--radius-lg);
-  background: color-mix(in oklab, var(--color-surface-base) 78%, transparent);
+  background: color-mix(in oklab, var(--color-surface-base) 70%, transparent);
   box-shadow: var(--shadow-e2);
   overflow: hidden;
 }
@@ -115,6 +189,51 @@
 .app-rail__card {
   min-height: 0;
   overflow-y: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-rail,
+  .app-rail-tab {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * Luz de arena
+ *
+ * Feltro chapado não tem profundidade. Esta camada mora ATRÁS das cartas
+ * (`z-index: 0`, dentro do `isolation: isolate` de `.table-felt`): holofote
+ * elíptico sobre a linha de combate, luz direcional caindo de cima, dois anéis
+ * de arena e vinheta fechando as quatro bordas.
+ * ----------------------------------------------------------------------- */
+
+.app-shell__table::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(58% 30% at 50% 50%, rgba(206, 255, 228, 0.2), transparent 72%),
+    linear-gradient(180deg, rgba(255, 244, 214, 0.1), transparent 38%),
+    radial-gradient(
+      54% 38% at 50% 50%,
+      transparent 0 60.6%,
+      rgba(154, 230, 194, 0.115) 61% 62%,
+      transparent 62.6%
+    ),
+    radial-gradient(
+      72% 51% at 50% 50%,
+      transparent 0 70.6%,
+      rgba(154, 230, 194, 0.06) 71% 71.9%,
+      transparent 72.5%
+    ),
+    radial-gradient(
+      116% 86% at 50% 48%,
+      transparent 38%,
+      rgba(0, 0, 0, 0.44) 74%,
+      rgba(0, 0, 0, 0.74) 100%
+    );
 }
 
 /* --------------------------------------------------------------------------
@@ -132,6 +251,8 @@
   --playback-reserve: 112px;
 
   position: relative;
+  /* Acima da luz de arena (`.app-shell__table::after`), que é `z-index: 0`. */
+  z-index: 1;
   display: grid;
   height: 100%;
   width: 100%;
@@ -204,10 +325,11 @@
   background: linear-gradient(
     90deg,
     transparent,
-    color-mix(in oklab, var(--color-felt-seam) 70%, transparent) 30%,
-    color-mix(in oklab, var(--color-felt-seam) 70%, transparent) 70%,
+    color-mix(in oklab, var(--color-felt-seam) 92%, white 18%) 26%,
+    color-mix(in oklab, var(--color-felt-seam) 92%, white 18%) 74%,
     transparent
   );
+  box-shadow: 0 0 12px 1px rgba(154, 230, 194, 0.14);
 }
 .board-area--band::before {
   top: 0;
@@ -270,9 +392,15 @@
  * Campo de batalha
  * ----------------------------------------------------------------------- */
 
+/*
+ * Metade do campo: criaturas coladas na linha de combate, terrenos empurrados
+ * para a borda externa, e a folga que sobra fica ENTRE as duas — nunca em volta
+ * das criaturas. Sem criaturas, a fileira tem altura zero e some.
+ */
 .board-field {
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: calc(8px * var(--board-scale, 1));
   height: 100%;
   min-height: 0;
@@ -286,13 +414,14 @@
 
 .board-field__creatures {
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
   flex-wrap: wrap;
   align-content: flex-start;
   align-items: flex-start;
   justify-content: center;
   gap: calc(9px * var(--board-scale, 1));
+  padding-block: calc(6px * var(--board-scale, 1));
 }
 
 /* Criatura combate na costura: os dois lados encostam na faixa central. */
@@ -301,14 +430,53 @@
   align-items: flex-end;
 }
 
-.board-field__empty {
-  border: 1px dashed;
-  border-radius: 999px;
-  padding: calc(4px * var(--board-scale, 1)) calc(16px * var(--board-scale, 1));
-  font-family: var(--font-display);
-  font-size: calc(11px * var(--board-scale, 1));
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
+/* Sem criaturas não há cartaz de vazio: a fileira simplesmente não existe. */
+.board-field__creatures:empty {
+  display: none;
+}
+
+/*
+ * Criatura é o elemento mais nítido da mesa: sombra projetada no feltro, e
+ * o resto do campo (terreno, encantamento) recua meio tom.
+ */
+.board-field__creatures .board-card-slot {
+  filter:
+    drop-shadow(0 calc(9px * var(--board-scale, 1)) calc(13px * var(--board-scale, 1))
+      rgba(0, 0, 0, 0.6))
+    drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+}
+
+.board-creature {
+  transition: transform var(--duration-base) var(--ease-standard);
+}
+
+/* Atacante avança para a linha; bloqueador segura a posição, mas acende. */
+.board-field--bottom .board-creature--attacking {
+  transform: translateY(calc(-5px * var(--board-scale, 1)));
+}
+
+.board-field--top .board-creature--attacking {
+  transform: translateY(calc(5px * var(--board-scale, 1)));
+}
+
+.board-field__creatures .board-creature--attacking {
+  filter:
+    drop-shadow(0 calc(11px * var(--board-scale, 1)) calc(15px * var(--board-scale, 1))
+      rgba(0, 0, 0, 0.66))
+    drop-shadow(0 0 calc(16px * var(--board-scale, 1)) rgba(242, 104, 94, 0.5));
+}
+
+.board-field__creatures .board-creature--blocking {
+  filter:
+    drop-shadow(0 calc(11px * var(--board-scale, 1)) calc(15px * var(--board-scale, 1))
+      rgba(0, 0, 0, 0.66))
+    drop-shadow(0 0 calc(16px * var(--board-scale, 1)) rgba(111, 156, 245, 0.5));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-creature {
+    transition: none;
+  }
 }
 
 .board-field__back {
@@ -316,6 +484,8 @@
   flex: 0 0 auto;
   align-items: flex-end;
   gap: calc(22px * var(--board-scale, 1));
+  /* Retaguarda: presente, mas nunca disputando o olho com o combate. */
+  opacity: 0.84;
 }
 
 .board-field__lands {

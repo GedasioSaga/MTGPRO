@@ -2,7 +2,6 @@ import clsx from 'clsx'
 import { isCreature, isLand } from '../../types/protocol'
 import type { CardView, ObjectId, PlayerId } from '../../types/protocol'
 import { CardSlot } from './CardSlot'
-import { seatAccent, withAlpha } from './boardVisuals'
 
 const LAND_SCALE = 0.78
 const OTHER_SCALE = 0.82
@@ -25,7 +24,6 @@ interface LandGroup {
  * nome — vinte Florestas soltas viram ruído e roubam a fileira das criaturas.
  */
 export function BattlefieldRow({ player, side, permanents, cards }: BattlefieldRowProps) {
-  const accent = seatAccent(player)
   const creatures: CardView[] = []
   const lands: CardView[] = []
   const others: CardView[] = []
@@ -50,27 +48,21 @@ export function BattlefieldRow({ player, side, permanents, cards }: BattlefieldR
       )}
       data-seat={player}
     >
+      {/* Campo sem criaturas não vira cartaz de vazio: a fileira não é
+          renderizada, e a linha de combate recua absorvendo o espaço. */}
       <div className="board-field__creatures">
-        {creatures.length === 0 ? (
-          <span
-            className="board-field__empty"
-            style={{ borderColor: withAlpha(accent, 0.16), color: withAlpha(accent, 0.38) }}
-          >
-            sem criaturas
-          </span>
-        ) : (
-          creatures.map((card) => (
-            <CardSlot
-              key={card.id}
-              id={card.id}
-              card={card}
-              size="small"
-              tapped={card.tapped}
-              title={card.name ?? undefined}
-              overlay={<AttachmentBadge count={card.attachments.length} />}
-            />
-          ))
-        )}
+        {creatures.map((card) => (
+          <CardSlot
+            key={card.id}
+            id={card.id}
+            card={card}
+            size="small"
+            tapped={card.tapped}
+            title={card.name ?? undefined}
+            className={combatClass(card)}
+            overlay={<AttachmentBadge count={card.attachments.length} />}
+          />
+        ))}
       </div>
 
       <div className="board-field__back">
@@ -122,6 +114,13 @@ function LandStack({ group, cards }: { group: LandGroup; cards: Record<ObjectId,
       ) : null}
     </div>
   )
+}
+
+/** Marca a criatura que está em combate: o realce visual sai daqui (App.css). */
+function combatClass(card: CardView): string {
+  if (card.attacking !== null) return 'board-creature board-creature--attacking'
+  if (card.blocking.length > 0) return 'board-creature board-creature--blocking'
+  return 'board-creature'
 }
 
 function AttachmentBadge({ count }: { count: number }) {
