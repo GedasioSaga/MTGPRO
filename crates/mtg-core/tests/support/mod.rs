@@ -17,7 +17,7 @@ use mtg_core::card::{
     Ability, ActivatedAbility, CardDatabase, CardDef, ManaAbility, ManaProduction,
 };
 use mtg_core::engine::{sba, stack, triggers, turn, Agent, Game, GameConfig, PlayerConfig};
-use mtg_core::event::Step;
+use mtg_core::event::{Defender, Step};
 use mtg_core::ids::{CardDefId, ObjectId, PlayerId};
 use mtg_core::ir::{Condition, Cost, Effect, Keyword, TargetSpec, TimingRestriction};
 use mtg_core::mana::{Color, ManaCost, ManaSymbol};
@@ -546,6 +546,17 @@ pub fn tap(game: &mut Game, id: ObjectId) {
     match game.state.object_mut(id) {
         Some(obj) => obj.tapped = true,
         None => panic!("{id} não existe: não dá para virar"),
+    }
+}
+
+/// Marca o permanente como atacante sem passar por `declare_attackers` — o
+/// cenário do item 65 roda na fase principal do jogador ativo, onde a
+/// declaração real não é possível, mas cartas como "destrua a criatura
+/// atacante alvo" precisam de um alvo legal.
+pub fn set_attacking(game: &mut Game, id: ObjectId, defender: PlayerId) {
+    match game.state.object_mut(id) {
+        Some(obj) => obj.combat.attacking = Some(Defender::Player(defender)),
+        None => panic!("{id} não existe: não dá para marcar como atacante"),
     }
 }
 

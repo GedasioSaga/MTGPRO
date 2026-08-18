@@ -85,16 +85,30 @@ veredito binario; um unico maior gap; builder recebe so o gap.
 | Rodada | Nosso era | Veredito | Gap unico nomeado | Estado |
 |---|---|---|---|---|
 | 1 | A | perdemos | paineis de telemetria comem 40% da largura; o jogo virou moldura do proprio HUD | **fechado** |
-| 2 | B | perdemos | nao existe tabuleiro: cartas flutuam sobre vazio verde, sem superficie, sombra ou zonas demarcadas | em ataque (rodada 3) |
+| 2 | B | perdemos | nao existe tabuleiro: cartas flutuam sobre vazio verde, sem superficie, sombra ou zonas demarcadas | **fechado** |
+| 3 | A | perdemos | cartas em jogo sao placas ilegiveis: caixa de regras branca vazia, arte espremida | em ataque (rodada 4) |
 
 O gap MUDOU entre 1 e 2 — o da rodada 1 foi de fato fechado (o critic novo nem
 menciona paineis laterais). Nao e seca. **Seca** seria o mesmo gap apontado duas
 rodadas seguidas sem progresso; ai o protocolo manda parar e reportar o delta.
 
-Rodada 3 em execucao ataca: mesa com superficie e textura, sombra projetada sob
-cada carta, zonas de campo e de terreno demarcadas mesmo vazias, cartas em jogo
-maiores que as da mao, vida/nome nas bordas do tabuleiro em vez de coluna
-lateral, e telemetria de motor recolhida num rodape.
+Tres derrotas seguidas, com o gap MUDANDO a cada rodada (paineis -> mesa
+inexistente -> carta ilegivel). Isso e progresso real: cada gap nomeado foi de
+fato fechado. Nao e seca. Referencia honesta: no experimento original de Shumer
+o artefato NUNCA venceu a bar; o loop parou porque o humano parou. Reportar o
+delta e vitoria do protocolo, nao derrota do trabalho.
+
+**Correcao de metodo aplicada na rodada 3:** as capturas das rodadas 1 e 2 pegavam
+o turno 4, com tabuleiro quase vazio, contra um Arena em combate cheio. Isso mede
+"nossa captura tem menos coisa", nao "nosso desenho e pior". Agora a captura e
+feita no turno ~12, com criaturas em campo, e o critic recebe ordem explicita de
+julgar o desenho e ignorar o estado do jogo.
+
+Rodada 4 em execucao ataca a miniatura de carta em campo: orientada a arte
+(nome no topo, arte na metade superior, P/T em selo escuro), sem caixa de regras
+em branco, com sombra e leve perspectiva. Texto completo so no hover. Carta
+virada continua girando 90 graus — o problema nunca foi a rotacao, foi o conteudo
+ilegivel dentro dela.
 
 ## Camada Lua (adicionada 18/08, a pedido)
 

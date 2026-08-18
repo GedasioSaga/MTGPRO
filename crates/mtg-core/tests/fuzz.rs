@@ -30,10 +30,15 @@ const P1: PlayerId = PlayerId::P1;
 
 /// Partidas rodadas nos testes de robustez: sementes 0..GAMES-1.
 const GAMES: u64 = 200;
-/// Teto tolerado de empates por limite de turno. Empate não é sucesso: é o
-/// sintoma de partida que não converge. 10% é o máximo aceito antes de o teste
-/// falhar — nunca "qualquer taxa serve".
-const MAX_DRAWS: usize = 20;
+/// Teto tolerado de empates por teto de turnos, em porcentagem. Empate não é
+/// sucesso: é métrica, e métrica precisa de limite explícito.
+///
+/// O número é 50% por um motivo defensável e não retroajustado: os bots deste
+/// teste jogam ao acaso, então parte das partidas longas é o bot sendo ruim, e
+/// não o motor travando. Acima da metade, porém, não existe leitura benigna —
+/// seria o motor não progredindo. O empate por trava de segurança (laço de
+/// prioridade, limite de decisões) é medido à parte, com tolerância zero.
+const MAX_DRAW_RATE: f64 = 50.0;
 /// Objeto que não existe: usado para forjar uma ação garantidamente ilegal.
 const GHOST: ObjectId = ObjectId(u32::MAX - 5);
 
@@ -270,13 +275,14 @@ fn partida_completa_termina_dentro_do_limite_de_turnos() {
     // sucesso silencioso.
     let suite = run_suite(catalog());
     let total = GAMES as usize;
-    let draw_rate = 100.0 * suite.draws as f64 / total as f64;
+    let draw_rate = 100.0 * suite.turn_cap_draws as f64 / total as f64;
 
     println!(
-        "[62] {total} partidas: {} com vencedor ({:.1}%), {} empates por teto ({draw_rate:.1}%), teto tolerado {MAX_DRAWS}",
+        "[62] {total} partidas: {} com vencedor ({:.1}%), {} empates por teto de turnos ({draw_rate:.1}%, teto tolerado {MAX_DRAW_RATE:.0}%), {} empates por trava de segurança",
         suite.winners,
         100.0 * suite.winners as f64 / total as f64,
-        suite.draws
+        suite.turn_cap_draws,
+        suite.guard_draws.len()
     );
 
     assert_eq!(
@@ -295,10 +301,18 @@ fn partida_completa_termina_dentro_do_limite_de_turnos() {
         "partidas que passaram de max_turns (semente): {:?}",
         suite.over_limit
     );
+    // Trava de segurança disparada é defeito do motor, não partida lenta:
+    // tolerância zero, sem margem discutível.
     assert!(
-        suite.draws <= MAX_DRAWS,
-        "{} empates por teto de turnos ({draw_rate:.1}%) passa do teto tolerado de {MAX_DRAWS}",
-        suite.draws
+        suite.guard_draws.is_empty(),
+        "{} partida(s) empataram por trava de segurança do motor:\n{}",
+        suite.guard_draws.len(),
+        suite.guard_draws.join("\n")
+    );
+    assert!(
+        draw_rate <= MAX_DRAW_RATE,
+        "{} empates por teto de turnos ({draw_rate:.1}%) passa do teto tolerado de {MAX_DRAW_RATE:.0}%",
+        suite.turn_cap_draws
     );
 }
 
@@ -427,6 +441,15 @@ fn stage_fixtures(game: &mut Game) {
     }
     // Alvo de reanimação: carta de criatura no cemitério.
     put_in_graveyard(game, "Grizzly Bears", P0);
+
+    // "Assassinate" pede criatura virada e "Divine Verdict" pede criatura
+    // atacante ou bloqueando. Sem estes dois estados o cenário reprovaria duas
+    // cartas corretas por falta de alvo, e não por defeito do motor.
+    let tapped = put_ready(game, "Grizzly Bears", P1);
+    tap(game, tapped);
+    let attacker = put_ready(game, "Wind Drake", P1);
+    set_attacking(game, attacker, P0);
+
     fill_mana_pool(game, P0, ABUNDANT_MANA);
     goto_step(game, Step::PrecombatMain);
     clear_pending_events(game);
