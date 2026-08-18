@@ -241,7 +241,7 @@ pub fn threat_value(s: &Snapshot, c: &CreatureInfo) -> i64 {
 
 /// Amplitude do ajuste por dono da criatura. Pequena de propósito: quem decide
 /// se a remoção vale a pena continua sendo o corpo, não a política.
-const CONTROLLER_THREAT_SPREAD: i64 = 220;
+const CONTROLLER_THREAT_SPREAD: i64 = 120;
 
 /// Ajuste normalizado pelo perigo de quem controla a criatura, na faixa
 /// `[0, CONTROLLER_THREAT_SPREAD]`. Zero em duelo — não há quem comparar.

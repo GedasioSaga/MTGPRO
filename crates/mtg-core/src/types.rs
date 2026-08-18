@@ -104,3 +104,57 @@ pub enum Rarity {
     Mythic,
     Special,
 }
+
+impl Rarity {
+    /// Nome usado pelo Scryfall e gravado no banco. Ida e volta com
+    /// `from_slug`; há teste garantindo.
+    pub fn slug(self) -> &'static str {
+        match self {
+            Rarity::Common => "common",
+            Rarity::Uncommon => "uncommon",
+            Rarity::Rare => "rare",
+            Rarity::Mythic => "mythic",
+            Rarity::Special => "special",
+        }
+    }
+
+    /// Converte o texto do Scryfall. `bonus` é a raridade das folhas de bônus
+    /// e não tem variante própria: cai em `Special`, que é o que ela é na
+    /// prática para qualquer regra de construção.
+    pub fn from_slug(s: &str) -> Option<Rarity> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "common" => Some(Rarity::Common),
+            "uncommon" => Some(Rarity::Uncommon),
+            "rare" => Some(Rarity::Rare),
+            "mythic" => Some(Rarity::Mythic),
+            "special" | "bonus" => Some(Rarity::Special),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod rarity_tests {
+    use super::Rarity;
+
+    const ALL: [Rarity; 5] = [
+        Rarity::Common,
+        Rarity::Uncommon,
+        Rarity::Rare,
+        Rarity::Mythic,
+        Rarity::Special,
+    ];
+
+    #[test]
+    fn raridade_faz_ida_e_volta_pelo_slug() {
+        for r in ALL {
+            let Some(voltou) = Rarity::from_slug(r.slug()) else {
+                panic!("slug '{}' de {r:?} nao volta a ser raridade", r.slug());
+            };
+            assert_eq!(voltou, r);
+        }
+        assert_eq!(Rarity::from_slug("MYTHIC"), Some(Rarity::Mythic));
+        assert_eq!(Rarity::from_slug("bonus"), Some(Rarity::Special));
+        assert_eq!(Rarity::from_slug("lendaria"), None);
+    }
+}

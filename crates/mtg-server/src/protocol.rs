@@ -66,7 +66,10 @@ impl Perspective {
 pub enum ServerFrame {
     Init {
         view: GameView,
-        players: [String; 2],
+        /// Nomes dos jogadores, na ordem dos assentos. Era `[String; 2]`
+        /// enquanto só havia duelo; virou `Vec` para a mesa de três e quatro.
+        /// O JSON é o mesmo (lista de strings), então o cliente não muda.
+        players: Vec<String>,
         seed: u64,
     },
     Events {

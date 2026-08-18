@@ -1102,3 +1102,180 @@ pub fn jitter(seed: u64, index: usize) -> i64 {
     x ^= x >> 31;
     (x % 7) as i64 - 3
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::table::OpponentInfo;
+
+    const ME: PlayerId = PlayerId(0);
+    const B: PlayerId = PlayerId(1);
+    const C: PlayerId = PlayerId(2);
+
+    fn duel() -> Snapshot {
+        Snapshot::empty(ME, B)
+    }
+
+    fn opponent(id: PlayerId, life: i32) -> OpponentInfo {
+        let mut o = OpponentInfo::new(id, life, 0);
+        o.library = 40;
+        o
+    }
+
+    fn creature(id: u32, controller: PlayerId, power: i32, toughness: i32) -> CreatureInfo {
+        CreatureInfo::vanilla(ObjectId(id), controller, power, toughness)
+    }
+
+    #[test]
+    fn duelo_espelhado_vale_exatamente_zero() {
+        // Regressão dura: ligar multijogador não pode ter mexido na nota de uma
+        // partida de dois. Posição espelhada tem de dar zero cravado — qualquer
+        // termo novo que vaze para o duelo aparece aqui.
+        let s = duel();
+        assert_eq!(evaluate(&s), 0);
+    }
+
+    #[test]
+    fn a_nota_pesa_o_lider_da_mesa_e_nao_so_o_vizinho() {
+        // Estar empatado com um oponente não quer dizer nada se o terceiro
+        // jogador está com o dobro da vida: era exatamente esse o buraco da
+        // avaliação de dois lados.
+        let empatado = duel();
+        assert_eq!(evaluate(&empatado), 0);
+
+        let mut mesa = duel();
+        mesa.others.push(opponent(C, 40));
+        let nota = evaluate(&mesa);
+        assert!(
+            nota < 0,
+            "com um líder de 40 de vida na mesa a nota seguiu não-negativa: {nota}"
+        );
+    }
+
+    #[test]
+    fn matar_um_de_dois_oponentes_nao_e_vitoria() {
+        // CR 104.2a — vence quem sobra. Tratar a primeira eliminação como fim
+        // de jogo faria o bot parar de jogar no meio da partida.
+        let mut mesa = duel();
+        mesa.others.push(opponent(C, 20));
+        let com_os_dois = evaluate(&mesa);
+
+        let mut um_morto = mesa.clone();
+        um_morto.others.clear();
+        um_morto.others.push(opponent(C, 0));
+        let nota = evaluate(&um_morto);
+
+        assert_ne!(nota, TERMINAL, "eliminar um de dois foi lido como vitória");
+        assert!(
+            nota > com_os_dois,
+            "eliminar um oponente não melhorou a posição: {nota} <= {com_os_dois}"
+        );
+    }
+
+    #[test]
+    fn sem_oponente_vivo_a_partida_esta_ganha() {
+        let mut mesa = duel();
+        mesa.opp_life = 0;
+        mesa.others.push(opponent(C, 0));
+        assert_eq!(evaluate(&mesa), TERMINAL);
+    }
+
+    #[test]
+    fn vinte_e_um_de_dano_de_comandante_e_derrota_com_a_vida_cheia() {
+        // CR 903.10 — segundo relógio de vida. Sem este termo o bot enxergaria
+        // 40 de vida e concluiria que está confortável enquanto morre.
+        let mut mesa = duel();
+        mesa.my_life = 40;
+        mesa.opp_commander_damage_to_me = COMMANDER_LETHAL - 1;
+        assert!(
+            evaluate(&mesa) > -TERMINAL,
+            "20 de dano de comandante já foi lido como derrota"
+        );
+        mesa.opp_commander_damage_to_me = COMMANDER_LETHAL;
+        assert_eq!(evaluate(&mesa), -TERMINAL);
+    }
+
+    #[test]
+    fn dano_de_comandante_recebido_piora_a_nota_antes_de_fechar() {
+        let limpo = duel();
+        let mut apanhando = duel();
+        apanhando.opp_commander_damage_to_me = 10;
+        assert!(
+            evaluate(&apanhando) < evaluate(&limpo),
+            "relógio de comandante aberto não pesou na avaliação"
+        );
+    }
+
+    #[test]
+    fn dano_recebido_soma_a_mesa_e_nao_so_o_foco() {
+        // Cada oponente ataca no turno dele, então somar tudo superestima e
+        // olhar só um subestima: pior turno mais metade do resto.
+        let mut mesa = duel();
+        mesa.opp_creatures.push(creature(1, B, 5, 5));
+        assert_eq!(incoming_damage(&mesa), 5, "duelo mudou de valor");
+
+        let mut terceiro = opponent(C, 20);
+        terceiro.creatures.push(creature(2, C, 4, 4));
+        mesa.others.push(terceiro);
+        assert_eq!(
+            incoming_damage(&mesa),
+            7,
+            "a ameaça do terceiro jogador não entrou na conta"
+        );
+    }
+
+    #[test]
+    fn remocao_enxerga_criatura_de_oponente_fora_do_foco() {
+        // `find` cega para os não-foco fazia toda remoção mirada no terceiro
+        // jogador parecer alvo inexistente.
+        let mut mesa = duel();
+        let mut terceiro = opponent(C, 20);
+        terceiro.creatures.push(creature(9, C, 6, 6));
+        mesa.others.push(terceiro);
+
+        let Some(achada) = mesa.find(ObjectId(9)) else {
+            panic!("criatura do terceiro jogador não foi encontrada");
+        };
+        assert_eq!(achada.power, 6);
+        assert_eq!(mesa.controller_of(ObjectId(9)), Some(C));
+        assert_eq!(mesa.side_of(ObjectId(9)), Some(Side::Opponent));
+
+        mesa.remove_creature(ObjectId(9));
+        assert!(mesa.find(ObjectId(9)).is_none(), "remoção não tirou do campo");
+    }
+
+    #[test]
+    fn efeito_mirado_em_terceiro_jogador_escreve_no_jogador_certo() {
+        let mut mesa = duel();
+        mesa.others.push(opponent(C, 20));
+        mesa.add_life_of(C, -7);
+        assert_eq!(mesa.life_of(C), 13);
+        assert_eq!(mesa.life_of(B), 20, "o dano vazou para o oponente em foco");
+        assert_eq!(mesa.life_of(ME), 20);
+    }
+
+    #[test]
+    fn trocar_o_foco_preserva_a_mesa_e_a_ordem() {
+        let mut mesa = duel();
+        mesa.opp_creatures.push(creature(1, B, 2, 2));
+        let mut terceiro = opponent(C, 11);
+        terceiro.creatures.push(creature(2, C, 3, 3));
+        mesa.others.push(terceiro);
+
+        let trocado = mesa.focused_on(C);
+        assert_eq!(trocado.opponent, C);
+        assert_eq!(trocado.opp_life, 11);
+        assert_eq!(trocado.opp_creatures.len(), 1);
+        assert_eq!(trocado.others.len(), 1);
+        let Some(voltou) = trocado.others.first() else {
+            panic!("o foco antigo sumiu da mesa ao trocar");
+        };
+        assert_eq!(voltou.id, B);
+        // A mesa inteira continua visível dos dois lados da troca.
+        assert_eq!(trocado.opponent_ids(), vec![C, B]);
+        assert_eq!(mesa.opponent_ids(), vec![B, C]);
+        // Trocar duas vezes volta ao mesmo retrato: sem isso, a mesma posição
+        // daria notas diferentes conforme a ordem das perguntas.
+        assert_eq!(trocado.focused_on(B), mesa);
+    }
+}

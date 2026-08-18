@@ -17,5 +17,7 @@ data/
 
 # Bulk do Scryfall: 23 MB de dado de terceiro que muda todo dia.
 .cache/scryfall/
-# Catalogo importado do Scryfall (gerado por `mtg-import sync`).
+# Catalogo do jogo: `data/catalog.db` (padrao) ja cai em `data/` e em `*.db`.
+# `catalog.sqlite` era o banco proprio do importador, hoje sem uso — a entrada
+# fica so para nao commitar copia velha que ainda exista na maquina de alguem.
 catalog.sqlite

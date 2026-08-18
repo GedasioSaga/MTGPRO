@@ -34,7 +34,9 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    tracing::info!(cards = db.cards.len(), decks = decks.len(), "catálogo carregado");
+    // Só o catálogo curado em Lua. O total do banco (curadas + importadas do
+    // Scryfall) é logado por `catalog::open_store`, na montagem do router.
+    tracing::info!(cards = db.cards.len(), decks = decks.len(), "catálogo curado (Lua) carregado");
     let state = Arc::new(AppState { db: Arc::new(db), decks });
 
     let port = std::env::var("MTG_PORT")

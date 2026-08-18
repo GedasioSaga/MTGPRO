@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 
 use super::query::EvalCtx;
-use super::{layers, query, turn, Characteristics, Game};
+use super::{commander, layers, query, turn, Characteristics, Game};
 use crate::action::{Action, Request};
 use crate::event::LossReason;
 use crate::ids::{ObjectId, PlayerId};
@@ -112,6 +112,13 @@ pub fn check_until_stable(game: &mut Game) -> bool {
 fn collect_actions(game: &Game) -> Pending {
     let mut out = Pending::default();
 
+    // CR 704.5v — quem já levou 21 de um mesmo comandante. `commander` é dono
+    // da contagem e só sabe ler; a derrota é aplicada aqui, junto com vida e
+    // veneno, porque o CR 704.3 exige que todas as SBAs saiam como um evento
+    // só. A lista sai em ordem de jogador, então não depende de iteração de
+    // mapa e o resultado é o mesmo em toda execução.
+    let by_commander = commander::lethal_commander_damage(&game.state);
+
     for player in &game.state.players {
         if player.has_lost {
             continue;
@@ -124,6 +131,11 @@ fn collect_actions(game: &Game) -> Pending {
         // CR 704.5c
         if player.poison >= POISON_TO_LOSE {
             out.losses.push((player.id, LossReason::PoisonCounters));
+            continue;
+        }
+        // CR 704.5v
+        if by_commander.contains(&player.id) {
+            out.losses.push((player.id, LossReason::CommanderDamage));
             continue;
         }
         // CR 704.5b — a tentativa de compra em biblioteca vazia é marcada por

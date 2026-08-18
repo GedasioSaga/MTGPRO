@@ -664,6 +664,11 @@ export function proceduralArt(seedText: string, paint: FramePaint): ProceduralAr
 export function scryfallArtUrl(card: Pick<CardView, 'artKey' | 'name'>): string | null {
   const key = card.artKey ?? card.name
   if (!key) return null
+  // O catálogo do Scryfall (`GET /api/cards`) já entrega a URL do CDN em
+  // `image_art_crop`. Passar direto poupa uma ida a `cards/named` por carta —
+  // numa grade de 60 resultados isso eram 60 chamadas de API com limite de
+  // taxa, em vez de 60 imagens estáticas.
+  if (key.startsWith('https://')) return key
   return `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(key)}&format=image&version=art_crop`
 }
 

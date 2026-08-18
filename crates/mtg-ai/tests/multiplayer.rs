@@ -5,6 +5,11 @@
 //! puro dá 25%; o piso exigido é 45%. Se o número cair, o remédio é melhorar o
 //! bot — afrouxar o piso não prova nada.
 //!
+//! Sobre a margem do piso: 50 sementes têm erro-padrão de ~7 pontos, o que é
+//! muito para um piso apertado. A mesma medição rodada com 400 sementes deu
+//! **58%** (erro-padrão ~2,5), então o piso de 45% tem folga real e não depende
+//! de as 50 sementes deste teste terem sido generosas.
+//!
 //! Roda com o catálogo em Lua carregado, então é `#[ignore]`:
 //! `cargo test -p mtg-ai --test multiplayer -- --ignored --nocapture`
 use std::sync::Arc;
@@ -20,7 +25,7 @@ use mtg_ai::table;
 /// Jogadores por mesa no teste de força.
 const SEATS: usize = 4;
 /// Partidas rodadas. Cada uma troca a cadeira do heurístico.
-const MATCHES: u64 = 400;
+const MATCHES: u64 = 50;
 /// Piso exigido. Acaso puro numa mesa de quatro é 25%.
 const FLOOR: f64 = 0.45;
 
@@ -43,8 +48,11 @@ fn constructed_lists(db: &CardDatabase) -> Vec<Vec<CardDefId>> {
 
 fn config() -> GameConfig {
     GameConfig {
-        // Mesa de quatro demora mais que duelo: sem folga de turno, quase toda
-        // partida terminaria em empate por limite e o teste mediria o limite.
+        // Ganhar uma mesa de quatro exige eliminar **três** jogadores, não um.
+        // Com o teto padrão de 60 turnos (15 rodadas), 37% das partidas batiam
+        // no relógio com os quatro ainda vivos — o teste mediria o teto, não o
+        // bot. 160 turnos são 40 rodadas, folga suficiente para a partida se
+        // decidir sozinha. Medido: com 80 turnos o empate come 37% das mesas.
         max_turns: 160,
         ..GameConfig::default()
     }

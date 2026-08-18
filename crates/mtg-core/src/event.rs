@@ -87,6 +87,8 @@ pub enum LossReason {
     ZeroLife,
     DrewFromEmptyLibrary,
     PoisonCounters,
+    /// CR 704.5v — 21 ou mais de dano de combate de um mesmo comandante.
+    CommanderDamage,
     Effect,
     Concede,
 }

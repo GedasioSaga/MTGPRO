@@ -9,6 +9,7 @@ mtg-cards.workspace = true
 mtg-ai.workspace = true
 mtg-db.workspace = true
 serde.workspace = true
+thiserror.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 axum.workspace = true

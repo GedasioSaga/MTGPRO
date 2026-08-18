@@ -1329,6 +1329,7 @@ fn loss_label(reason: LossReason) -> &'static str {
         LossReason::ZeroLife => "vida chegou a zero",
         LossReason::DrewFromEmptyLibrary => "comprou de biblioteca vazia",
         LossReason::PoisonCounters => "dez marcadores de veneno",
+        LossReason::CommanderDamage => "21 de dano de um mesmo comandante",
         LossReason::Effect => "efeito de carta",
         LossReason::Concede => "desistiu",
     }

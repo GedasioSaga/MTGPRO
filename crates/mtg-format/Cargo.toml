@@ -7,3 +7,7 @@ edition.workspace = true
 mtg-core.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+# Só `scryfall_legality` usa: uma `SELECT` de três colunas sobre o catálogo já
+# importado. É a mesma versão do workspace que `mtg-db` já linka, então não
+# entra biblioteca nativa nova no build.
+rusqlite.workspace = true

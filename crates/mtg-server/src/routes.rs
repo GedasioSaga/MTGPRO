@@ -254,7 +254,7 @@ fn build_query(params: &CardsParams) -> Result<CardQuery, ApiFailure> {
 fn parse_colors(raw: Option<&str>) -> Result<Option<Vec<Color>>, ApiFailure> {
     let Some(raw) = raw.map(str::trim).filter(|s| !s.is_empty()) else { return Ok(None) };
     let mut out: Vec<Color> = Vec::new();
-    let mut push = |c: Color, out: &mut Vec<Color>| {
+    let push = |c: Color, out: &mut Vec<Color>| {
         if !out.contains(&c) {
             out.push(c);
         }

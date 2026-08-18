@@ -9,7 +9,8 @@
 //! Camadas:
 //!   `format`   — o que cada formato exige
 //!   `identity` — identidade de cor (CR 903.4)
-//!   `legality` — o contrato de consulta e dois provedores
+//!   `legality` — o contrato de consulta e os provedores em memória/catálogo
+//!   `scryfall_legality` — o provedor real, alimentado pelo banco do Scryfall
 //!   `deck`     — a lista declarada pelo jogador
 //!   `validate` — a checagem, que devolve **todas** as violações de uma vez
 #![forbid(unsafe_code)]
@@ -18,10 +19,12 @@ pub mod deck;
 pub mod format;
 pub mod identity;
 pub mod legality;
+pub mod scryfall_legality;
 pub mod validate;
 
 pub use deck::DeckList;
 pub use format::Format;
 pub use identity::color_identity;
 pub use legality::{CardLegality, CatalogLegality, InMemoryLegality, LegalitySource};
+pub use scryfall_legality::{LegalityDbError, ScryfallLegality};
 pub use validate::{validate, validate_with, Violation};

@@ -21,9 +21,9 @@ card {
 | Métrica | Valor |
 |---|---|
 | Interações de regra cobertas | **65/65** (`docs/RULES_TESTS.md`) |
-| Testes | **175 passando**, 0 falhando |
+| Testes | **348 passando**, 0 falhando |
 | Fuzzing | 200 sementes, **0 pânicos**, 187 com vencedor |
-| Catálogo | **172 cartas** em Lua, 4 decks de 60 |
+| Catálogo | **174 cartas** em Lua, 4 decks de 60 · **32.727** no SQLite (Scryfall) |
 | Cartas lançáveis | 100% do catálogo |
 | IA heurística vs aleatória | **46/50 (92%)**, 0 derrotas |
 | Determinismo | mesma semente, partida idêntica |
@@ -89,6 +89,7 @@ Decisões que valem a explicação:
 | `crates/mtg-db` | persistência SQLite do catálogo |
 | `crates/mtg-ai` | bots (`random`, `heuristic`, `greedy`) |
 | `crates/mtg-server` | HTTP + WebSocket, roda a simulação e transmite |
+| `crates/mtg-import` | importa o bulk do Scryfall para o mesmo SQLite do servidor |
 | `cards/` | o catálogo, um arquivo por cor |
 | `web` | cliente React 19 + Vite + Tailwind 4 + Motion |
 | `docs/ENGINE_CONTRACT.md` | assinaturas obrigatórias e protocolo de rede |
@@ -103,10 +104,57 @@ cd web && npm install && npm run dev
 
 O cliente funciona sem o servidor: cai para uma partida de demonstração embutida.
 
+## Catálogo amplo (Scryfall)
+
+Servidor e importador usam **um arquivo SQLite só**, resolvido por
+`mtg_db::default_db_path()`: `$MTG_DB_PATH` se a variável existir, senão
+`data/catalog.db`. Não há banco separado do importador — quando havia, a
+importação gravava 32 mil cartas num arquivo que o servidor nunca abria e
+`/api/stats` seguia respondendo 174.
+
+```bash
+cargo run --release -p mtg-import -- sync              # baixa o bulk e grava
+cargo run --release -p mtg-import -- sync --offline    # usa o bulk já em cache
+MTG_DB_PATH=/outro/lugar.db cargo run -p mtg-server    # os dois leem a mesma variável
+```
+
+Na tabela `cards` convivem duas fontes: as cartas curadas em Lua (sem
+`oracle_id`, IR escrita à mão, sempre `playable`) e as importadas do Scryfall
+(com `oracle_id`). **Em colisão de nome a curada ganha**, porque a IR dela é
+testada; a importada só é `playable` quando o texto inteiro virou IR — carta
+que se comporta diferente do texto quebra a partida em silêncio.
+
+Números da carga de 2026-08-18 (bulk `oracle_cards`, 38.626 linhas): 5.902
+descartadas na entrada (ficha, emblema, digital-only, nome repetido no bulk),
+32.724 gravadas, 3.831 jogáveis, em 3,6 s, num arquivo de 80,9 MB. Com as
+curadas semeadas por cima: `/api/stats` responde 32.727 no total e 3.883
+jogáveis.
+
+O banco **não vai para o git** (`data/`, `*.db` e `*.sqlite` estão no
+`.gitignore`), nem o bulk baixado em `.cache/scryfall/`. Máquina nova roda o
+`sync` uma vez; sem ele o servidor sobe com as 174 curadas e mais nada.
+
+### Navegando pelo catálogo
+
+O servidor expõe a busca paginada, e a tela **"Explorar cartas"** da abertura do
+cliente a consome — campo de texto, filtro por cor e por jogabilidade, grade com
+arte e paginação. `GET /api/catalog` continua existindo e é outra coisa: só as
+cartas curadas, como array inteiro, para o seletor de tapete.
+
+```bash
+curl -s "http://127.0.0.1:8787/api/stats"
+curl -s "http://127.0.0.1:8787/api/cards?q=dragon&limit=5"
+curl -s "http://127.0.0.1:8787/api/cards?playable=true&colors=R&limit=5"
+curl -s "http://127.0.0.1:8787/api/cards/<oracle_id>"      # a carta com o CardDef inteiro
+```
+
+`limit` é limitado a 200 no servidor e parâmetro malformado responde 400 — o
+catálogo inteiro nunca sai numa resposta só.
+
 ## Verificação
 
 ```bash
-cargo test --workspace                    # 175 testes
+cargo test --workspace                    # 348 testes
 cargo test --workspace -- --ignored       # fuzzing de 200 sementes, catálogo inteiro
 cargo clippy --workspace --all-targets
 

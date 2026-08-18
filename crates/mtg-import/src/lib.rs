@@ -6,7 +6,9 @@
 //!    `updated_at`, leitura em streaming do JSONL.
 //! 2. `parse` + `compile` — texto para IR: custo de mana, linha de tipo e
 //!    texto de oráculo viram `CardDef`.
-//! 3. `store` — grava no SQLite.
+//! 3. `store` — grava no SQLite, na tabela `cards` de `mtg-db`, que é a
+//!    mesma que o servidor lê. Não há tabela nem arquivo próprio do
+//!    importador: uma fonte de verdade, não duas.
 //!
 //! O ponto que governa o desenho todo: o Scryfall entrega **texto**, o motor
 //! roda sobre **IR**. Importar não é traduzir tudo — é traduzir o que dá para
@@ -43,8 +45,8 @@ pub enum ImportError {
     Api(String),
     #[error("bulk '{0}' não existe no catálogo do Scryfall")]
     UnknownBulk(String),
-    #[error("erro de SQLite: {0}")]
-    Sqlite(#[from] rusqlite::Error),
+    #[error("erro no banco do catálogo: {0}")]
+    Db(#[from] mtg_db::DbError),
     #[error("erro de serialização JSON: {0}")]
     Serde(#[from] serde_json::Error),
 }

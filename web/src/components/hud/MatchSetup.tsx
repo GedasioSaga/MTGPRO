@@ -7,6 +7,7 @@ import type { DeckInfo } from '../../net/api'
 import { MOCK_CARDS, toCardDef } from '../../mock/mockCards'
 import { useMatchStore } from '../../state/matchStore'
 import type { CardDef } from '../../types/protocol'
+import { CardBrowser } from './CardBrowser'
 import { Divider } from '../ui/Divider'
 import { IconButton } from '../ui/IconButton'
 import { PlaymatPicker } from './PlaymatPicker'
@@ -68,6 +69,10 @@ export function MatchSetup() {
   const [botB, setBotB] = useState<BotKind>('heuristic')
   const [seedText, setSeedText] = useState(() => String(randomSeed()))
   const [speed, setSpeed] = useState(1)
+  // Navegacao do catalogo amplo (~32 mil cartas do Scryfall). Sobrepoe a tela
+  // de abertura em vez de substitui-la: a escolha de baralho continua intacta
+  // atras dela quando o usuario volta.
+  const [browsing, setBrowsing] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -124,6 +129,7 @@ export function MatchSetup() {
       : { duration: 0.42, delay, ease: [0.16, 1, 0.3, 1] as const }
 
   return (
+    <>
     <AnimatePresence>
       {connection === 'idle' ? (
         <motion.div
@@ -178,9 +184,20 @@ export function MatchSetup() {
               <SeedField value={seedText} onChange={setSeedText} onRoll={() => setSeedText(String(randomSeed()))} />
               <SpeedField value={speed} onChange={setSpeed} />
               <button
+                type="button"
+                onClick={() => setBrowsing(true)}
+                className={clsx(
+                  'metal-plate caps ml-auto cursor-pointer rounded-lg px-6 py-3.5',
+                  'text-[13px] tracking-wide-caps text-ink',
+                  'transition-[filter] duration-[var(--duration-micro)] ease-standard hover:brightness-125',
+                )}
+              >
+                Explorar cartas
+              </button>
+              <button
                 type="submit"
                 className={clsx(
-                  'metal-plate sheen caps ml-auto min-w-[236px] cursor-pointer rounded-lg px-8 py-3.5',
+                  'metal-plate sheen caps min-w-[236px] cursor-pointer rounded-lg px-8 py-3.5',
                   'text-[15px] tracking-wide-caps text-accent-bright',
                   '[box-shadow:var(--shadow-e3),inset_0_1px_0_var(--color-edge-gloss),0_0_28px_-10px_var(--accent)]',
                   'transition-[filter,transform] duration-[var(--duration-micro)] ease-standard',
@@ -194,6 +211,8 @@ export function MatchSetup() {
         </motion.div>
       ) : null}
     </AnimatePresence>
+    <CardBrowser open={browsing} onClose={() => setBrowsing(false)} />
+    </>
   )
 }
 

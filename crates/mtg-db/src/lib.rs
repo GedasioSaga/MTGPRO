@@ -6,10 +6,26 @@
 //! assim um campo novo em `CardDef` nunca é perdido por esquecimento de
 //! coluna. O schema evita sintaxe exclusiva do SQLite (além de
 //! AUTOINCREMENT) para poder migrar para PostgreSQL depois.
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use mtg_core::{CardDatabase, CardDef, CardType, Color, ColorSet, ManaSymbol, Rarity};
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension, ToSql};
+
+/// Variável que aponta o arquivo do catálogo. `:memory:` roda sem tocar disco.
+pub const DB_PATH_ENV: &str = "MTG_DB_PATH";
+/// Caminho usado quando `MTG_DB_PATH` não está definida.
+pub const DEFAULT_DB_PATH: &str = "data/catalog.db";
+
+/// Onde vive o catálogo — **a mesma resposta para o importador e para o
+/// servidor**.
+///
+/// Existia um caminho por binário (`./catalog.sqlite` no importador,
+/// `data/catalog.db` no servidor), e o resultado era importar 32 mil cartas
+/// para um arquivo que ninguém lia. A resolução mora aqui, num crate do qual
+/// os dois dependem, justamente para não haver duas respostas.
+pub fn default_db_path() -> PathBuf {
+    std::env::var(DB_PATH_ENV).map(PathBuf::from).unwrap_or_else(|_| PathBuf::from(DEFAULT_DB_PATH))
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum DbError {
@@ -61,6 +77,15 @@ pub struct ImportedCard {
     pub image_normal: Option<String>,
     /// JSON cru do mapa de legalidades do Scryfall.
     pub legalities: Option<String>,
+    /// Identidade de cor em letras WUBRG. Não sai de `def`: identidade inclui
+    /// cor citada no texto, que o custo de mana não revela.
+    pub color_identity: Option<String>,
+    /// Palavras-chave do Scryfall, separadas por vírgula. Vale para a carta
+    /// não jogável também — é o que dá para filtrar sem IR compilada.
+    pub keywords: Option<String>,
+    /// Layout impresso (`normal`, `split`, `transform`, ...). É o que explica
+    /// por que boa parte do catálogo não é jogável.
+    pub layout: Option<String>,
 }
 
 /// Linha de catálogo para listagem — o que a UI precisa sem pagar o parse do
@@ -91,6 +116,9 @@ pub struct CardDetail {
     #[serde(flatten)]
     pub summary: CardSummary,
     pub legalities: Option<String>,
+    pub color_identity: Option<String>,
+    pub keywords: Option<String>,
+    pub layout: Option<String>,
     pub imported_at: Option<String>,
     pub definition: CardDef,
 }
@@ -186,6 +214,14 @@ impl CardStore {
                 quantity  INTEGER NOT NULL,
                 PRIMARY KEY (deck_name, card_name)
             );
+
+            -- Procedência da carga: qual bulk do Scryfall, de que data. Fica no
+            -- mesmo arquivo do catálogo porque descreve exatamente as linhas
+            -- deste arquivo; em banco separado envelheceria sem ninguém notar.
+            CREATE TABLE IF NOT EXISTS catalog_meta (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             "#,
         )?;
         self.add_import_columns()?;
@@ -214,7 +250,7 @@ impl CardStore {
     /// `migrate`, que trata NULLs como distintos — exatamente o que se quer,
     /// já que carta curada em Lua não tem `oracle_id`.
     fn add_import_columns(&self) -> Result<(), DbError> {
-        const COLUMNS: [(&str, &str); 8] = [
+        const COLUMNS: [(&str, &str); 11] = [
             ("oracle_id", "TEXT"),
             ("playable", "BOOLEAN NOT NULL DEFAULT 1"),
             ("unsupported_reason", "TEXT"),
@@ -223,6 +259,12 @@ impl CardStore {
             ("image_normal", "TEXT"),
             ("legalities", "TEXT"),
             ("imported_at", "TEXT"),
+            // As três abaixo vieram da tabela `scryfall_cards`, que o
+            // importador mantinha em paralelo: são o único dado do Scryfall
+            // que não se reconstrói a partir de `definition`.
+            ("color_identity", "TEXT"),
+            ("keywords", "TEXT"),
+            ("layout", "TEXT"),
         ];
 
         let existing = self.column_names("cards")?;
@@ -249,6 +291,18 @@ impl CardStore {
     }
 
     /// Insere ou atualiza cada carta do banco em memória. Idempotente por nome.
+    ///
+    /// **Colisão de nome: a carta curada em Lua ganha, sempre.** O servidor
+    /// chama isto em toda subida, depois de o importador já ter gravado o
+    /// Scryfall; as duas fontes convivem porque a chave é diferente (a curada
+    /// não tem `oracle_id`, a importada tem), e só o nome pode colidir. Quem
+    /// ganha é a curada porque ela tem IR escrita à mão e testada, enquanto a
+    /// importada tem IR derivada de texto — e uma carta que se comporta
+    /// diferente do que o teste espera quebra a partida em silêncio.
+    ///
+    /// Não apaga nada: `INSERT ... ON CONFLICT(name) DO UPDATE` toca só a
+    /// linha homônima. As ~32 mil cartas importadas seguem no banco depois de
+    /// semear — é o teste `seed_after_import_keeps_both_sources` que garante.
     pub fn seed_from(&self, db: &CardDatabase) -> Result<usize, DbError> {
         let tx = self.conn.unchecked_transaction()?;
         let mut count = 0usize;
@@ -328,7 +382,8 @@ impl CardStore {
                     rarity = ?10, set_code = ?11, art_key = ?12, oracle_text = ?13,
                     definition = ?14, playable = ?15, unsupported_reason = ?16,
                     unsupported_pattern = ?17, image_art_crop = ?18, image_normal = ?19,
-                    legalities = ?20, imported_at = ?21
+                    legalities = ?20, imported_at = ?21, color_identity = ?22,
+                    keywords = ?23, layout = ?24
                 WHERE oracle_id = ?1
                 "#,
             )?;
@@ -339,10 +394,10 @@ impl CardStore {
                     types_mask, type_line_text, power, toughness, rarity, set_code,
                     art_key, oracle_text, definition, playable, unsupported_reason,
                     unsupported_pattern, image_art_crop, image_normal, legalities,
-                    imported_at
+                    imported_at, color_identity, keywords, layout
                 ) VALUES (
-                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
-                    ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21
+                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                    ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24
                 )
                 "#,
             )?;
@@ -373,6 +428,9 @@ impl CardStore {
                     card.image_normal,
                     card.legalities,
                     now,
+                    card.color_identity,
+                    card.keywords,
+                    card.layout,
                 ];
                 // Atualiza primeiro; só insere se o `oracle_id` ainda não
                 // existe. Fazer o contrário exigiria upsert com dois alvos de
@@ -493,29 +551,73 @@ impl CardStore {
     /// Uma carta pelo `oracle_id` do Scryfall, com resumo e `CardDef`.
     pub fn find_by_oracle_id(&self, oracle_id: &str) -> Result<Option<CardDetail>, DbError> {
         let sql = format!(
-            "SELECT {SUMMARY_COLUMNS}, legalities, imported_at, definition \
-             FROM cards WHERE oracle_id = ?1"
+            "SELECT {SUMMARY_COLUMNS}, legalities, color_identity, keywords, layout, \
+             imported_at, definition FROM cards WHERE oracle_id = ?1"
         );
         let row = self
             .conn
             .query_row(&sql, params![oracle_id], |row| {
                 let summary = row_to_summary(row)?;
-                let legalities: Option<String> = row.get(SUMMARY_COLUMN_COUNT)?;
-                let imported_at: Option<String> = row.get(SUMMARY_COLUMN_COUNT + 1)?;
-                let definition: String = row.get(SUMMARY_COLUMN_COUNT + 2)?;
-                Ok((summary, legalities, imported_at, definition))
+                Ok(DetailColumns {
+                    summary,
+                    legalities: row.get(SUMMARY_COLUMN_COUNT)?,
+                    color_identity: row.get(SUMMARY_COLUMN_COUNT + 1)?,
+                    keywords: row.get(SUMMARY_COLUMN_COUNT + 2)?,
+                    layout: row.get(SUMMARY_COLUMN_COUNT + 3)?,
+                    imported_at: row.get(SUMMARY_COLUMN_COUNT + 4)?,
+                    definition: row.get(SUMMARY_COLUMN_COUNT + 5)?,
+                })
             })
             .optional()?;
 
         match row {
-            Some((summary, legalities, imported_at, definition)) => Ok(Some(CardDetail {
-                summary,
-                legalities,
-                imported_at,
-                definition: serde_json::from_str(&definition)?,
+            Some(cols) => Ok(Some(CardDetail {
+                summary: cols.summary,
+                legalities: cols.legalities,
+                color_identity: cols.color_identity,
+                keywords: cols.keywords,
+                layout: cols.layout,
+                imported_at: cols.imported_at,
+                definition: serde_json::from_str(&cols.definition)?,
             })),
             None => Ok(None),
         }
+    }
+
+    /// Prepara a conexão para carga em massa: WAL e `synchronous = NORMAL`
+    /// tiram o `fsync` por commit, que é o gargalo real de 32 mil linhas.
+    /// Só o importador chama — o servidor lê, e leitura não paga esse preço.
+    pub fn tune_for_bulk_write(&self) -> Result<(), DbError> {
+        self.conn.pragma_update(None, "journal_mode", "WAL")?;
+        self.conn.pragma_update(None, "synchronous", "NORMAL")?;
+        Ok(())
+    }
+
+    /// Passa o WAL para o arquivo principal e esvazia o log. Sem isso o `.db`
+    /// fica pequeno e o dado real mora no `-wal`, ao lado.
+    pub fn checkpoint(&self) -> Result<(), DbError> {
+        self.conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        Ok(())
+    }
+
+    /// Procedência da carga (qual bulk, de que data). Chave livre, upsert.
+    pub fn set_meta(&self, key: &str, value: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT INTO catalog_meta (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
+    pub fn meta(&self, key: &str) -> Result<Option<String>, DbError> {
+        let value = self
+            .conn
+            .query_row("SELECT value FROM catalog_meta WHERE key = ?1", params![key], |row| {
+                row.get(0)
+            })
+            .optional()?;
+        Ok(value)
     }
 
     /// Totais do catálogo e recorte por coleção, para a tela de cobertura.
@@ -606,6 +708,19 @@ const SUMMARY_COLUMNS: &str = "oracle_id, name, mana_cost_text, mana_value, colo
      type_line_text, power, toughness, rarity, set_code, oracle_text, playable, \
      unsupported_reason, unsupported_pattern, image_art_crop, image_normal";
 const SUMMARY_COLUMN_COUNT: usize = 16;
+
+/// Colunas extras de `find_by_oracle_id`, lidas em bloco. Existe para o
+/// `query_row` não devolver uma tupla de sete elementos, cuja posição ninguém
+/// consegue conferir de olho.
+struct DetailColumns {
+    summary: CardSummary,
+    legalities: Option<String>,
+    color_identity: Option<String>,
+    keywords: Option<String>,
+    layout: Option<String>,
+    imported_at: Option<String>,
+    definition: String,
+}
 
 fn row_to_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<CardSummary> {
     let mana_value: i64 = row.get(3)?;
@@ -1006,6 +1121,9 @@ mod tests {
             image_art_crop: Some(format!("https://img.example/{index}/crop.jpg")),
             image_normal: Some(format!("https://img.example/{index}/normal.jpg")),
             legalities: Some(r#"{"standard":"not_legal"}"#.to_string()),
+            color_identity: Some("G".to_string()),
+            keywords: Some("Trample".to_string()),
+            layout: Some(if playable { "normal" } else { "split" }.to_string()),
         }
     }
 
@@ -1218,6 +1336,87 @@ mod tests {
         assert!(found.imported_at.is_some(), "imported_at tem de ser preenchido");
 
         assert!(store.find_by_oracle_id("nao-existe").expect("query").is_none());
+    }
+
+    /// O caso que o bug de duas fontes escondia: importar em massa e depois
+    /// semear o catálogo curado, no mesmo banco, sem uma fonte comer a outra.
+    #[test]
+    fn seed_after_import_keeps_both_sources() {
+        const IMPORTED: usize = 1_000;
+        const IMPORTED_PLAYABLE: u64 = 500;
+
+        let store = CardStore::open_in_memory().expect("abrir banco em memória");
+        let batch: Vec<ImportedCard> = (0..IMPORTED).map(|i| imported(i, i % 2 == 0)).collect();
+        assert_eq!(store.import_cards(&batch).expect("import_cards"), IMPORTED);
+
+        // Semear depois do import é a ordem real: o servidor faz isso a cada
+        // subida, sobre um banco que o importador já preencheu.
+        let lua = sample_db();
+        store.seed_from(&lua).expect("seed_from");
+        let curated = lua.cards.len() as u64;
+
+        let stats = store.stats().expect("stats");
+        assert_eq!(stats.total, IMPORTED as u64 + curated, "seed comeu carta importada");
+        assert_eq!(stats.playable, IMPORTED_PLAYABLE + curated, "carta Lua é sempre jogável");
+        assert_eq!(stats.unsupported, IMPORTED as u64 - IMPORTED_PLAYABLE);
+        assert_eq!(stats.playable + stats.unsupported, stats.total);
+
+        let playable = store
+            .search_page(&CardQuery { playable: Some(true), limit: 2_000, ..Default::default() })
+            .expect("search_page");
+        assert_eq!(playable.total, IMPORTED_PLAYABLE + curated);
+        assert!(playable.items.iter().all(|c| c.playable));
+        // Das jogáveis, exatamente 500 vêm do Scryfall (têm `oracle_id`); o
+        // resto são as curadas, que continuam de pé lado a lado.
+        let from_scryfall = playable.items.iter().filter(|c| c.oracle_id.is_some()).count();
+        assert_eq!(from_scryfall as u64, IMPORTED_PLAYABLE);
+        assert_eq!(playable.items.len() as u64 - from_scryfall as u64, curated);
+
+        // As curadas continuam encontráveis pelo nome, com o set delas.
+        for card in &lua.cards {
+            let found =
+                store.find_by_name(&card.name).expect("query").expect("carta curada sumiu");
+            assert_eq!(&found, card, "carta curada foi alterada pelo import");
+        }
+
+        // Reimportar depois do seed continua não duplicando nem ressuscitando.
+        store.import_cards(&batch).expect("reimport");
+        assert_eq!(store.stats().expect("stats").total, IMPORTED as u64 + curated);
+    }
+
+    #[test]
+    fn import_round_trips_scryfall_only_columns() {
+        let store = CardStore::open_in_memory().expect("abrir banco em memória");
+        store.import_cards(&[imported(9, false)]).expect("import_cards");
+        let found = store
+            .find_by_oracle_id("oracle-000009")
+            .expect("query")
+            .expect("carta importada existe");
+        assert_eq!(found.color_identity.as_deref(), Some("G"));
+        assert_eq!(found.keywords.as_deref(), Some("Trample"));
+        assert_eq!(found.layout.as_deref(), Some("split"));
+    }
+
+    #[test]
+    fn catalog_meta_round_trip() {
+        let store = CardStore::open_in_memory().expect("abrir banco em memória");
+        assert_eq!(store.meta("bulk_updated_at").expect("ler"), None);
+        store.set_meta("bulk_updated_at", "2026-08-17").expect("gravar");
+        store.set_meta("bulk_updated_at", "2026-08-18").expect("regravar");
+        assert_eq!(
+            store.meta("bulk_updated_at").expect("ler"),
+            Some("2026-08-18".to_string())
+        );
+    }
+
+    #[test]
+    fn default_db_path_follows_env() {
+        // Sem tocar na variável de ambiente do processo (testes rodam em
+        // paralelo e a env é global): confere só o valor de queda.
+        assert_eq!(Path::new(DEFAULT_DB_PATH), Path::new("data/catalog.db"));
+        if std::env::var(DB_PATH_ENV).is_err() {
+            assert_eq!(default_db_path(), PathBuf::from(DEFAULT_DB_PATH));
+        }
     }
 
     #[test]

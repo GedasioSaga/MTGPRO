@@ -1,22 +1,34 @@
 //! `mtg-import` — baixa o catálogo do Scryfall, compila o texto para o IR e grava.
 //!
+//! Grava na tabela `cards` do MESMO arquivo SQLite que o `mtg-server` lê —
+//! o caminho sai de `mtg_db::default_db_path()` (variável `MTG_DB_PATH`, e na
+//! falta dela `data/catalog.db`). Não existe banco separado do importador.
+//!
 //! ```text
-//! mtg-import sync --cache .cache/scryfall --db catalog.sqlite
+//! mtg-import sync --cache .cache/scryfall
+//! mtg-import sync --db data/catalog.db --limit 5000
 //! mtg-import catalog
 //! ```
 #![forbid(unsafe_code)]
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
 
 use mtg_import::compile::compile_card;
 use mtg_import::report::{self, CoverageHeader, CoverageReport};
-use mtg_import::scryfall::{self, reject_reason, ScryfallCard};
-use mtg_import::store::{CardRow, ImportStore};
+use mtg_import::scryfall::{self, reject_reason};
+use mtg_import::store::{imported_card, ImportStore};
 use mtg_import::{ImportError, ImportStats};
 
 const DEFAULT_BULK: &str = "oracle_cards";
+/// Duas cartas de nome igual e `oracle_id` diferente existem — as seis
+/// versões de "Everythingamajig", as faces-frente de Jumpstart. A tabela
+/// `cards` tem `name UNIQUE` (é o que dá paginação estável e busca por nome
+/// sem ambiguidade), então a segunda em diante é descartada aqui, contada e
+/// dita em voz alta, em vez de sumir dentro de um `INSERT OR IGNORE`.
+const DUPLICATE_NAME: &str = "nome repetido no bulk (variante de mesmo nome)";
 const DEFAULT_REPORT_LINES: usize = 15;
 const DEFAULT_COVERAGE_TOP: usize = 50;
 
@@ -49,9 +61,15 @@ fn run() -> Result<(), ImportError> {
         Some("catalog") => catalog(),
         _ => {
             eprintln!("uso:");
-            eprintln!("  mtg-import sync --cache <dir> --db <arquivo.sqlite> [--bulk oracle_cards]");
+            eprintln!("  mtg-import sync [--cache <dir>] [--db <arquivo.db>] [--bulk oracle_cards]");
             eprintln!("      [--limit N] [--offline] [--coverage <arquivo.md>] [--coverage-top 50]");
             eprintln!("  mtg-import catalog");
+            eprintln!();
+            eprintln!("  --db  arquivo SQLite do catálogo. É o MESMO que o mtg-server lê.");
+            eprintln!("        Padrão: ${{{env}}} se definida, senão {default}.",
+                env = mtg_db::DB_PATH_ENV, default = mtg_db::DEFAULT_DB_PATH);
+            eprintln!("        As cartas importadas convivem com as curadas em Lua na");
+            eprintln!("        tabela `cards`; em colisão de nome, a curada é a que vale.");
             Err(ImportError::Api("comando não reconhecido".into()))
         }
     }
@@ -60,7 +78,7 @@ fn run() -> Result<(), ImportError> {
 fn parse_sync_args(args: &[String]) -> Result<SyncArgs, ImportError> {
     let mut out = SyncArgs {
         cache: PathBuf::from(".cache/scryfall"),
-        db: PathBuf::from("catalog.sqlite"),
+        db: mtg_db::default_db_path(),
         bulk: DEFAULT_BULK.to_string(),
         limit: None,
         offline: false,
@@ -161,6 +179,7 @@ fn sync(args: SyncArgs) -> Result<(), ImportError> {
     let _ = downloaded;
 
     let mut store = ImportStore::open(&args.db)?;
+    println!("banco do catálogo ..... {} (o mesmo que o mtg-server lê)", args.db.display());
     let mut coverage = CoverageReport::new();
     let started = Instant::now();
     let stats = import_file(&path, &mut store, args.limit, &mut coverage)?;
@@ -201,6 +220,9 @@ fn sync(args: SyncArgs) -> Result<(), ImportError> {
     Ok(())
 }
 
+/// Lê o JSONL, compila e enfileira. A gravação sai em lotes de
+/// `store::BATCH_SIZE`, cada lote numa transação — 32 mil `INSERT` soltos
+/// levariam minutos só de `fsync`.
 fn import_file(
     path: &Path,
     store: &mut ImportStore,
@@ -209,8 +231,8 @@ fn import_file(
 ) -> Result<ImportStats, ImportError> {
     let mut stats = ImportStats::default();
     let stream = scryfall::stream_cards(path)?;
-    let session = store.begin()?;
     let mut index = 0u32;
+    let mut seen_names: HashSet<String> = HashSet::new();
 
     for entry in stream {
         stats.total_lines += 1;
@@ -231,6 +253,12 @@ fn import_file(
             stats.reject(reason.label());
             continue;
         }
+        // `reject_reason` já garantiu nome não vazio; `compile_card` usa este
+        // mesmo campo como `def.name`, que é a chave única da tabela.
+        if !seen_names.insert(card.name.clone().unwrap_or_default()) {
+            stats.reject(DUPLICATE_NAME);
+            continue;
+        }
         let compiled = compile_card(&card, index);
         index = index.saturating_add(1);
         coverage.observe_type_line(&compiled.def.type_line);
@@ -243,58 +271,10 @@ fn import_file(
                 None => coverage.add_structural_block(),
             }
         }
-        let definition = if compiled.playable {
-            Some(serde_json::to_string(&compiled.def)?)
-        } else {
-            None
-        };
-        session.upsert(&row_from(&card, &compiled, definition))?;
+        store.push(imported_card(&card, compiled))?;
     }
-    session.commit()?;
+    store.flush()?;
     Ok(stats)
-}
-
-fn row_from(
-    card: &ScryfallCard,
-    compiled: &mtg_import::compile::Compiled,
-    definition: Option<String>,
-) -> CardRow {
-    let name = card.name.clone().unwrap_or_default();
-    let mana_value = card
-        .cmc
-        .map(|v| v.round() as i64)
-        .unwrap_or_else(|| compiled.def.mana_value() as i64);
-    CardRow {
-        card_key: card.oracle_id.clone().unwrap_or_else(|| name.clone()),
-        oracle_id: card.oracle_id.clone(),
-        name,
-        mana_cost: card.effective_mana_cost().unwrap_or("").to_string(),
-        mana_value,
-        type_line: card.effective_type_line().unwrap_or("").to_string(),
-        oracle_text: card.effective_oracle_text().to_string(),
-        power: card.effective_power().map(str::to_string),
-        toughness: card.effective_toughness().map(str::to_string),
-        loyalty: card.effective_loyalty().map(str::to_string),
-        colors: compiled.colors.clone(),
-        color_identity: compiled.color_identity.clone(),
-        keywords: card.keywords.clone().unwrap_or_default().join(","),
-        rarity: card.rarity.clone().unwrap_or_default(),
-        set_code: card.set.clone().unwrap_or_default(),
-        collector_number: card.collector_number.clone().unwrap_or_default(),
-        artist: card.effective_artist().map(str::to_string),
-        image_normal: card.image("normal").map(str::to_string),
-        image_art_crop: card.image("art_crop").map(str::to_string),
-        layout: card.layout.clone().unwrap_or_else(|| "normal".to_string()),
-        legalities: card
-            .legalities
-            .as_ref()
-            .map(|l| serde_json::to_string(l).unwrap_or_else(|_| "{}".to_string()))
-            .unwrap_or_else(|| "{}".to_string()),
-        playable: compiled.playable,
-        unplayable_reason: compiled.reason.clone(),
-        unplayable_pattern: compiled.pattern.clone(),
-        definition,
-    }
 }
 
 fn print_summary(
@@ -302,6 +282,7 @@ fn print_summary(
     store: &ImportStore,
     report_lines: usize,
 ) -> Result<(), ImportError> {
+    let (db_total, db_playable) = store.counts()?;
     let kept = stats.playable + stats.unplayable;
     println!();
     println!("lido do bulk .......... {}", stats.total_lines);
@@ -328,8 +309,29 @@ fn print_summary(
         }
     }
     println!();
-    println!("no banco .............. {} linhas, {} jogáveis", store.count()?, store.count_playable()?);
+    println!("no banco .............. {db_total} linhas, {db_playable} jogáveis");
+    println!("    gravadas agora .... {}", store.written());
+    let blocked = kept.saturating_sub(store.written() as u64);
+    if blocked > 0 {
+        // Homônima de carta curada em Lua: `mtg-db` recusa para não estragar
+        // IR escrita à mão. Contar em silêncio esconderia carta ausente.
+        println!("    barradas por carta curada de mesmo nome ... {blocked}");
+    }
+    assert_no_silent_loss(kept, store.written() as u64, blocked);
     Ok(())
+}
+
+/// A soma tem de fechar: tudo que foi compilado ou virou linha no banco, ou
+/// foi barrado por carta curada homônima. Se sobrar diferença, alguma carta
+/// sumiu sem explicação — e carta ausente em silêncio é o bug que este
+/// importador existe para não ter.
+fn assert_no_silent_loss(kept: u64, written: u64, blocked: u64) {
+    if written + blocked != kept {
+        eprintln!(
+            "aviso: {kept} compiladas, {written} gravadas, {blocked} barradas —              {} cartas sumiram sem motivo registrado",
+            kept.saturating_sub(written + blocked)
+        );
+    }
 }
 
 fn percent(part: u64, total: u64) -> f64 {

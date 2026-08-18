@@ -13,23 +13,21 @@ use mtg_core::engine::{Agent, Game};
 use mtg_core::state::GameOutcome;
 use mtg_core::{Action, Request};
 
-/// Bot da partida, resolvido por nome. Mantém `SeededBot::new(nome, semente)`
-/// — a assinatura que `sim.rs` já chama — mas o que ele faz por dentro agora é
-/// delegar para `mtg-ai`.
+/// Bot da partida, resolvido por nome: um rótulo de exibição (o nome do
+/// jogador) e o agente de `mtg-ai` que decide por ele.
 pub struct SeededBot {
     label: String,
     inner: Box<dyn Agent>,
 }
 
 impl SeededBot {
-    /// `label` é o nome exibido do jogador (vem do deck escolhido). O tipo de
-    /// bot é o padrão do servidor — use `with_kind` para escolher outro.
-    pub fn new(label: impl Into<String>, seed: u64) -> Self {
-        SeededBot::with_kind(label, mtg_ai::DEFAULT_BOT, seed)
-    }
-
-    /// `kind` é o nome do bot vindo do frame `start` (`random`, `heuristic`,
-    /// `greedy`). Desconhecido ou vazio → padrão.
+    /// `label` é o nome exibido do jogador (vem do deck escolhido); `kind` é o
+    /// nome do bot vindo do frame `start` (`random`, `heuristic`, `greedy`).
+    /// Desconhecido ou vazio → padrão do servidor.
+    ///
+    /// Construtor único de propósito: havia também um `new(label, seed)` que
+    /// só passava `DEFAULT_BOT` adiante, e quem quer o padrão hoje passa
+    /// `mtg_ai::DEFAULT_BOT` explicitamente — `Seat::new` já faz isso.
     pub fn with_kind(label: impl Into<String>, kind: &str, seed: u64) -> Self {
         let inner = mtg_ai::bot_by_name(kind, seed)
             .or_else(|| mtg_ai::bot_by_name(mtg_ai::DEFAULT_BOT, seed))
@@ -140,7 +138,7 @@ mod tests {
         assert_eq!(SeededBot::with_kind("x", "random", 1).kind(), "random");
         assert_eq!(SeededBot::with_kind("x", "", 1).kind(), "heuristic");
         assert_eq!(SeededBot::with_kind("x", "trapaceiro", 1).kind(), "heuristic");
-        assert_eq!(SeededBot::new("x", 1).kind(), "heuristic");
+        assert_eq!(SeededBot::with_kind("x", mtg_ai::DEFAULT_BOT, 1).kind(), "heuristic");
     }
 
     #[test]

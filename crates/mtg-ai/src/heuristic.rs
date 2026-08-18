@@ -542,6 +542,12 @@ fn score_attack(ctx: &Ctx, assignments: &[(ObjectId, Defender)]) -> i64 {
     let Some(defender) = assignments.first().map(|(_, d)| *d) else {
         return ctx.after(&action);
     };
+    // `combat::attack_options` aponta o grupo inteiro para um defensor só. Se
+    // isso mudar, um retrato refocado num deles mediria o combate errado —
+    // melhor cair na avaliação sem refoco do que na conta errada.
+    if assignments.iter().any(|(_, d)| *d != defender) {
+        return ctx.after(&action);
+    }
     let Some(defending_player) = defending_player(ctx, defender) else {
         return ctx.after(&action);
     };

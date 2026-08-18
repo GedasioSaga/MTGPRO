@@ -53,7 +53,7 @@ const FINISH_COMMANDER: i64 = 700;
 
 /// Amplitude do bônus de escolher o alvo certo para o ataque. Pequena de
 /// propósito: ela desempata entre alvos, não substitui a avaliação da posição.
-const ATTACK_TARGET_SPREAD: i64 = 150;
+const ATTACK_TARGET_SPREAD: i64 = 60;
 
 /// Custo por ponto de poder adversário que fica sem resposta em casa.
 const EXPOSURE_PER_POINT: i64 = 20;
@@ -336,6 +336,43 @@ mod tests {
             "imposto passou do teto"
         );
         assert_eq!(leader_tax(0, 5_000, 3), 0, "quem está atrás foi taxado");
+    }
+
+    #[test]
+    fn alvo_de_ataque_prefere_o_mais_perigoso() {
+        // O requisito do modo mesa cheia: escolher por ameaça, não por
+        // proximidade na ordem de turno nem por quem tem mais vida.
+        let mut s = Snapshot::empty(ME, B);
+        s.opp_life = 40; // B: muita vida, campo vazio
+        let mut perigoso = opponent(C, 12, &[(30, 5, 5), (31, 4, 4)]);
+        perigoso.hand = 5;
+        s.others.push(perigoso);
+
+        let em_b = target_player_bonus(&s, B);
+        let em_c = target_player_bonus(&s, C);
+        assert!(
+            em_c > em_b,
+            "atacou quem tem mais vida em vez de quem ameaça: C={em_c} B={em_b}"
+        );
+    }
+
+    #[test]
+    fn entre_iguais_o_alvo_e_quem_esta_mais_perto_de_morrer() {
+        let mut s = Snapshot::empty(ME, B);
+        s.my_creatures
+            .push(CreatureInfo::vanilla(ObjectId(10), ME, 4, 4));
+        s.opp_life = 20;
+        s.others.push(opponent(C, 4, &[]));
+        assert!(
+            target_player_bonus(&s, C) > target_player_bonus(&s, B),
+            "ignorou o oponente que já estava ao alcance de ser eliminado"
+        );
+    }
+
+    #[test]
+    fn escolha_de_alvo_nao_existe_em_duelo() {
+        let s = Snapshot::empty(ME, B);
+        assert_eq!(target_player_bonus(&s, B), 0);
     }
 
     #[test]

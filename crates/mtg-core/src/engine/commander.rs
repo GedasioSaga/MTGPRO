@@ -200,19 +200,16 @@ pub fn redirect_zone_change(game: &mut Game, object: ObjectId, to: ZoneId) -> Zo
 // CR 903.10 — dano de comandante
 // ---------------------------------------------------------------------------
 
-/// Ponto único de crédito de dano de comandante, chamado por `combat` logo
-/// depois de o dano de combate ser aplicado a um jogador (CR 903.10a).
-pub fn credit_combat_damage(
-    game: &mut Game,
-    source: ObjectId,
-    player: PlayerId,
-    amount: i32,
-) {
-    note_combat_damage(&mut game.state, source, player, amount);
-}
-
-/// Acumula dano de **combate** causado por um comandante a um jogador
-/// (CR 903.10). Dano que não é de combate não conta.
+/// Ponto único de crédito de dano de comandante: `combat` chama logo depois de
+/// aplicar dano de combate a um jogador (CR 903.10a).
+///
+/// Recebe `&mut GameState` e não `&mut Game` de propósito — a contagem não lê
+/// catálogo nem faz pergunta a agente, e a assinatura menor deixa o teste
+/// montar a matriz sem precisar de uma partida inteira. (Havia um segundo
+/// ponto de entrada `credit_combat_damage(&mut Game, …)` escrito em paralelo;
+/// era o mesmo corpo com um `Game` a mais e foi removido.)
+///
+/// Dano que não é de combate não conta.
 pub fn note_combat_damage(
     state: &mut GameState,
     source: ObjectId,

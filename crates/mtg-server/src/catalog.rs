@@ -14,10 +14,6 @@ use mtg_core::card::CardDatabase;
 use mtg_core::ids::CardDefId;
 use mtg_db::CardStore;
 
-/// Onde o catálogo amplo (Scryfall) é gravado. `:memory:` serve para teste e
-/// para rodar sem tocar o disco.
-const DB_PATH_ENV: &str = "MTG_DB_PATH";
-const DEFAULT_DB_PATH: &str = "data/catalog.db";
 
 /// Deck jogável: id estável (usado pelo cliente em `start`), metadados para
 /// a UI e a lista de cartas na proporção em que entram na biblioteca.
@@ -54,8 +50,12 @@ pub fn load() -> Result<(CardDatabase, Vec<DeckInfo>), mtg_cards::LoadError> {
     Ok((db, decks))
 }
 
+/// Onde o catálogo amplo (Scryfall) vive. A resolução mora em `mtg-db`, e não
+/// aqui, porque o `mtg-import` precisa da MESMA resposta — quando cada binário
+/// tinha o seu padrão, a importação gravava num arquivo que o servidor nunca
+/// abria. `:memory:` roda sem tocar disco (teste, sandbox).
 pub fn db_path() -> PathBuf {
-    std::env::var(DB_PATH_ENV).map(PathBuf::from).unwrap_or_else(|_| PathBuf::from(DEFAULT_DB_PATH))
+    mtg_db::default_db_path()
 }
 
 /// Abre o SQLite do catálogo, migra e semeia as cartas curadas em Lua.
@@ -93,9 +93,27 @@ pub fn open_store(lua: &CardDatabase) -> Option<CardStore> {
         }
     };
 
+    // Semear DEPOIS do import é a ordem real e é segura: `seed_from` só toca a
+    // linha de mesmo nome, nunca apaga o resto. Ver o comentário em
+    // `mtg_db::CardStore::seed_from` para a regra de colisão de nome.
     match store.seed_from(lua) {
         Ok(n) => tracing::info!(cards = n, "catálogo curado semeado no SQLite"),
         Err(err) => tracing::warn!(%err, "falha ao semear o catálogo curado"),
+    }
+
+    // O número REAL do banco, não o das cartas curadas. Enquanto o servidor só
+    // logava as 174 de Lua, uma importação gravada no arquivo errado passava
+    // despercebida — o log dizia o mesmo com 174 e com 32.798 cartas.
+    match store.stats() {
+        Ok(stats) => tracing::info!(
+            total = stats.total,
+            playable = stats.playable,
+            unsupported = stats.unsupported,
+            sets = stats.by_set.len(),
+            path = %path.display(),
+            "catálogo SQLite pronto"
+        ),
+        Err(err) => tracing::warn!(%err, "não deu para contar o catálogo no SQLite"),
     }
     Some(store)
 }

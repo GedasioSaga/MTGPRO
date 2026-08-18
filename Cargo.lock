@@ -677,6 +677,7 @@ name = "mtg-format"
 version = "0.1.0"
 dependencies = [
  "mtg-core",
+ "rusqlite",
  "serde",
  "thiserror 2.0.20",
 ]
@@ -687,7 +688,7 @@ version = "0.1.0"
 dependencies = [
  "flate2",
  "mtg-core",
- "rusqlite",
+ "mtg-db",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -726,6 +727,7 @@ dependencies = [
  "rand_chacha",
  "serde",
  "serde_json",
+ "thiserror 2.0.20",
  "tokio",
  "tower-http",
  "tracing",

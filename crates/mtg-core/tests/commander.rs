@@ -335,7 +335,7 @@ fn vinte_e_um_de_dano_do_mesmo_comandante_mata() {
         "CR 903.10 — 20 não é 21; ninguém morre ainda"
     );
 
-    commander::credit_combat_damage(&mut game, commander_id, P1, 1);
+    commander::note_combat_damage(&mut game.state, commander_id, P1, 1);
     assert_eq!(
         commander::lethal_commander_damage(&game.state),
         vec![P1],
@@ -352,8 +352,8 @@ fn dano_de_dois_comandantes_diferentes_nao_soma() {
     let b = commander_object(&game, P1);
     assert_ne!(a, b, "os dois comandantes têm de ser objetos distintos");
 
-    commander::credit_combat_damage(&mut game, a, P1, 20);
-    commander::credit_combat_damage(&mut game, b, P1, 20);
+    commander::note_combat_damage(&mut game.state, a, P1, 20);
+    commander::note_combat_damage(&mut game.state, b, P1, 20);
 
     assert_eq!(game.state.player(P1).commander_damage_from(a), 20);
     assert_eq!(game.state.player(P1).commander_damage_from(b), 20);
@@ -362,7 +362,7 @@ fn dano_de_dois_comandantes_diferentes_nao_soma() {
         "CR 903.10 — 20 + 20 de comandantes diferentes não derrota ninguém"
     );
 
-    commander::credit_combat_damage(&mut game, a, P1, 1);
+    commander::note_combat_damage(&mut game.state, a, P1, 1);
     assert_eq!(
         commander::lethal_commander_damage(&game.state),
         vec![P1],
@@ -375,7 +375,7 @@ fn dano_de_quem_nao_e_comandante_nao_entra_na_matriz() {
     // CR 903.10 — só comandante alimenta a matriz dos 21.
     let mut game = one_commander_game("{1}", 2, 2, passing_agents());
     let bicho = put_ready(&mut game, FILLER, P0);
-    commander::credit_combat_damage(&mut game, bicho, P1, 21);
+    commander::note_combat_damage(&mut game.state, bicho, P1, 21);
 
     assert_eq!(
         game.state.player(P1).commander_damage_from(bicho),
