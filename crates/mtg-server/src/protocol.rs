@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 /// Mensagem recebida do cliente em `/ws/match`.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ClientMessage {
     Start {
         deck_a: String,
@@ -33,7 +33,7 @@ fn default_speed() -> f64 {
 /// `Init`, `Events` e `Done` são o contrato. `Error` é extensão nossa: sem
 /// ela um pedido malformado deixaria o cliente esperando em silêncio.
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ServerFrame {
     Init {
         view: GameView,

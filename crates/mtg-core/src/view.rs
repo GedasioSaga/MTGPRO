@@ -119,7 +119,7 @@ pub struct GameView {
 /// Sem isso o frontend só consegue trocar um estado por outro, e a partida
 /// vira slideshow em vez de jogo.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum MatchEvent {
     TurnStart { turn: u32, player: PlayerId },
     StepChange { step: Step, label: String },
