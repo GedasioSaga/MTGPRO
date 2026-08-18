@@ -56,8 +56,9 @@ export function Meter({
       ? {
           backgroundImage:
             'repeating-linear-gradient(90deg, transparent 0, transparent calc(var(--seg) - 1px), rgba(0,0,0,0.55) calc(var(--seg) - 1px), rgba(0,0,0,0.55) var(--seg))',
+          // CSSProperties nao tipa custom property; o cast e a saida padrao.
           '--seg': `${(segment / safeMax) * 100}%`,
-        }
+        } as CSSProperties
       : undefined
 
   return (

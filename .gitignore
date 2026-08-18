@@ -8,3 +8,5 @@ graphify-out/
 docs/bar/
 target-probe/
 target*/
+docs/shots/
+.playwright-mcp/
