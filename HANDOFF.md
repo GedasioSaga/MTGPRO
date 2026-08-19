@@ -1,331 +1,251 @@
 # HANDOFF — MTGPRO (simulador automático de Magic)
 
-**Atualizado:** 2026-08-18 (gauntlet rodada 1 fechada)
+**Atualizado:** 2026-08-19
 **Diretório:** `C:\Users\gedasio.filho\OneDrive - Vertis Capital\Área de Trabalho\Tudo\Jogo Magic`
 **Remoto:** https://github.com/GedasioSaga/MTGPRO — público, MIT, branch `main`
 
 ---
 
+## Como retomar em 60 segundos
+
+```bash
+cd "C:\Users\gedasio.filho\OneDrive - Vertis Capital\Área de Trabalho\Tudo\Jogo Magic"
+git log --oneline | head -10
+cargo test --workspace                    # esperado: 504 passando, 0 falhando
+cargo run -p mtg-server                   # http://127.0.0.1:8787
+cd web && npm run dev                     # http://localhost:5173
+```
+
+Se algo aqui contradiz o código, **o código ganha**. Isto é retrato, não verdade.
+
+---
+
 ## O que é
 
-Refatoração conceitual do Forge (`github.com/Card-Forge/forge`) para a arquitetura
-pedida: **motor em Rust**, **UI em TypeScript/React**, **catálogo em banco**,
-**arte via CDN**, e — pedido em 18/08 — **cartas escritas em Lua**.
+Refatoração conceitual do Forge para: **motor em Rust**, **UI React**, **cartas em
+Lua**, **catálogo do Scryfall**. Escopo: só card game, só simulador automático
+(bots jogam, o usuário assiste), no espírito do YGOPro.
 
-Escopo travado: **só card game**, **só simulador automático** (bot vs bot, estilo
-YGOPro). Não há input de jogo; o usuário assiste.
-
-Modo de trabalho: `ultracode` + `gauntlet-loop` nível máximo + loop até AAA.
+Modo de trabalho: `ultracode` + `gauntlet-loop` + fan-out multi-agente.
 
 ---
 
-## Estado real (verificado no disco, não em relatório de agente)
+## Estado, com números verificados por execução
 
-> **Lição da rodada anterior:** o `ok: true` de um workflow significa que o agente
-> retornou, **não** que ele escreveu o código. Um builder criou *stubs vazios nos
-> arquivos dos outros* para conseguir compilar o próprio módulo. Sempre confira
-> `wc -l` e o conteúdo antes de acreditar.
-
-### Funciona, com prova
-
-| Peca | Prova |
+| Métrica | Valor |
 |---|---|
-| **Motor de regras completo** | `cargo test --workspace` -> **104 passando, 0 falhando** |
-| Partida completa roda | `tests/smoke.rs` -> 5/5, sementes 0..20, sem panico, 1.82s |
-| `crates/mtg-script` — Lua sandboxed | `cargo test -p mtg-script` -> 5/5, sandbox e round-trip Lua->CardDef |
-| Catalogo em Lua | **162 cartas** em `cards/*.lua` + 4 decks de 60 |
+| Testes | **504 passando, 0 falhando**, 5 ignorados (27 suítes) |
+| Interações de regra | **93/93** (`docs/RULES_TESTS.md`, inclui seção 9 de multijogador) |
+| Catálogo | **32.452 cartas**, **4.951 jogáveis (15,2%)** |
+| Pauper jogável | **3.173 (30,5%)** · Standard 574 (11,8%) · Modern 3.862 (17,3%) |
+| Cartas curadas em Lua | 174, sempre jogáveis |
+| Fuzzing duelo | 200 sementes, **0 pânicos** |
+| Fuzzing 4 jogadores | 100 mesas, **100 vencedores, 0 empates, 0 objetos órfãos** |
+| IA duelo | heurístico **46/50 (92%)** vs aleatório |
+| IA mesa de 4 | heurístico **34/50 (68%)** vs 3 aleatórios (acaso = 25%) |
+| Cliente | `tsc` 0 erros · build limpo · ~85 fps a 1920×1080 |
 
-Modulos do motor, medidos com `wc -l` (nao por relatorio de agente):
+**Bugs de regra achados e corrigidos**, cada um com CR citada: 603.6d
+(informação de última existência), 702.16c (proteção não prevenia dano fora de
+combate), 611.2b (efeito não expirava com a fonte fora do campo), e um de
+multijogador onde `expire_continuous_effects` usava módulo cru enquanto
+`advance_turn` usava `next_alive` — divergiam só com 3+ jogadores, deixando
+efeito `YourNextTurn` permanente.
 
-| Modulo | Linhas | Modulo | Linhas |
-|---|---|---|---|
-| `resolve.rs` | 1930 | `turn.rs` | 1049 |
-| `cast.rs` | 1830 | `stack.rs` | 885 |
-| `combat.rs` | 1545 | `layers.rs` | 830 |
-| `query.rs` | 1079 | `triggers.rs` | 590 |
-| `viewgen.rs` | 552 | `sba.rs` | 543 |
+---
 
-Diagnostico de 20 sementes (Goblin Onslaught x Azorius Control) com bots **aleatorios**:
-11 partidas com vencedor entre os turnos 23 e 39, 9 empates no teto de 40 turnos.
-O log mostra Counterspell anulando Shock, ETB de `Wall of Omens`, fichas de
-`Krenko's Command`, remocao e combate. A partida e real.
+## Arquitetura
 
-### Auditoria independente (verificador-realidade) — VEREDITO: NECESSITA TRABALHO
-
-"109 testes passam" e "o motor esta correto" medem coisas diferentes. Numeros reais:
-
-| Metrica | Valor |
-|---|---|
-| Dos 65 itens de `docs/RULES_TESTS.md` | **22 coberto · 14 parcial · 29 ausente** |
-| `crates/mtg-core/tests/interactions.rs` | **nunca foi escrito** |
-| `turn.rs` (35 KB) e `cast.rs` (64 KB) | **zero `#[test]`** |
-| Fuzzing 200 sementes | 187 vencedor · 13 empate no teto · **0 panicos** |
-
-Tres achados que valem mais que o resto:
-
-1. **Bug de regra confirmado, nao so lacuna** — CR 603.6d (*last known information*) nao
-   existe. `turn.rs:845` chama `reset_for_zone_change` (zera marcadores, dano, combate) e
-   so em `turn.rs:877` emite `Died`; como `emit` enfileira, o gatilho le o objeto ja limpo.
-   "Quando morrer, ganhe vida igual a resistencia" devolve o valor base.
-2. **Teste vacuoso** — `triggers.rs:516` embrulha as assercoes em `if let Some(ctx) = ...`.
-   Nao casou, passa verde tendo afirmado nada.
-3. **Cobertura emprestada** — itens de indestrutivel/atropelar/vigilancia so aparecem
-   testados em `mtg-ai/src/sim.rs`, que declara ser aproximacao e **nao dispara gatilhos**.
-
-Confirmado CERTO pela auditoria (nao mexer): item 27 (biblioteca vazia perde na SBA
-seguinte), item 31 (indestrutivel com resistencia 0 morre), itens 47 e 49 (bloqueador que
-sumiu; atropelar com toque mortal).
-
-### Gauntlet — placar da UI (bar: `docs/bar/arena-board-01.jpg`)
-
-Protocolo: critic e sempre Agent de contexto fresco; as duas imagens vao em JPEG
-(formato diferente vazaria qual e a referencia); ordem alternada por rodada;
-veredito binario; um unico maior gap; builder recebe so o gap.
-
-| Rodada | Nosso era | Veredito | Gap unico nomeado | Estado |
-|---|---|---|---|---|
-| 1 | A | perdemos | paineis de telemetria comem 40% da largura; o jogo virou moldura do proprio HUD | **fechado** |
-| 2 | B | perdemos | nao existe tabuleiro: cartas flutuam sobre vazio verde, sem superficie, sombra ou zonas demarcadas | **fechado** |
-| 3 | A | perdemos | cartas em jogo sao placas ilegiveis: caixa de regras branca vazia, arte espremida | **fechado** |
-| 4 | B | perdemos | cinco setas finas de combate cruzando meia tela; nao se le quem morre | **fechado** |
-| 5 | A | perdemos | tabuleiro e malha de caixas chapadas sem luz; o elemento de maior contraste e uma seta de anotacao | **desfeito na r6** |
-| 6 | B | perdemos | nao tem tabuleiro: retangulo verde uniforme, cartas boiam sem zonas definidas, ~50% de vazio | seca declarada |
-| — | — | — | usuario forneceu bar melhor (Arena Ixalan) e a ideia do PLAYMAT; loop retomado a pedido dele | — |
-| 7 | A | perdemos | zonas sao caixas chapadas com rotulo de formulario e outline de debug; falta perspectiva | em ataque (rodada 8) |
-
-O gap MUDOU entre 1 e 2 — o da rodada 1 foi de fato fechado (o critic novo nem
-menciona paineis laterais). Nao e seca. **Seca** seria o mesmo gap apontado duas
-rodadas seguidas sem progresso; ai o protocolo manda parar e reportar o delta.
-
-Cinco derrotas, com o gap MUDANDO a cada rodada (paineis -> mesa
-inexistente -> carta ilegivel). Isso e progresso real: cada gap nomeado foi de
-fato fechado. Nao e seca. Referencia honesta: no experimento original de Shumer
-o artefato NUNCA venceu a bar; o loop parou porque o humano parou. Reportar o
-delta e vitoria do protocolo, nao derrota do trabalho.
-
-**Correcao de metodo aplicada na rodada 3:** as capturas das rodadas 1 e 2 pegavam
-o turno 4, com tabuleiro quase vazio, contra um Arena em combate cheio. Isso mede
-"nossa captura tem menos coisa", nao "nosso desenho e pior". Agora a captura e
-feita no turno ~12, com criaturas em campo, e o critic recebe ordem explicita de
-julgar o desenho e ignorar o estado do jogo.
-
-## SECA DECLARADA NA RODADA 6 — loop de UI encerrado
-
-O gap da rodada 6 e literalmente o da rodada 2, e contradiz o da rodada 5:
-r2 "sem zonas demarcadas" -> demarque · r5 "malha de caixas" -> mate as
-demarcacoes · r6 "sem zonas definidas" -> demarque. Duas rodadas consecutivas
-sem fechar, com a correcao de uma virando o defeito da outra. Protocolo manda
-parar e reportar o delta.
-
-**LOOP RETOMADO NA RODADA 7, a pedido do usuario.** Ele forneceu uma bar melhor
-(`docs/bar/arena-ixalan-board.png`, tabuleiro cheio em vez de tutorial) e a ideia
-que quebrou o pendulo: **playmat**. Zona demarcada por linha impressa num objeto
-fisico nao le como painel de UI — e a terceira saida que faltava entre "contorno"
-e "nada". Entregue com arte escolhivel por jogador (carta do deck, URL colada com
-validacao de esquema, ou gradiente), persistida em localStorage.
-
-Achado da rodada 7: **a mesa da bar esta em PERSPECTIVA e a nossa e chapada.**
-Nunca tentado em 7 rodadas, e e a maior diferenca estrutural entre as duas telas.
-E o alvo da rodada 8, junto com carta maior (nome trunca), contorno virando
-brilho difuso, e painel de replay recolhido.
-
-**DELTA ATE A RODADA 6:** 6 rodadas, 6 derrotas contra o cliente do MTG Arena. Quatro
-gaps foram genuinamente fechados (paineis dominando, cartas ilegiveis, setas de
-combate cruzando a tela, superficie sem sombra). O gap que sobra nao e de
-layout — e de **material**. A bar tem arena de pedra esculpida, textura pintada
-a mao, arte de personagem e VFX de particula; nos geramos tudo com gradiente CSS.
-Nenhuma rodada de CSS fecha isso, e e por isso que o critic oscila: sem material,
-demarcar zona so tem duas saidas, contorno (vira painel) ou nada (vira vazio).
-
-Fechar de verdade exige **asset de arte** — textura, moldura, VFX — que e outro
-tipo de trabalho, nao outra rodada do mesmo loop.
-
-**ALERTA DE OSCILACAO (rodada 5, antecedeu a seca).** O gap voltou ao terreno da rodada 2 (material
-do tabuleiro) e o critic pediu para DESFAZER o que a rodada 3 fez: as molduras e
-os rotulos `CAMPO DE BATALHA`/`TERRENOS`, adicionados para "demarcar zonas", sao
-agora apontados como a causa do ar de painel de controle. A rodada 6 aplica a
-instrucao oposta: arena unica sem contorno, zona sinalizada por elevacao e
-tonalidade, sombra dando peso.
-
-Isso ainda NAO e seca pela letra do protocolo — o gap da rodada 4 (cartas
-ilegiveis) foi fechado entre as duas. Mas e o aviso que antecede a seca. **Regra
-para a proxima rodada: se o gap voltar a girar em torno de material de mesa sem
-fechar, parar e reportar o delta honesto** em vez de insistir.
-
-## Camada Lua (adicionada 18/08, a pedido)
-
-`crates/mtg-script`:
-
-- **Papel: autoria, não runtime.** O script roda uma vez no carregamento e
-  *produz* a árvore de `Effect` (o IR). Em partida, o motor interpreta IR puro —
-  zero chamada de Lua no laço quente. Facilidade de escrever sem custar
-  performance nem determinismo.
-- **Ponte via serde:** a tabela Lua é desserializada direto em `CardDef` pelo
-  mesmo caminho do banco. Não há código de conversão para manter em dia.
-- **Sandbox obrigatório:** `io`, `os`, `package`, `require`, `dofile`, `loadfile`,
-  `load`, `loadstring`, `debug`, `setmetatable` são removidos do ambiente antes
-  de qualquer chunk. Script de carta é conteúdo, e conteúdo vira contribuição de
-  terceiro. Coberto por teste.
-- **DSL em `crates/mtg-script/lua/prelude.lua`** — `card{}`, `deal_damage`,
-  `etb`, `dies`, `activated`, `mana_ability`, `static_pt`, `token`, `modal`, etc.
-  Alvos são 1-based em Lua e convertidos para 0-based na fronteira.
-- **Hot reload:** `CardScriptHost::reload()` recarrega os `.lua` sem reiniciar.
-
-Carta hoje se escreve assim:
-
-```lua
-card {
-  name = "Lightning Bolt", cost = "{R}", type = "Instant",
-  rarity = "Common", set = "LEA",
-  text = "Lightning Bolt deals 3 damage to any target.",
-  targets = { t_any() },
-  effect = deal_damage(3),
-}
+```
+cards/*.lua ──► mtg-script (mlua sandboxed) ──┐
+                                              ├──► CardDef (IR) ──► SQLite
+Scryfall bulk ──► mtg-import ──► mtg-oracle ──┘                    (data/catalog.db)
+                                              │
+                                    ┌─────────▼─────────┐
+                                    │     mtg-core      │  camadas 613, pilha,
+                                    │                   │  gatilhos, SBA 704,
+                                    │                   │  combate 506-511, CR 903
+                                    └───┬───────────┬───┘
+                                 mtg-ai │           │ mtg-server (axum + WS)
+                                        │           │        │
+                                   mtg-format ──────┘        ▼
+                                   (legalidade)         web/ React 19
 ```
 
-Catálogo em `cards/*.lua` (por cor), carregado por `crates/mtg-cards`.
+### Decisões que não devem ser reabertas sem motivo
+
+1. **Carta é dado, não código.** `CardDef` é árvore de `Effect` serializável.
+   Lua roda uma vez no carregamento e *produz* o IR; em partida o motor
+   interpreta IR puro — zero Lua no laço quente.
+2. **Sandbox no Lua é requisito, não zelo.** `io`, `os`, `package`, `require`,
+   `load` saem do ambiente antes de qualquer chunk.
+3. **Arena de índices.** Todo objeto é `ObjectId`; grafo aura→criatura→controlador
+   não fecha com `&mut` em Rust.
+4. **Motor síncrono com callback.** `Agent::decide` responde na hora, sem estado
+   suspenso — é o que evitou a classe de bug mais cara de motor de card game.
+5. **UI só desenha.** Recebe `GameView` redigido por `Observer` + `MatchEvent`.
+6. **`players: Vec<PlayerState>` desde o contrato inicial** — é por isso que
+   Commander 2-4 foi preenchimento de comportamento, não reescrita do motor.
+7. **Impressão ≠ carta.** `oracle_id` é regra (motor); `printing_id` é arte
+   (UI/deck). Ver `docs/DECK_EDITOR.md`.
 
 ---
 
-## Decisões de arquitetura (não reabrir sem motivo)
+## Onde está cada coisa
 
-1. **Carta é dado, não código.** `CardDef` é árvore de `Effect` serializável; Lua
-   é a camada de autoria em cima disso.
-2. **Arena de índices.** Todo objeto é `ObjectId`; grafo aura → criatura →
-   controlador não fecha com `&mut` em Rust.
-3. **Motor síncrono com callback.** `Agent::decide` responde na hora; sem máquina
-   de estado suspensa. Justificativa: simulador automático não espera humano.
-4. **UI só desenha.** Recebe `GameView` redigido por `Observer` e `MatchEvent`
-   com `suggestedDurationMs`. Nenhuma regra vive no TypeScript.
-5. **SQLite bundled, schema portável para PostgreSQL.** Não há `psql` nem
-   `sqlite3` nesta máquina.
-6. **Arte via Scryfall**, `art_key` = nome exato da carta, com fallback
-   procedural obrigatório (gradiente por hash) — nunca caixa quebrada.
-7. **Sem `wasm-pack`.** Caminho atual é servidor nativo + WebSocket.
+| Caminho | O que é |
+|---|---|
+| `crates/mtg-core` | regras, IR, estado, view |
+| `crates/mtg-script` | Lua sandboxed + DSL (`lua/prelude.lua`) |
+| `crates/mtg-cards` | catálogo curado + decks |
+| `crates/mtg-db` | SQLite (`CardStore`, `ImportedCard`, `search_page`, `stats`) |
+| `crates/mtg-import` | bulk do Scryfall → SQLite; **tem compilador próprio** |
+| `crates/mtg-oracle` | segundo compilador + `layouts` + `coverage` |
+| `crates/mtg-format` | validação de deck por formato |
+| `crates/mtg-ai` | `random`, `heuristic`, `greedy` |
+| `crates/mtg-server` | axum + WS; `sim.rs` roda 2-4 assentos |
+| `cards/*.lua` | catálogo curado, um arquivo por cor |
+| `web/src` | React 19 + Vite + Tailwind 4 + Motion |
 
-### Bugs do contrato já corrigidos
-
-- `Filter::HasKeyword(Keyword)` ↔ `Keyword::Enchant(Filter)` fazia ciclo de
-  tamanho infinito (E0072). Corrigido com `Enchant(Box<Filter>)`.
-- `Keyword` perdeu o derive `Hash` (consequência do `Box<Filter>`, que exigiria
-  `Filter: Hash`). Nada dependia disso.
+**Docs que valem ler antes de mexer:** `ENGINE_CONTRACT.md` (assinaturas +
+protocolo) · `RULES_TESTS.md` (93 itens) · `ORACLE_COVERAGE.md` (o que falta, por
+frequência) · `CARD_FACTORY.md` (estratégia para cobrir tudo) · `AI_LADDER.md`
+(MCTS→RL) · `DECK_EDITOR.md` · `UI_BAR_SPEC.md`
 
 ---
 
-## Protocolo motor ↔ UI (quebrar isso quebra os dois lados)
+## PRÓXIMOS PASSOS, em ordem de valor
 
-WebSocket `/ws/match` em `127.0.0.1:8787`:
+### 1. Capacidades de IR faltando — fila priorizada por frequência real
 
-```jsonc
-// servidor -> cliente
-{ "type": "init",   "view": GameView, "players": ["Bot A","Bot B"], "seed": 123 }
-{ "type": "events", "events": [MatchEvent, ...], "view": GameView }
-{ "type": "done",   "outcome": GameOutcome, "turns": 14, "durationMs": 812 }
-// cliente -> servidor
-{ "type": "start", "deckA": "burn", "deckB": "elves", "seed": 123, "speed": 1.0 }
-{ "type": "pause" } | { "type": "resume" } | { "type": "step" }
-```
+De `docs/ORACLE_COVERAGE.md` (27 capacidades):
 
-REST: `GET /api/health`, `GET /api/cards`, `GET /api/decks`.
-JSON em camelCase. `MatchEvent` usa tag interna `"type"`.
-
----
-
-## Workflows
-
-| Run ID | O que era | Resultado |
+| Cartas | Capacidade | Nota |
 |---|---|---|
-| `wf_b256501a-a2e` | motor, 10 builders + integração | 5 retornaram, 6 morreram no limite de sessão; integração nunca rodou; **stubs vazios plantados** |
-| `wf_0e9383c5-e1c` | cliente, 5 builders + integração | todos morreram no limite; arquivos parciais no disco |
-| `wf_401ec653-103` | 7 módulos stub + catálogo Lua + integração | **6/6 verde** — motor completo, 104 testes |
-| `wf_ccb144a6-20c` | IA jogável + cliente web + ponta a ponta | 3/6; UI carta/mesa/fx entregues |
-| `wf_4a9eea53-246` | **em execução** — corrige LKI + escreve as 65 interações | — |
+| **882** | layouts multiface | split, adventure, DFC |
+| **753** | `Filter::Attached` | aura e equipamento |
+| **589** | variantes de `Keyword` | devoid, changeling, infect |
+| **563** | **motor ler `Ability::Replacement`** | **existe no IR, ZERO uso em `engine/`** |
+| 376 | olhar-e-escolher no topo | |
+| 366 | `SearchLibrary` com destino ≠ mão | |
+| 355 | `TokenSpec` com habilidades | |
+| 304 | custo adicional de lançamento | |
+| 269 | `Effect::Reveal` | não existe no IR |
+| 191 | regeneração | |
 
-Retomar qualquer um: `Workflow({scriptPath: "<script>", resumeFromRunId: "<run id>"})`.
-Scripts em `...\workflows\scripts\`. Antes de diagnosticar resultado vazio, ler
-`journal.jsonl` do transcript dir.
+`Ability::Replacement` é o mais revelador: o **tipo existe desde o contrato
+inicial e nenhum módulo do motor o consome**. Tipo declarado não é capacidade
+implementada. Vale varrer o IR atrás de outras variantes órfãs.
 
----
+### 2. Unificar os dois compiladores — dívida nomeada
 
-## Gauntlet — estado do protocolo
+`mtg-import/src/compile.rs` e `mtg-oracle` resolvem o mesmo problema em ~5.500
+linhas. Concordam em 3.443 cartas, **divergem em 388**. A segunda passada
+(`oracle_second_pass`) é ponte, não fusão. Manutenção dupla com risco de
+divergirem em silêncio.
 
-- **Tier:** T3.
-- **Bar do motor:** `Card-Forge/forge` + Comprehensive Rules. Metade mensurável =
-  pass rate de `docs/RULES_TESTS.md` (65 itens) + tempo de partida.
-- **Bar da UI:** cliente de partida do MTG Arena. `docs/bar/arena-board-01.jpg` é
-  a referência limpa (as outras 3 têm overlay promocional). **Fora do git** —
-  screenshot é da WotC, não se redistribui em repo público.
-- **Rodadas de julgamento:** ainda **nenhuma**. Critics entram quando
-  `cargo test --workspace` passar e a UI construir.
-- **Parada:** vence a cega, seca (2 rodadas sem fechar gap), ou o usuário manda parar.
+### 3. Fábrica de cartas — Fases 1 e 2 de `CARD_FACTORY.md`
 
----
+Fase 1: manifesto durável + escada de verificação de 6 degraus.
+Fase 2: **o portão** — medir a concordância do gerador LLM contra as 4.951 cartas
+onde já sabemos a resposta certa. Concordância baixa **não** autoriza a fábrica.
 
-## Próximos passos, em ordem
+### 4. Escada de IA — `AI_LADDER.md`
 
-1. Aguardar `wf_401ec653-103`. **Conferir no disco** (`wc -l`, `head`) se os 7
-   módulos deixaram de ser stub — não confiar no `ok`.
-2. Teste de fumaça `crates/mtg-core/tests/smoke.rs`: partida completa termina sem
-   pânico, sementes 0..20. É o primeiro sinal de que o jogo existe.
-3. Implementar `tests/interactions.rs` a partir de `docs/RULES_TESTS.md` (65 itens).
-   Precisa de um `FixedAgent` com fila de `Action`.
-4. Retomar o workflow de UI (`wf_0e9383c5-e1c`) e fazer `tsc` + `npm run build` passar.
-5. Rodar ponta a ponta: `cargo run -p mtg-server` + `npm run dev`, confirmar no
-   browser que a partida anima até o fim.
-6. **Gauntlet rodada 1:** critic cego de UI (nossa mesa vs `arena-board-01.jpg`,
-   labels removidos, veredito binário, um único maior gap) + `verificador-realidade`
-   sobre o pass rate + `revisor` por dimensão.
-7. Diagrama de arquitetura em `docs/diagrams/` a partir do grafo.
+`Game::fork()` com **semente derivada** (não copiada; senão todos os rollouts
+exploram o mesmo futuro) + **determinização** (senão o bot lê a mão oculta e fica
+forte por trapaça) + orçamento em ms. Depois MCTS.
+
+### 5. Editor de decks — `DECK_EDITOR.md`
+
+Tabela `printings`, busca estilo Scryfall com `is:playable`, import/export `.dck`.
 
 ---
 
-## Armadilhas conhecidas nesta máquina
+## Dívidas e defeitos conhecidos — escolha, não surpresa
 
-- **Heredoc longo no Bash trunca** (~200+ linhas) com
-  `unexpected EOF while looking for matching '`. Arquivo grande → tool `Write`.
-- **`npm create vite` é interativo** e aborta sem stdin. Use
-  `CI=1 npx --yes create-vite@latest web --template react-ts` com o diretório
-  **inexistente**.
-- **Sem `wasm-pack`, `psql`, `sqlite3` no PATH.** Único target Rust:
-  `x86_64-pc-windows-msvc`.
-- **Caminho tem espaço e acento** (`Área de Trabalho`) — sempre entre aspas.
-- **`target-probe/`** foi commitado por engano (78 MB, 268 arquivos) e depois
-  destrancado; o histórico ainda carrega, `.git` está em ~51 MB. Já no `.gitignore`.
-- **Limite de sessão mata agente no meio.** Trabalho parcial fica no disco, mas o
-  workflow reporta falha. Sempre inspecionar antes de refazer.
+- **Mesa de 3-4 jogadores é visualmente crua**: quadrantes simples, sem tapete
+  nem perspectiva. `StatsPanel` está fixo em 2 assentos — **mente numa mesa de 4**.
+- **Só 2 decks de Commander.** Com 2 decks numa mesa de 4, assentos repetem, e a
+  métrica "vitórias por assento" (`[47, 7, 42, 4]`) mede força de deck, não
+  posição na mesa.
+- **Multijogador só em Commander** (decisão em `AppState::seat_range`). O motor
+  roda 4 em qualquer formato se a regra mudar.
+- `GameState::player/zone` indexam direto e entram em pânico com `PlayerId` fora
+  de faixa. Inalcançável hoje, mas viola a regra do projeto num ponto quente.
+- `web/tsconfig` **não tem `"strict": true`** em lugar nenhum.
+- 27 warnings de clippy pré-existentes em `mtg-core` (só estilo).
+- Importação foi de 2,7s para 5,6s (a 2ª passada recompila as recusadas).
+
+---
+
+## Gauntlet — placar da UI
+
+Bar: `docs/bar/arena-ixalan-board.png` (fora do git: captura da WotC).
+
+| Rodada | Gap nomeado | Estado |
+|---|---|---|
+| 1 | painéis de telemetria dominando a largura | fechado |
+| 2 | cartas flutuando sem superfície | fechado |
+| 3 | cartas em jogo ilegíveis | fechado |
+| 4 | setas de combate cruzando a tela | fechado |
+| 5-6 | **pêndulo**: caixa demais ↔ zona nenhuma | seca declarada |
+| — | usuário trouxe bar melhor + ideia do **playmat** | pêndulo quebrado |
+| 7 | falta perspectiva; outline lê como debug | atacado na rodada 8 |
+| 8 | perspectiva aplicada (`--mat-tilt: 9deg`) | **não julgada** |
+
+**Pendência:** a rodada 8 aplicou perspectiva mas o agente morreu no limite antes
+de medir o alinhamento de combate. Antes era **758,3/758,3 com desvio 0px**.
+Perspectiva é exatamente o que pode quebrar isso (`getBoundingClientRect` passa a
+devolver caixa projetada). **Medir antes de julgar de novo.**
+
+---
+
+## Armadilhas desta máquina — leia antes de perder uma hora
+
+- **`npx tsc --noEmit` NÃO checa nada aqui.** `tsconfig.json` só tem
+  `references`, sem `files`. Use `npx tsc -p tsconfig.app.json --noEmit`.
+- **Apague `web/node_modules/.tmp/*.tsbuildinfo` antes de checar tipos.** O cache
+  incremental já reportou "sem erros" sobre árvore antiga.
+- **Heredoc longo no Bash trunca** (~200+ linhas) com `unexpected EOF`. Arquivo
+  grande → tool `Write`.
+- **Medição de FPS no browser mede o Chrome**, não o app, se a janela estiver
+  ocluída (throttle a 1 Hz). Reafirme `Page.setWebLifecycleState: active`.
+- **Confirme o viewport antes de capturar.** Já capturei em 3840×2160 achando que
+  era 1920×1080 e quase reportei bug inexistente.
+- **`cargo build` falha com "Acesso negado"** se o `.exe` estiver rodando:
+  `taskkill //F //IM mtg-server.exe`.
+- **Caminho do projeto tem espaço e acento** — sempre entre aspas. Caminho estilo
+  Git Bash (`/c/Users/...`) **não funciona** em variável lida pelo Rust.
+- **Limite de sessão mata agente no meio.** O trabalho parcial fica no disco mas o
+  workflow reporta falha. **Inspecionar o disco antes de refazer**, e retomar com
+  `Workflow({scriptPath, resumeFromRunId})`.
+- **`ok: true` de workflow não significa código no disco.** Confira com `wc -l`.
+
+---
+
+## A lição que se repetiu duas vezes
+
+**A costura entre crates é onde o trabalho paralelo falha.** Aconteceu com
+import↔db (a importação gravava 32 mil cartas num arquivo que o servidor nunca
+abria, e `/api/stats` respondia 174) e com import↔oracle (1.786 linhas de
+compilador viraram código morto). Nos dois casos cada agente entregou um crate
+correto e testado, e ninguém era dono da fronteira.
+
+**A defesa que funcionou nas duas vezes foi a mesma:** uma rota que reporta o
+estado real de ponta a ponta. `/api/stats` denunciou o "174" e depois o "3.831
+travado". Endpoint de estatística é barato e paga sozinho.
 
 ---
 
 ## Grafo (graphify)
 
-- `graphify-out/graph.json`, construído com `--code-only` (obrigatório: não manda
-  doc/PDF/imagem para LLM). **Fora do git** — é derivado.
-- Hooks `post-commit` e `post-checkout` instalados em `.git/hooks/`: rodam
-  `graphify update` em background a cada commit, log em
-  `graphify-out/.last-update.log`. Não bloqueiam o commit.
-- Staleness: comparar `built_at_commit` do `graph.json` com `git rev-parse HEAD`.
+`graphify-out/graph.json`, `--code-only`, fora do git. Hooks `post-commit` e
+`post-checkout` reconstroem em background a cada commit. Staleness: comparar
+`built_at_commit` com `git rev-parse HEAD`.
 
 ```bash
 G='.../graphify-out/graph.json'
 graphify query "quem chama layers::characteristics" --graph "$G" --budget 1200
 graphify god-nodes --graph "$G"
-graphify path "Game::run" "sba::check" --graph "$G"
 ```
-
-Último build: 841 nodes, 2120 edges, 31 communities, commit `a97d121`.
-
----
-
-## Como retomar do zero
-
-1. `cd` para o diretório (entre aspas).
-2. Ler este arquivo, depois `docs/ENGINE_CONTRACT.md`.
-3. `git log --oneline | head` e `git status`.
-4. `cargo check --workspace --all-targets 2>&1 | head -40` — a verdade sobre o motor.
-5. `for f in query layers stack triggers sba combat resolve; do wc -l crates/mtg-core/src/engine/$f.rs; done`
-   — se algum tiver < 50 linhas, ainda é stub.
-6. `cd web && npx tsc --noEmit` — a verdade sobre o cliente.
-7. `graphify update "<repo>"` se o grafo estiver velho.
-8. Retomar em "Próximos passos".
-
-Se algo aqui contradiz o código, **o código ganha**.
