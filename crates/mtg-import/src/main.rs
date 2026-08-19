@@ -18,6 +18,7 @@ use std::time::Instant;
 
 use mtg_import::compile::compile_card;
 use mtg_import::report::{self, CoverageHeader, CoverageReport};
+use mtg_oracle::coverage::{self, PoolMask};
 use mtg_import::scryfall::{self, reject_reason};
 use mtg_import::store::{imported_card, ImportStore};
 use mtg_import::{ImportError, ImportStats};
@@ -164,7 +165,12 @@ fn sync(args: SyncArgs) -> Result<(), ImportError> {
                 path.display()
             )));
         }
-        (path, "cache".to_string(), false)
+        // O carimbo vem do metadado gravado no download, não da palavra
+        // "cache": o relatório precisa dizer de quando são os números.
+        let updated_at = scryfall::cached_meta(&args.cache, &args.bulk)
+            .map(|m| m.updated_at)
+            .unwrap_or_else(|| "cache sem metadado".to_string());
+        (path, updated_at, false)
     } else {
         let outcome = scryfall::download_bulk(&args.bulk, &args.cache)?;
         println!(
@@ -261,20 +267,44 @@ fn import_file(
         }
         let compiled = compile_card(&card, index);
         index = index.saturating_add(1);
-        coverage.observe_type_line(&compiled.def.type_line);
+        // O pool sai do `legalities` e da raridade do bulk, nao do IR: e o
+        // denominador que diz quanto de um pool JOGAVEL esta coberto, e ele
+        // precisa contar tambem a carta que nao compilou.
+        let pools = pool_mask_of(&card);
+        let has_legalities = card.legalities.as_ref().is_some_and(|m| !m.is_empty());
+        coverage.observe_card(&compiled.def.type_line, pools, compiled.playable, has_legalities);
         if compiled.playable {
             stats.playable += 1;
         } else {
             stats.note_unplayable(compiled.reason.as_deref().unwrap_or("motivo não registrado"));
             match compiled.pattern.as_deref() {
-                Some(text) => coverage.add_text_block(text, &compiled.def.name),
-                None => coverage.add_structural_block(),
+                Some(text) => coverage.add_text_block(text, &compiled.def.name, pools),
+                // Sem trecho de texto o que classifica é o MOTIVO. Sem ele,
+                // layout e vocabulário faltando viravam o mesmo número.
+                None => coverage.add_blocked_without_snippet(
+                    compiled.reason.as_deref().unwrap_or_default(),
+                    &compiled.def.name,
+                    pools,
+                ),
             }
         }
         store.push(imported_card(&card, compiled))?;
     }
     store.flush()?;
     Ok(stats)
+}
+
+/// De que pools a carta participa, lido direto do bulk.
+///
+/// `legalities` ausente não é o mesmo que ilegal: `pools_of` recebe `None` e a
+/// carta fica só no catálogo, fora das linhas de formato. Contar ausência como
+/// ilegalidade derrubaria a porcentagem por um buraco de dado, e o relatório
+/// mostraria queda de cobertura onde não houve nenhuma.
+fn pool_mask_of(card: &scryfall::ScryfallCard) -> PoolMask {
+    let rarity = card.rarity.as_deref().unwrap_or_default();
+    coverage::pools_of(rarity, |format| {
+        card.legalities.as_ref().and_then(|m| m.get(format)).map(String::as_str)
+    })
 }
 
 fn print_summary(

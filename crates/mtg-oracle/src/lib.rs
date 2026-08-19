@@ -19,7 +19,9 @@
 //! não depende do crate de importação e roda inteiro em teste, sem rede.
 #![forbid(unsafe_code)]
 
+mod abilities;
 mod effects;
+pub mod coverage;
 mod keywords;
 pub mod layouts;
 mod parse;
@@ -209,6 +211,13 @@ pub fn compile(card: &ScryfallLike) -> CompileResult {
                 replacement: Effect::Nothing,
                 text: line.raw.clone(),
             }));
+            continue;
+        }
+        // Habilidades de permanente: disparada, ativada, de mana, estática.
+        // Uma linha pode virar mais de uma habilidade ("get +1/+1 and have
+        // haste" são duas `StaticAbility`).
+        if let Some(parsed) = abilities::parse_ability_line(&line.norm, &line.raw, !is_spell) {
+            abilities.extend(parsed);
             continue;
         }
         if is_spell {

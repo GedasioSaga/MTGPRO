@@ -9,10 +9,23 @@ import type {
   MatchEvent,
   ObjectId,
   Outcome,
+  SeatFrame,
   ServerFrame,
 } from '../types/protocol'
 
 export type ConnectionState = 'idle' | 'connecting' | 'live' | 'done' | 'error'
+
+/**
+ * A mesa pedida pela tela de abertura: de dois a quatro assentos e o formato
+ * em que eles jogam. Substituiu o par `(deckA, deckB)` — o duelo virou o caso
+ * de dois assentos, e não uma forma própria.
+ */
+export interface TableSetup {
+  format: string
+  seats: readonly SeatFrame[]
+  seed: number
+  speed: number
+}
 
 /**
  * Um evento e, quando ele fecha um frame do servidor, o `GameView` que passa a
@@ -43,7 +56,7 @@ export interface MatchStore {
   turnsPlayed: number
   durationMs: number
 
-  start: (deckA: string, deckB: string, seed: number, speed: number) => void
+  start: (setup: TableSetup) => void
   pause: () => void
   resume: () => void
   setSpeed: (speed: number) => void
@@ -80,7 +93,8 @@ export const useMatchStore = create<MatchStore>((set, get) => ({
   turnsPlayed: 0,
   durationMs: 0,
 
-  start: (deckA, deckB, seed, speed) => {
+  start: (setup) => {
+    const { format, seats, seed, speed } = setup
     clearTimer()
     queue = []
     pendingDone = null
@@ -108,7 +122,13 @@ export const useMatchStore = create<MatchStore>((set, get) => ({
       onFrame: (frame) => handleFrame(frame, set, get),
       onStatus: (status) => handleStatus(status, set),
     })
-    socket.start({ type: 'start', deckA, deckB, seed, speed: clampSpeed(speed) })
+    socket.start({
+      type: 'start',
+      format,
+      seats: seats.map((seat) => ({ ...seat })),
+      seed,
+      speed: clampSpeed(speed),
+    })
   },
 
   pause: () => {
@@ -183,6 +203,17 @@ function handleFrame(frame: ServerFrame, set: SetState, get: GetState): void {
     case 'done':
       pendingDone = frame
       break
+
+    case 'error':
+      // Pedido recusado (formato, número de jogadores, deck ilegal). Volta
+      // para a tela de abertura em vez de deixar a mesa vazia: a mensagem só
+      // é acionável ao lado dos controles que a produziram.
+      socket?.close()
+      socket = null
+      queue = []
+      pendingDone = null
+      set({ connection: 'idle', error: frame.message, playing: false })
+      return
   }
   kick(set, get)
 }

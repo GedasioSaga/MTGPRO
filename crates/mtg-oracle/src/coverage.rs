@@ -134,7 +134,7 @@ const PLAYABLE_STATUS: &str = "legal";
 /// **campo ausente**, não "ilegal": o chamador tem de contar essas cartas à
 /// parte e dizer no relatório, em vez de deixá-las derrubarem a porcentagem
 /// como se fossem ilegais.
-pub fn pools_of(rarity: &str, legality: impl Fn(&str) -> Option<&str>) -> PoolMask {
+pub fn pools_of<'a>(rarity: &str, legality: impl Fn(&str) -> Option<&'a str>) -> PoolMask {
     let mut mask = PoolMask::empty().with(Pool::Catalog);
     for pool in Pool::FORMATS {
         if let Some(fmt) = pool.scryfall_format() {
@@ -151,7 +151,7 @@ pub fn pools_of(rarity: &str, legality: impl Fn(&str) -> Option<&str>) -> PoolMa
 
 /// `true` quando a carta trouxe o campo `legalities` de que os pools de formato
 /// dependem. Sem ele a coluna do relatório mentiria por omissão.
-pub fn has_format_legality(legality: impl Fn(&str) -> Option<&str>) -> bool {
+pub fn has_format_legality<'a>(legality: impl Fn(&str) -> Option<&'a str>) -> bool {
     Pool::FORMATS.iter().filter_map(|p| p.scryfall_format()).any(|f| legality(f).is_some())
 }
 
@@ -221,19 +221,6 @@ const fn cap(
 ) -> Capability {
     Capability { id, label, gap, need, exact, needles, unless }
 }
-
-/// Bloqueio que não é textual: a carta tem mais de uma face, ou um layout que o
-/// modelo de carta não representa. Não sai de [`classify`] — o chamador a usa
-/// para as cartas cujo bloqueio veio antes de o texto ser lido.
-pub const LAYOUT: Capability = cap(
-    "layout-multiface",
-    "Carta de mais de uma face (split, adventure, transform, MDFC)",
-    Gap::Ir,
-    "`CardDef` representa uma face só: falta modelo de face e de troca de face",
-    &[],
-    &[],
-    &[],
-);
 
 /// Texto travado que nenhuma regra reconheceu. Existe para que o buraco da
 /// própria taxonomia apareça no relatório em vez de sumir dentro dele.
@@ -672,6 +659,153 @@ pub fn classify(pattern: &str) -> &'static Capability {
     CAPABILITIES.iter().find(|c| c.matches(pattern)).unwrap_or(&UNCLASSIFIED)
 }
 
+// ---------------------------------------------------------------------------
+// Bloqueio sem padrão de texto
+// ---------------------------------------------------------------------------
+
+/// Nem todo bloqueio deixa um padrão de texto para trás.
+///
+/// Quando o compilador falha fundo dentro do parser de efeito, ele registra um
+/// **motivo** (`"substantivo 'enchanted'"`, `"gatilho 'whenever you cast a
+/// spell that'"`) e nenhum trecho. Chamar essas cartas de "bloqueio
+/// estrutural" e jogá-las todas na conta do layout foi o erro que este bloco
+/// existe para não repetir: das 9.782 cartas sem padrão, só cerca de 1.200 são
+/// de mais de uma face — o resto é **vocabulário faltando no parser**, que é
+/// trabalho de outra pessoa, em outro crate.
+///
+/// O motivo tem forma fixa: um prefixo que nomeia o que o parser esperava,
+/// seguido do trecho entre aspas. É por esse prefixo que se classifica.
+pub const REASON_CAPABILITIES: &[Capability] = &[
+    // --- multiface: o único bloqueio que é mesmo de layout ------------------
+    cap(
+        "layout-multiface",
+        "Carta de mais de uma face (split, adventure, transform, MDFC)",
+        Gap::Ir,
+        "`CardDef` representa uma face só: falta modelo de face e de troca de face",
+        &["linha de tipo de carta multiface", "custo de mana de carta dividida"],
+        &["layout '"],
+        &[],
+    ),
+    // --- vocabulário do parser: o IR já tem onde encaixar -------------------
+    cap(
+        "vocabulario-de-seletor",
+        "Substantivo, objeto ou sintagma de alvo não reconhecido",
+        Gap::Parser,
+        "`Selector` e `Filter` já descrevem estes alvos; falta o parser mapear a palavra",
+        &[],
+        &["substantivo '", "objeto '", "sintagma '"],
+        &[],
+    ),
+    cap(
+        "vocabulario-de-gatilho",
+        "Condição de gatilho não reconhecida",
+        Gap::Parser,
+        "`TriggerCondition` já tem as variantes de gatilho; falta o parser casar a frase",
+        &[],
+        &["gatilho '"],
+        &[],
+    ),
+    cap(
+        "vocabulario-de-quantidade",
+        "Quantidade não reconhecida",
+        Gap::Parser,
+        "`Value::Fixed` e `Value::Count` já expressam a quantidade; falta o parser lê-la",
+        &[],
+        &["quantidade '", "marcador '"],
+        &[],
+    ),
+    cap(
+        "efeito-nao-reconhecido",
+        "Efeito de mágica ou habilidade não reconhecido",
+        Gap::Parser,
+        "`Effect` cobre o verbo; falta o parser casar a redação (`Effect::Sequence` junta os pedaços)",
+        &["mágica sem efeito reconhecido", "efeito vazio", "habilidade com alvos demais"],
+        &[],
+        &[],
+    ),
+    // --- pedidos de IR de verdade ------------------------------------------
+    cap(
+        "pt-caracteristico",
+        "P/T ou lealdade que depende do estado do jogo (`*`)",
+        Gap::Ir,
+        "`CardDef.power` é um número: falta P/T característico, que se recalcula sozinho",
+        &[],
+        &["valor variável '", "número impresso vazio"],
+        &[],
+    ),
+    cap(
+        "custo-com-x",
+        "Custo com {X}",
+        Gap::Ir,
+        "falta X como valor escolhido no lançamento e propagado para os efeitos",
+        &["custo com {X}"],
+        &[],
+        &[],
+    ),
+    cap(
+        "custo-nao-representavel",
+        "Custo de mana ou de ativação não representável",
+        Gap::Ir,
+        "híbrido, Phyrexiano e {Q} não têm símbolo em `ManaSymbol`, nem custo de vida em `Cost`",
+        &[],
+        &["símbolo ", "custo de mana '", "custo '", "custo de vida '", "custo de desvirar", "custo vazio"],
+        &[],
+    ),
+    cap(
+        "ficha-nao-representavel",
+        "Ficha com corpo que `TokenSpec` não descreve",
+        Gap::Ir,
+        "`TokenSpec` é ficha literal com `keywords`: sem `abilities`, Treasure e Food não cabem",
+        &[],
+        &["ficha '", "ficha sem P/T", "P/T de ficha '"],
+        &[],
+    ),
+    cap(
+        "modal-com-alvo-por-modo",
+        "Modo com alvo próprio por opção",
+        Gap::Ir,
+        "`Effect::Modal` guarda efeitos, não `TargetSpec` por modo — o alvo é da mágica inteira",
+        &["modal com alvo por modo", "modal fora de mágica", "modal sem modos suficientes"],
+        &[],
+        &[],
+    ),
+    cap(
+        "contramagica-condicional",
+        "Contramágica condicional (\"a menos que pague\")",
+        Gap::Ir,
+        "`Effect::CounterSpell` é incondicional: falta o ramo \"a menos que\" com custo",
+        &[],
+        &["contramágica '"],
+        &[],
+    ),
+    cap(
+        "tipo-de-carta-fora-do-modelo",
+        "Tipo ou linha de tipo fora do modelo de carta",
+        Gap::Ir,
+        "`CardType` não tem o tipo (Stickers, Attraction, …), então a linha inteira não resolve",
+        &["sem linha de tipo", "linha de tipo vazia"],
+        &["tipo '", "linha de tipo '"],
+        &[],
+    ),
+];
+
+/// A que capacidade pertence um bloqueio que não deixou padrão de texto.
+///
+/// Recebe o motivo cru que o compilador registrou. Devolve [`UNCLASSIFIED`]
+/// quando nenhuma regra casa — de novo, para o buraco da taxonomia aparecer no
+/// relatório em vez de sumir dentro do balde do layout.
+pub fn classify_reason(reason: &str) -> &'static Capability {
+    REASON_CAPABILITIES
+        .iter()
+        .find(|c| {
+            if c.unless.iter().any(|n| reason.starts_with(n)) {
+                return false;
+            }
+            c.exact.iter().any(|e| reason == *e) || c.needles.iter().any(|n| reason.starts_with(n))
+        })
+        .unwrap_or(&UNCLASSIFIED)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -723,7 +857,7 @@ mod tests {
     #[test]
     fn capability_ids_are_unique_and_kebab_case() {
         let mut seen: BTreeSet<&str> = BTreeSet::new();
-        for c in CAPABILITIES.iter().chain([&LAYOUT, &UNCLASSIFIED]) {
+        for c in CAPABILITIES.iter().chain(REASON_CAPABILITIES).chain([&UNCLASSIFIED]) {
             assert!(seen.insert(c.id), "id repetido: {}", c.id);
             assert!(
                 c.id.chars().all(|ch| ch.is_ascii_lowercase() || ch == '-'),
@@ -817,6 +951,98 @@ mod tests {
                 c.id,
                 c.need
             );
+        }
+    }
+
+    /// Motivos REAIS colhidos de uma importação do bulk inteiro, com a
+    /// capacidade em que cada um tem de cair.
+    ///
+    /// Este é o teste que impede a volta do erro que motivou o bloco: antes,
+    /// as 9.782 cartas sem padrão de texto iam todas para o balde do layout, e
+    /// o relatório dizia que quase dez mil cartas eram de duas faces quando na
+    /// verdade só ~1.200 são. As outras são vocabulário faltando no parser —
+    /// trabalho de outra pessoa, em outro crate.
+    #[test]
+    fn real_reasons_land_in_the_intended_capability() {
+        let cases: &[(&str, &str)] = &[
+            // multiface de verdade
+            ("layout 'transform': a face frontal depende da outra ('transform')", "layout-multiface"),
+            ("layout 'split': as duas metades sao lancaveis, cada uma com custo proprio", "layout-multiface"),
+            ("layout 'adventure': criatura e aventura sao lancaveis, cada uma com custo proprio", "layout-multiface"),
+            ("layout 'modal_dfc': a face de tras e lancavel da mao, com custo proprio", "layout-multiface"),
+            ("linha de tipo de carta multiface", "layout-multiface"),
+            ("custo de mana de carta dividida", "layout-multiface"),
+            // vocabulário do parser
+            ("substantivo 'enchanted'", "vocabulario-de-seletor"),
+            ("substantivo 'equipped'", "vocabulario-de-seletor"),
+            ("objeto 'it'", "vocabulario-de-seletor"),
+            ("objeto 'the top card of your library'", "vocabulario-de-seletor"),
+            ("sintagma 'attacking'", "vocabulario-de-seletor"),
+            ("gatilho 'whenever you cast a noncreature spell,'", "vocabulario-de-gatilho"),
+            ("gatilho 'at the beginning of each player's'", "vocabulario-de-gatilho"),
+            ("quantidade 'a card, then discard a'", "vocabulario-de-quantidade"),
+            ("marcador 'x'", "vocabulario-de-quantidade"),
+            ("mágica sem efeito reconhecido", "efeito-nao-reconhecido"),
+            ("habilidade com alvos demais", "efeito-nao-reconhecido"),
+            // pedidos de IR
+            ("valor variável '*'", "pt-caracteristico"),
+            ("custo com {X}", "custo-com-x"),
+            ("símbolo híbrido {W/U}", "custo-nao-representavel"),
+            ("custo de desvirar {Q}", "custo-nao-representavel"),
+            ("ficha 'treasure'", "ficha-nao-representavel"),
+            ("ficha sem P/T", "ficha-nao-representavel"),
+            ("modal com alvo por modo", "modal-com-alvo-por-modo"),
+            ("contramágica 'target spell unless its controller pays'", "contramagica-condicional"),
+            ("tipo 'Stickers'", "tipo-de-carta-fora-do-modelo"),
+            ("sem linha de tipo", "tipo-de-carta-fora-do-modelo"),
+        ];
+        for (reason, expected) in cases {
+            assert_eq!(
+                classify_reason(reason).id,
+                *expected,
+                "motivo {reason:?} caiu na capacidade errada"
+            );
+        }
+    }
+
+    #[test]
+    fn layout_bucket_does_not_swallow_parser_vocabulary() {
+        // O erro concreto que se está impedindo: "substantivo 'enchanted'"
+        // aparece 262 vezes e NÃO é carta de duas faces.
+        for reason in ["substantivo 'enchanted'", "objeto 'it'", "gatilho 'whenever ~ attacks'"] {
+            let c = classify_reason(reason);
+            assert_ne!(c.id, "layout-multiface", "{reason:?} não é problema de layout");
+            assert_eq!(c.gap, Gap::Parser, "{reason:?} é vocabulário, dá para fazer sem mtg-core");
+        }
+    }
+
+    #[test]
+    fn unknown_reason_is_reported_not_swallowed() {
+        let c = classify_reason("motivo que ninguém previu");
+        assert_eq!(c.id, "nao-classificado");
+    }
+
+    #[test]
+    fn reason_gaps_that_promise_parser_name_an_ir_construct() {
+        for c in REASON_CAPABILITIES.iter().filter(|c| c.gap == Gap::Parser) {
+            assert!(
+                c.need.contains("Effect::")
+                    || c.need.contains("Selector")
+                    || c.need.contains("TriggerCondition")
+                    || c.need.contains("Value::"),
+                "{} promete parser sem nomear a construção do IR: {}",
+                c.id,
+                c.need
+            );
+        }
+    }
+
+    #[test]
+    fn reason_classification_is_deterministic() {
+        let reason = "substantivo 'enchanted'";
+        let first = classify_reason(reason).id;
+        for _ in 0..10 {
+            assert_eq!(classify_reason(reason).id, first);
         }
     }
 

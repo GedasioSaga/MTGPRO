@@ -14,6 +14,33 @@ export interface DeckInfo {
    * (`DeckSummary.colors`) — as listas embutidas de fallback podem omitir.
    */
   colorIdentity?: readonly string[]
+  /** Slug do formato para o qual a lista foi montada. */
+  format?: string
+  /** CR 903.3 — nome do comandante declarado pela lista. */
+  commander?: string | null
+  cardCount?: number
+  /** Veredito por formato, indexado pelo slug. Vem de `GET /api/decks`. */
+  legality?: Readonly<Record<string, DeckLegality>>
+}
+
+export interface DeckLegality {
+  legal: boolean
+  /** Mensagens prontas para a tela, já em português. */
+  violations: readonly string[]
+}
+
+/** Um formato jogável, como `GET /api/formats` o descreve. */
+export interface FormatInfo {
+  slug: string
+  name: string
+  minDeckSize: number
+  exactDeckSize: number | null
+  maxCopies: number | null
+  requiresCommander: boolean
+  minPlayers: number
+  maxPlayers: number
+  /** Quantos decks do servidor passam na validação deste formato. */
+  deckCount: number
 }
 
 /** `Color` do motor chega por extenso; a UI trabalha com a letra. */
@@ -67,9 +94,63 @@ export async function fetchDecks(signal?: AbortSignal): Promise<DeckInfo[]> {
     const id = typeof record.id === 'string' ? record.id : null
     if (id === null) continue
     const name = typeof record.name === 'string' ? record.name : prettifyDeckId(id)
-    decks.push({ id, name, colorIdentity: normalizeColors(record.colors) })
+    decks.push({
+      id,
+      name,
+      colorIdentity: normalizeColors(record.colors),
+      format: typeof record.format === 'string' ? record.format : undefined,
+      commander: typeof record.commander === 'string' ? record.commander : null,
+      cardCount: typeof record.cardCount === 'number' ? record.cardCount : undefined,
+      legality: normalizeLegality(record.legality),
+    })
   }
   return decks
+}
+
+/** `DeckSummary.legality` é uma lista no fio; a tela consulta por slug. */
+function normalizeLegality(value: unknown): Record<string, DeckLegality> | undefined {
+  if (!Array.isArray(value)) return undefined
+  const out: Record<string, DeckLegality> = {}
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null) continue
+    const r = item as Record<string, unknown>
+    if (typeof r.format !== 'string') continue
+    out[r.format] = {
+      legal: r.legal === true,
+      violations: Array.isArray(r.violations)
+        ? r.violations.filter((v): v is string => typeof v === 'string')
+        : [],
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+/**
+ * `GET /api/formats` — formatos suportados, tamanho de deck e quantos decks
+ * servem a cada um. Lista vazia quando o servidor não responde: a tela cai nos
+ * formatos embutidos e continua utilizável.
+ */
+export async function fetchFormats(signal?: AbortSignal): Promise<FormatInfo[]> {
+  const body = await getJson('/api/formats', signal)
+  if (!Array.isArray(body)) return []
+  const out: FormatInfo[] = []
+  for (const item of body) {
+    if (typeof item !== 'object' || item === null) continue
+    const r = item as Record<string, unknown>
+    if (typeof r.slug !== 'string') continue
+    out.push({
+      slug: r.slug,
+      name: asString(r.name, r.slug),
+      minDeckSize: asNumber(r.minDeckSize, 60),
+      exactDeckSize: asNullableNumber(r.exactDeckSize),
+      maxCopies: asNullableNumber(r.maxCopies),
+      requiresCommander: r.requiresCommander === true,
+      minPlayers: asNumber(r.minPlayers, 2),
+      maxPlayers: asNumber(r.maxPlayers, 2),
+      deckCount: asNumber(r.deckCount, 0),
+    })
+  }
+  return out
 }
 
 /**

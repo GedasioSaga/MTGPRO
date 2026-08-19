@@ -812,7 +812,15 @@ fn turn_interrupted(game: &Game) -> bool {
     game.state.is_over() || active_player_left(&game.state)
 }
 
-fn next_alive(state: &GameState, from: PlayerId) -> Option<PlayerId> {
+/// CR 800.4d — quem deixou a partida sai da ordem de turno. A partir de
+/// `from` (inclusive), o primeiro jogador que ainda está na partida.
+///
+/// `pub(crate)` porque `layers::expire_continuous_effects` precisa do
+/// **mesmo** sucessor que `advance_turn` usa: se os dois discordarem, um
+/// efeito "até o seu próximo turno" do jogador que herdou a vez nunca
+/// expira. Num duelo os dois coincidem sempre (quem perde encerra a
+/// partida), então a divergência só aparece de três jogadores para cima.
+pub(crate) fn next_alive(state: &GameState, from: PlayerId) -> Option<PlayerId> {
     let total = state.players.len();
     let mut current = from;
     for _ in 0..total {

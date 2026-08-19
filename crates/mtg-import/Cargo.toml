@@ -8,6 +8,10 @@ license.workspace = true
 [dependencies]
 mtg-core.workspace = true
 mtg-db.workspace = true
+# Só pela política de layout (`mtg_oracle::layouts`): qual face de uma
+# carta multiface o compilador pode ler é decisão de regras, e mora com
+# as regras, não no leitor de JSON.
+mtg-oracle.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

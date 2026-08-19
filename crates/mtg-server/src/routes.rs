@@ -27,9 +27,15 @@ use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 use tracing::{error, warn};
 
+use mtg_cards::Format;
+use mtg_format::{validate_with, CatalogLegality, LegalitySource, ScryfallLegality, Violation};
+
 use crate::catalog::DeckInfo;
-use crate::protocol::{ClientMessage, DeckSummary, HealthResponse, ServerFrame};
-use crate::sim::{self, MatchRequest};
+use crate::protocol::{
+    ClientMessage, DeckLegality, DeckSummary, FormatSummary, HealthResponse, SeatRequest,
+    ServerFrame,
+};
+use crate::sim::{self, MatchRequest, Seat, TableRequest, MAX_SEATS, MIN_SEATS};
 
 /// Teto de itens por página. Existe para que um `limit=999999` de cliente
 /// distraído não vire uma resposta de dezenas de MB — que é exatamente o que
@@ -40,11 +46,57 @@ const DEFAULT_PAGE_LIMIT: usize = 60;
 pub struct AppState {
     pub db: Arc<CardDatabase>,
     pub decks: Vec<DeckInfo>,
+    /// Banimento e rotação de verdade, vindos do Scryfall. `None` quando o
+    /// banco não tem esse dado — ver `AppState::violations`.
+    pub legality: Option<ScryfallLegality>,
 }
 
 impl AppState {
+    pub fn new(db: Arc<CardDatabase>, decks: Vec<DeckInfo>) -> AppState {
+        AppState { legality: crate::catalog::load_legality(&db), db, decks }
+    }
+
     pub fn deck(&self, id: &str) -> Option<&DeckInfo> {
         self.decks.iter().find(|d| d.id == id)
+    }
+
+    /// Tudo que impede esta lista de ser jogada neste formato, de uma vez só —
+    /// `mtg-format` devolve o conjunto inteiro, e quem monta deck quer a lista
+    /// inteira, não um problema por rodada.
+    ///
+    /// Sem índice do Scryfall a checagem cai em `CatalogLegality`, que valida
+    /// tamanho, cópias, singleton, identidade de cor e raridade mas **não**
+    /// banimento. Degradar assim é melhor que o alternativo: o índice vazio
+    /// responde "ilegal" para tudo, e aí nenhuma partida começaria.
+    pub fn violations(&self, deck: &DeckInfo, format: Format) -> Vec<Violation> {
+        let result = match &self.legality {
+            Some(index) => self.validate(deck, format, index),
+            None => self.validate(deck, format, &CatalogLegality::new(&self.db)),
+        };
+        result.err().unwrap_or_default()
+    }
+
+    fn validate<L: LegalitySource + ?Sized>(
+        &self,
+        deck: &DeckInfo,
+        format: Format,
+        legality: &L,
+    ) -> Result<(), Vec<Violation>> {
+        validate_with(&deck.list, &self.db, format, legality)
+    }
+
+    /// Quantos jogadores este formato aceita na mesa.
+    ///
+    /// Só Commander é multiplayer aqui: CR 903 é a variante desenhada para
+    /// free-for-all, e Standard/Modern/Pauper são formatos de duelo. O motor
+    /// roda quatro assentos em qualquer formato — o que segura em dois é esta
+    /// regra, não uma limitação técnica.
+    fn seat_range(format: Format) -> (usize, usize) {
+        if format.requires_commander() {
+            (MIN_SEATS, MAX_SEATS)
+        } else {
+            (MIN_SEATS, MIN_SEATS)
+        }
     }
 }
 
@@ -74,6 +126,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let api = Router::new()
         .route("/api/health", get(health))
         .route("/api/decks", get(decks))
+        .route("/api/formats", get(formats))
         .route("/ws/match", get(ws_match))
         .with_state(state)
         .merge(catalog_api);
@@ -330,6 +383,11 @@ fn parse_u32(raw: Option<&str>, field: &str) -> Result<Option<u32>, ApiFailure> 
         .map_err(|_| ApiFailure::BadRequest(format!("{field} inválido: {raw}")))
 }
 
+/// Quantas violações de um mesmo deck vão para a tela. Uma lista de 60 cartas
+/// fora do formato produz uma violação por carta, e despejar as 60 num painel
+/// não informa mais que as primeiras.
+const MAX_VIOLATIONS_SHOWN: usize = 8;
+
 async fn decks(State(state): State<Arc<AppState>>) -> Json<Vec<DeckSummary>> {
     let list = state
         .decks
@@ -340,6 +398,56 @@ async fn decks(State(state): State<Arc<AppState>>) -> Json<Vec<DeckSummary>> {
             description: d.description.clone(),
             colors: d.colors.clone(),
             card_count: d.cards.len(),
+            format: d.format.slug().to_string(),
+            commander: d.commander.clone(),
+            legality: Format::ALL
+                .into_iter()
+                .map(|format| {
+                    let found = state.violations(d, format);
+                    DeckLegality {
+                        format: format.slug().to_string(),
+                        legal: found.is_empty(),
+                        violations: summarize(&found),
+                    }
+                })
+                .collect(),
+        })
+        .collect();
+    Json(list)
+}
+
+/// Violações em texto, truncadas com um resumo do que sobrou — nunca cortadas
+/// em silêncio, porque "3 problemas" e "31 problemas" pedem decisões
+/// diferentes de quem está montando a mesa.
+fn summarize(found: &[Violation]) -> Vec<String> {
+    let mut out: Vec<String> =
+        found.iter().take(MAX_VIOLATIONS_SHOWN).map(|v| v.to_string()).collect();
+    if found.len() > MAX_VIOLATIONS_SHOWN {
+        out.push(format!("… e mais {} problema(s)", found.len() - MAX_VIOLATIONS_SHOWN));
+    }
+    out
+}
+
+/// `GET /api/formats` — o que a tela de abertura precisa para montar a mesa:
+/// os formatos, o tamanho de deck de cada um e quantos decks servem a cada um.
+async fn formats(State(state): State<Arc<AppState>>) -> Json<Vec<FormatSummary>> {
+    let list = Format::ALL
+        .into_iter()
+        .map(|format| {
+            let (min_players, max_players) = AppState::seat_range(format);
+            let deck_count =
+                state.decks.iter().filter(|d| state.violations(d, format).is_empty()).count();
+            FormatSummary {
+                slug: format.slug().to_string(),
+                name: format.to_string(),
+                min_deck_size: format.min_deck_size(),
+                exact_deck_size: format.exact_deck_size(),
+                max_copies: format.max_copies(),
+                requires_commander: format.requires_commander(),
+                min_players,
+                max_players,
+                deck_count,
+            }
         })
         .collect();
     Json(list)
@@ -424,33 +532,51 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     while let Some(Ok(msg)) = ws_rx.next().await {
         let Message::Text(text) = msg else { continue };
         match serde_json::from_str::<ClientMessage>(text.as_str()) {
-            Ok(ClientMessage::Start { deck_a, deck_b, seed, speed, perspective }) => {
+            Ok(ClientMessage::Start { deck_a, deck_b, format, seats, seed, speed, perspective }) => {
                 if playback.as_ref().is_some_and(|h| !h.is_finished()) {
                     send_error(&out_tx, "partida já em andamento nesta conexão").await;
                     continue;
                 }
-                let Some(cfg_a) = state.deck(&deck_a) else {
-                    send_error(&out_tx, &format!("deck desconhecido: {deck_a}")).await;
-                    continue;
-                };
-                let Some(cfg_b) = state.deck(&deck_b) else {
-                    send_error(&out_tx, &format!("deck desconhecido: {deck_b}")).await;
-                    continue;
-                };
-
-                let req = MatchRequest {
-                    name_a: cfg_a.name.clone(),
-                    name_b: cfg_b.name.clone(),
-                    observer: perspective.observer(),
-                    deck_a: cfg_a.cards.clone(),
-                    deck_b: cfg_b.cards.clone(),
-                    seed,
-                };
+                let observer = perspective.observer();
                 let db = state.db.clone();
                 let (sim_tx, sim_rx) = mpsc::channel::<ServerFrame>(64);
-                // Thread bloqueante dedicada: o motor roda a partida inteira
-                // numa chamada só e não pode compartilhar a runtime async.
-                tokio::task::spawn_blocking(move || sim::run_match_blocking(db, req, sim_tx));
+
+                // Thread bloqueante dedicada nos dois caminhos: o motor roda a
+                // partida inteira numa chamada só e não pode compartilhar a
+                // runtime async.
+                if seats.is_empty() {
+                    // Forma antiga do frame `start`: duelo por `deckA`/`deckB`.
+                    let (Some(deck_a), Some(deck_b)) = (deck_a, deck_b) else {
+                        send_error(&out_tx, "start precisa de seats[] ou de deckA e deckB").await;
+                        continue;
+                    };
+                    let Some(cfg_a) = state.deck(&deck_a) else {
+                        send_error(&out_tx, &format!("deck desconhecido: {deck_a}")).await;
+                        continue;
+                    };
+                    let Some(cfg_b) = state.deck(&deck_b) else {
+                        send_error(&out_tx, &format!("deck desconhecido: {deck_b}")).await;
+                        continue;
+                    };
+                    let req = MatchRequest {
+                        name_a: cfg_a.name.clone(),
+                        name_b: cfg_b.name.clone(),
+                        observer,
+                        deck_a: cfg_a.cards.clone(),
+                        deck_b: cfg_b.cards.clone(),
+                        seed,
+                    };
+                    tokio::task::spawn_blocking(move || sim::run_match_blocking(db, req, sim_tx));
+                } else {
+                    let req = match build_table(&state, &seats, format.as_deref(), observer, seed) {
+                        Ok(req) => req,
+                        Err(message) => {
+                            send_error(&out_tx, &message).await;
+                            continue;
+                        }
+                    };
+                    tokio::task::spawn_blocking(move || sim::run_table_blocking(db, req, sim_tx));
+                }
 
                 control.reset();
                 let control_for_playback = control.clone();
@@ -502,6 +628,102 @@ async fn playback_loop(
     }
 }
 
+/// Teto de linhas na mensagem de erro de legalidade. Quatro assentos com deck
+/// errado geram dezenas de violações; a caixa da tela precisa continuar legível.
+const MAX_PROBLEMS_REPORTED: usize = 12;
+
+/// Monta a mesa pedida, ou devolve, numa mensagem só, TUDO que impede montá-la.
+///
+/// Nada aqui pode entrar em pânico: `seats` vem do cliente, que é entrada
+/// hostil. Formato desconhecido, deck inexistente, contagem de assentos fora da
+/// faixa e deck ilegal viram texto para o usuário ler.
+fn build_table(
+    state: &AppState,
+    seats: &[SeatRequest],
+    format: Option<&str>,
+    observer: mtg_core::view::Observer,
+    seed: u64,
+) -> Result<TableRequest, String> {
+    let slug = format.unwrap_or_else(|| Format::Casual.slug());
+    let Some(format) = Format::from_slug(slug) else {
+        return Err(format!("formato desconhecido: {slug}"));
+    };
+
+    let (min, max) = AppState::seat_range(format);
+    let found = seats.len();
+    if !(min..=max).contains(&found) {
+        return Err(if min == max {
+            format!("{format} é formato de duelo: pede {min} jogadores, e vieram {found}")
+        } else {
+            format!("{format} aceita de {min} a {max} jogadores, e vieram {found}")
+        });
+    }
+
+    let mut problems: Vec<String> = Vec::new();
+    let mut built: Vec<Seat> = Vec::new();
+    let mut taken: Vec<String> = Vec::new();
+
+    for (index, request) in seats.iter().enumerate() {
+        let position = index + 1;
+        let Some(deck) = state.deck(&request.deck) else {
+            problems.push(format!("Assento {position}: deck desconhecido: {}", request.deck));
+            continue;
+        };
+        for violation in state.violations(deck, format) {
+            problems.push(format!("Assento {position} ({}): {violation}", deck.name));
+        }
+
+        // Comandante pedido pelo cliente ganha do declarado pela lista — é o
+        // que permite trocar o comandante sem editar `decks.rs`.
+        let commander = match request.commander.as_deref() {
+            Some(name) => match state.db.id_by_name(name) {
+                Some(id) => Some(id),
+                None => {
+                    problems.push(format!("Assento {position}: comandante desconhecido: {name}"));
+                    None
+                }
+            },
+            None => deck.commander_id,
+        };
+
+        let bot = request.bot.clone().unwrap_or_else(|| mtg_ai::DEFAULT_BOT.to_string());
+        let mut seat =
+            Seat::new(unique_name(&deck.name, &mut taken), deck.cards.clone()).with_bot(bot);
+        if let Some(id) = commander {
+            seat = seat.with_commander(id);
+        }
+        built.push(seat);
+    }
+
+    if !problems.is_empty() {
+        let extra = problems.len().saturating_sub(MAX_PROBLEMS_REPORTED);
+        problems.truncate(MAX_PROBLEMS_REPORTED);
+        if extra > 0 {
+            problems.push(format!("\u{2026} e mais {extra} problema(s)"));
+        }
+        return Err(problems.join("\n"));
+    }
+
+    let table = TableRequest { seats: built, format, seed, observer };
+    // Cinto e suspensório: `run_table_blocking` revalida, mas responder aqui
+    // dá a mensagem antes de gastar uma thread bloqueante.
+    table.validate().map_err(|err| err.to_string())?;
+    Ok(table)
+}
+
+/// Nome de assento único. Dois assentos com o mesmo deck teriam o mesmo nome, e
+/// aí o placar da mesa mostra a mesma etiqueta duas vezes sem dizer quem é quem.
+fn unique_name(base: &str, taken: &mut Vec<String>) -> String {
+    let mut name = base.to_string();
+    let mut n = 2usize;
+    while taken.iter().any(|t| t == &name) {
+        name = format!("{base} #{n}");
+        n += 1;
+    }
+    taken.push(name.clone());
+    name
+}
+
 async fn send_error(out: &mpsc::Sender<Message>, message: &str) {
     warn!(message, "erro de protocolo em /ws/match");
     send_frame(out, &ServerFrame::Error { message: message.to_string() }).await;
@@ -523,6 +745,7 @@ async fn send_frame(out: &mpsc::Sender<Message>, frame: &ServerFrame) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mtg_core::view::Observer;
 
     fn params() -> CardsParams {
         CardsParams {
@@ -605,6 +828,217 @@ mod tests {
         assert_eq!(build_query(&p).expect("query").text.as_deref(), Some("bolt"));
     }
 
+    // -----------------------------------------------------------------
+    // Frame `start`: mesa de dois a quatro
+    // -----------------------------------------------------------------
+
+    /// Estado com os decks reais do catálogo. Sem banco em disco no diretório
+    /// do crate, `legality` fica `None` e a validação cai na estrutural — que é
+    /// o que estes testes exercitam (tamanho, singleton, comandante).
+    fn table_state() -> Arc<AppState> {
+        let (db, decks) = match crate::catalog::load() {
+            Ok(v) => v,
+            Err(err) => panic!("catálogo não carregou: {err}"),
+        };
+        assert!(decks.len() >= 6, "catálogo com {} decks: pouco para a mesa", decks.len());
+        Arc::new(AppState::new(Arc::new(db), decks))
+    }
+
+    fn seat(deck: &str) -> SeatRequest {
+        SeatRequest { deck: deck.to_string(), bot: None, commander: None }
+    }
+
+    fn commander_table(state: &AppState, count: usize) -> Result<TableRequest, String> {
+        let seats: Vec<SeatRequest> = (0..count).map(|_| seat("conclave-of-emmara")).collect();
+        build_table(state, &seats, Some("commander"), Observer::Spectator, 7)
+    }
+
+    /// Cliente antigo manda `deckA`/`deckB` e mais nada. Se isto quebrar, a
+    /// versão publicada da UI para de iniciar partida sem aviso de compilador.
+    #[test]
+    fn start_antigo_continua_desserializando() {
+        let raw = r#"{"type":"start","deckA":"goblin-onslaught","deckB":"azorius-control","seed":9}"#;
+        let msg = match serde_json::from_str::<ClientMessage>(raw) {
+            Ok(m) => m,
+            Err(err) => panic!("frame antigo deixou de desserializar: {err}"),
+        };
+        let ClientMessage::Start { deck_a, deck_b, format, seats, seed, speed, .. } = msg else {
+            panic!("frame antigo virou outra variante");
+        };
+        assert_eq!(deck_a.as_deref(), Some("goblin-onslaught"));
+        assert_eq!(deck_b.as_deref(), Some("azorius-control"));
+        assert_eq!(seed, 9);
+        assert_eq!(speed, 1.0, "speed omitido tem de cair no padrão");
+        assert!(format.is_none());
+        assert!(seats.is_empty(), "frame antigo não declara assento");
+    }
+
+    #[test]
+    fn start_novo_le_assentos_formato_e_comandante() {
+        let raw = r#"{"type":"start","format":"commander","seed":3,"speed":2.0,
+            "seats":[{"deck":"a","bot":"greedy","commander":"Emmara, Soul of the Accord"},
+                     {"deck":"b"}]}"#;
+        let msg = match serde_json::from_str::<ClientMessage>(raw) {
+            Ok(m) => m,
+            Err(err) => panic!("frame novo não desserializa: {err}"),
+        };
+        let ClientMessage::Start { format, seats, deck_a, speed, .. } = msg else {
+            panic!("frame novo virou outra variante");
+        };
+        assert_eq!(format.as_deref(), Some("commander"));
+        assert_eq!(speed, 2.0);
+        assert!(deck_a.is_none());
+        assert_eq!(seats.len(), 2);
+        assert_eq!(seats[0].bot.as_deref(), Some("greedy"));
+        assert_eq!(seats[0].commander.as_deref(), Some("Emmara, Soul of the Accord"));
+        // Assento sem bot nem comandante é legal: os dois têm padrão.
+        assert!(seats[1].bot.is_none() && seats[1].commander.is_none());
+    }
+
+    #[test]
+    fn commander_monta_de_dois_a_quatro_assentos() {
+        let state = table_state();
+        for count in MIN_SEATS..=MAX_SEATS {
+            let table = match commander_table(&state, count) {
+                Ok(t) => t,
+                Err(err) => panic!("mesa de {count} devia montar: {err}"),
+            };
+            assert_eq!(table.seats.len(), count);
+            assert_eq!(table.format, Format::Commander);
+            // CR 903.6 — o comandante não está na biblioteca.
+            for s in &table.seats {
+                assert_eq!(s.deck.len(), 99, "biblioteca de {} não tem 99", s.name);
+                assert!(s.commander.is_some(), "{} sem comandante", s.name);
+            }
+            // Mesmo deck em todos os assentos não pode virar nomes iguais.
+            let mut names = table.player_names();
+            names.sort();
+            let total = names.len();
+            names.dedup();
+            assert_eq!(names.len(), total, "assentos com nome repetido");
+        }
+    }
+
+    #[test]
+    fn mesa_fora_da_faixa_responde_erro_e_nao_panico() {
+        let state = table_state();
+        for count in [0usize, 1, 5, 9] {
+            let Err(message) = commander_table(&state, count) else {
+                panic!("mesa de {count} passou e não devia");
+            };
+            assert!(
+                message.contains("de 2 a 4"),
+                "mensagem de {count} assentos não diz a faixa: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn formato_de_duelo_recusa_tres_assentos() {
+        let state = table_state();
+        let seats: Vec<SeatRequest> = (0..3).map(|_| seat("goblin-onslaught")).collect();
+        let Err(message) = build_table(&state, &seats, Some("modern"), Observer::Spectator, 1)
+        else {
+            panic!("Modern aceitou três jogadores");
+        };
+        assert!(message.contains("duelo"), "mensagem não explica o limite: {message}");
+    }
+
+    #[test]
+    fn formato_desconhecido_vira_mensagem_e_nao_padrao_silencioso() {
+        let state = table_state();
+        let seats = vec![seat("goblin-onslaught"), seat("azorius-control")];
+        let Err(message) = build_table(&state, &seats, Some("vintage"), Observer::Spectator, 1)
+        else {
+            panic!("formato inventado foi aceito");
+        };
+        assert!(message.contains("vintage"), "mensagem não cita o formato: {message}");
+    }
+
+    /// Formato omitido é o duelo casual — é o que a forma antiga do frame
+    /// significava, e trocar esse padrão mudaria o resultado de cliente antigo.
+    #[test]
+    fn formato_omitido_cai_em_casual() {
+        let state = table_state();
+        let seats = vec![seat("goblin-onslaught"), seat("azorius-control")];
+        let table = match build_table(&state, &seats, None, Observer::Spectator, 1) {
+            Ok(t) => t,
+            Err(err) => panic!("duelo casual devia montar: {err}"),
+        };
+        assert_eq!(table.format, Format::Casual);
+    }
+
+    #[test]
+    fn deck_de_sessenta_em_commander_devolve_as_violacoes_de_uma_vez() {
+        let state = table_state();
+        let seats = vec![seat("goblin-onslaught"), seat("conclave-of-emmara")];
+        let Err(message) = build_table(&state, &seats, Some("commander"), Observer::Spectator, 1)
+        else {
+            panic!("deck de 60 passou em Commander");
+        };
+        assert!(message.contains("Assento 1"), "erro não diz o assento: {message}");
+        // CR 903.5a (tamanho) e CR 903.3 (comandante) falham juntas, e as duas
+        // têm de chegar na mesma resposta.
+        assert!(message.contains("100"), "erro não cita o tamanho: {message}");
+        assert!(message.contains("comandante"), "erro não cita o comandante: {message}");
+        assert!(!message.contains("Assento 2"), "assento válido virou problema: {message}");
+    }
+
+    #[test]
+    fn deck_desconhecido_no_assento_vira_mensagem() {
+        let state = table_state();
+        let seats = vec![seat("conclave-of-emmara"), seat("deck-que-nao-existe")];
+        let Err(message) = build_table(&state, &seats, Some("commander"), Observer::Spectator, 1)
+        else {
+            panic!("deck inexistente foi aceito");
+        };
+        assert!(message.contains("deck-que-nao-existe"), "mensagem inútil: {message}");
+    }
+
+    #[test]
+    fn comandante_pedido_pelo_cliente_ganha_do_declarado_na_lista() {
+        let state = table_state();
+        let mut seats = vec![seat("conclave-of-emmara"), seat("conclave-of-emmara")];
+        seats[0].commander = Some("Adeliz, the Cinder Wind".to_string());
+        let table = match build_table(&state, &seats, Some("commander"), Observer::Spectator, 1) {
+            Ok(t) => t,
+            Err(err) => panic!("troca de comandante devia montar: {err}"),
+        };
+        let esperado = state.db.id_by_name("Adeliz, the Cinder Wind");
+        assert!(esperado.is_some(), "catálogo sem a carta: o teste não afirmaria nada");
+        assert_eq!(table.seats[0].commander, esperado);
+        assert_ne!(table.seats[1].commander, esperado, "assento 2 devia manter o da lista");
+
+        seats[0].commander = Some("Ornitorrinco Lendário".to_string());
+        let Err(message) = build_table(&state, &seats, Some("commander"), Observer::Spectator, 1)
+        else {
+            panic!("comandante inexistente foi aceito");
+        };
+        assert!(message.contains("Ornitorrinco"), "mensagem não cita a carta: {message}");
+    }
+
+    #[test]
+    fn bot_pedido_chega_ao_assento_e_ausente_cai_no_padrao() {
+        let state = table_state();
+        let mut seats = vec![seat("conclave-of-emmara"), seat("storm-of-adeliz")];
+        seats[0].bot = Some("greedy".to_string());
+        let table = match build_table(&state, &seats, Some("commander"), Observer::Spectator, 1) {
+            Ok(t) => t,
+            Err(err) => panic!("mesa devia montar: {err}"),
+        };
+        assert_eq!(table.seats[0].bot, "greedy");
+        assert_eq!(table.seats[1].bot, mtg_ai::DEFAULT_BOT);
+    }
+
+    #[test]
+    fn nome_de_assento_repetido_ganha_sufixo() {
+        let mut taken: Vec<String> = Vec::new();
+        assert_eq!(unique_name("Emmara", &mut taken), "Emmara");
+        assert_eq!(unique_name("Emmara", &mut taken), "Emmara #2");
+        assert_eq!(unique_name("Emmara", &mut taken), "Emmara #3");
+        assert_eq!(unique_name("Adeliz", &mut taken), "Adeliz");
+    }
+
     /// Único teste que mexe em `MTG_DB_PATH` — o valor `:memory:` evita que
     /// rodar a suíte crie arquivo de banco na árvore do repositório.
     #[test]
@@ -614,7 +1048,7 @@ mod tests {
             Ok(db) => db,
             Err(err) => panic!("catálogo não carregou: {err}"),
         };
-        let state = Arc::new(AppState { db: Arc::new(db), decks: Vec::new() });
+        let state = Arc::new(AppState::new(Arc::new(db), Vec::new()));
         // Rota duplicada ou conflito de padrão viraria pânico aqui, não 404
         // em produção.
         let _router = build_router(state);

@@ -22,9 +22,13 @@ fábrica de partida com 3 e 4 jogadores), 74–79 em `tests/multiplayer.rs` e
 
 ## Estado real em 18/08/2026
 
-**91/91 `[x]`.** Nenhum `[~]`, nenhum `[ ]`, nenhum `[!]` em aberto. Verificado
-com `cargo test --workspace` (361 testes, 0 falhas, 5 `#[ignore]` só por lentidão)
+**93/93 `[x]`.** Nenhum `[~]`, nenhum `[ ]`, nenhum `[!]` em aberto. Verificado
+com `cargo test --workspace` (427 testes, 0 falhas, 5 `#[ignore]` só por lentidão)
 e `cargo test --workspace -- --ignored` (5 testes, 0 falhas).
+
+O total de 427 conta a suíte inteira do workspace, não só os itens desta tabela,
+e sobe sozinho conforme `mtg-import`/`mtg-oracle` ganham testes próprios. O
+número a acompanhar aqui é 93/93.
 
 Dois itens estavam `[!]` e o motor foi corrigido nesta rodada:
 
@@ -222,11 +226,30 @@ Banimento e rotação são dado externo, não regra de motor. A fonte é o campo
 91. [x] `raridade_faz_ida_e_volta_pelo_slug` — `Rarity::slug`/`from_slug` fecham o ciclo
     para as cinco raridades; `bonus` do Scryfall cai em `Special`.
 
+### 9f. Ordem de turno depois de uma eliminação (CR 800.4d)
+
+Quem sai da partida sai da ordem de turno. `advance_turn` já pulava o eliminado
+(via `next_alive`), mas `layers::expire_continuous_effects` calculava o próximo
+jogador ativo com o módulo cru. Os dois só discordam de três jogadores para
+cima — num duelo, quem perde encerra a partida e não existe "próximo turno" —,
+e enquanto discordavam um efeito "até o seu próximo turno" do jogador que
+herdou a vez nunca expirava, virando permanente na prática. Corrigido: os dois
+pontos usam o mesmo sucessor.
+
+92. [x] `efeito_ate_o_seu_proximo_turno_expira_pulando_quem_ja_saiu` — CR 800.4d numa
+    mesa de quatro com P1 eliminado: o efeito `Duration::YourNextTurn` de P2 expira na
+    limpeza do turno de P0, porque é P2 quem recebe o próximo turno e não o sucessor
+    cru P1. Falhava antes da correção.
+93. [x] `efeito_ate_o_seu_proximo_turno_sobrevive_ao_turno_de_outro` — contraprova, sem
+    eliminação nenhuma: o efeito de P3 **não** expira na limpeza do turno de P0, porque
+    o próximo turno é de P1. Sem esta metade, o item 92 passaria com um `retain` que
+    apagasse tudo.
+
 ## Metas
 
 | Métrica | Alvo | Aferido em 18/08/2026 | Como medir |
 |---|---|---|---|
-| Pass rate da suíte | 100% dos itens 1–91 | 91/91 | `cargo test --workspace` |
+| Pass rate da suíte | 100% dos itens 1–93 | 93/93 | `cargo test --workspace` |
 | Partidas sem pânico | 200/200 | 200/200 | teste 63 (`--ignored`) |
 | Determinismo | 100% | 100% | teste 61 |
 | Cartas jogáveis | 100% do catálogo | 100% | teste 65 (`--ignored`) |

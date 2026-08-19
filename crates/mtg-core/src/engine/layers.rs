@@ -179,7 +179,14 @@ pub fn expire_continuous_effects(game: &mut Game) {
     // Quem começa o próximo turno. `Duration::YourNextTurn` termina no começo
     // do turno do controlador; como nada acontece entre a limpeza e o desvirar,
     // expirar aqui é equivalente e não exige um segundo ponto de chamada.
-    let next_active = game.state.next_player(active);
+    //
+    // CR 800.4d — o sucessor tem de pular quem já saiu da partida, e tem de ser
+    // exatamente o que `advance_turn` escolhe. Com o módulo cru os dois
+    // discordam assim que alguém é eliminado, e o efeito de quem herdou a vez
+    // deixa de expirar. `unwrap_or` espelha `advance_turn`: sem ninguém vivo a
+    // partida já acabou e o valor não é mais lido.
+    let raw_next = game.state.next_player(active);
+    let next_active = super::turn::next_alive(&game.state, raw_next).unwrap_or(raw_next);
     let battlefield = zone_objects(game, ZoneId::BATTLEFIELD);
 
     let before = game.state.continuous.len();

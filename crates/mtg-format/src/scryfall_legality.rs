@@ -16,7 +16,8 @@
 //! (`CardDef`), e `CardDef` não carrega o campo `legalities`. Uma leitura em
 //! massa de legalidade lá seria o caminho melhor; enquanto ela não existe, esta
 //! `SELECT` é a ligação, e ela depende de três nomes de coluna só.
-use std::collections::BTreeMap;
+use mtg_core::card::CardDatabase;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use mtg_core::types::Rarity;
@@ -55,6 +56,18 @@ pub struct ScryfallLegality {
     /// Chave em minúsculas. `BTreeMap` e não `HashMap`: qualquer varredura
     /// sobre este índice precisa sair sempre na mesma ordem.
     entries: BTreeMap<String, Entry>,
+    /// Cartas escritas à mão no catálogo Lua, em minúsculas.
+    ///
+    /// Existem porque o bulk `oracle_cards` traz UMA impressão por carta, e
+    /// quando essa impressão é digital-only o importador a descarta — foi o que
+    /// aconteceu com `Boomerang`, `Raging Goblin` e `Steel Wall`, que existem em
+    /// papel há décadas. Sem esta ressalva, carta que nós mesmos escrevemos e
+    /// testamos reprovaria por "ausente", derrubando decks inteiros.
+    ///
+    /// Carta curada conta como legal em qualquer formato. É deliberado: quem a
+    /// escreveu foi este projeto, então ela é conhecida — diferente de um nome
+    /// digitado errado, que continua reprovando.
+    curated: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,6 +117,23 @@ impl ScryfallLegality {
         }
         self.entries
             .insert(name.to_ascii_lowercase(), Entry { rarity, legal });
+    }
+
+    /// Registra as cartas curadas em Lua como conhecidas e legais.
+    ///
+    /// Ver o campo `curated`: o filtro de "existe em papel" do importador
+    /// descarta a impressão digital-only de cartas antigas, e sem isto elas
+    /// aparecem como ilegais em todo formato.
+    pub fn with_curated(mut self, db: &CardDatabase) -> ScryfallLegality {
+        for card in &db.cards {
+            self.curated.insert(card.name.to_ascii_lowercase());
+        }
+        self
+    }
+
+    /// Quantas cartas curadas cobrem buraco do índice do Scryfall.
+    pub fn curated_len(&self) -> usize {
+        self.curated.len()
     }
 
     /// Carrega o índice do catálogo em SQLite, somente leitura.
@@ -168,7 +198,8 @@ impl ScryfallLegality {
 impl LegalitySource for ScryfallLegality {
     fn legal_in(&self, card: &str, format: Format) -> bool {
         let Some(entry) = self.get(card) else {
-            return false;
+            // Curada em Lua e ausente do bulk: conhecida, logo legal. Ver `curated`.
+            return self.curated.contains(&card.to_ascii_lowercase());
         };
         let Some(index) = Format::ALL.iter().position(|f| *f == format) else {
             return false;

@@ -490,14 +490,40 @@ export interface DoneFrame {
   durationMs: number
 }
 
-export type ServerFrame = InitFrame | EventsFrame | DoneFrame
+/**
+ * O servidor recusou o pedido — formato desconhecido, mesa fora da faixa de
+ * jogadores ou deck ilegal no formato. Uma mensagem por linha.
+ */
+export interface ErrorFrame {
+  type: 'error'
+  message: string
+}
 
+export type ServerFrame = InitFrame | EventsFrame | DoneFrame | ErrorFrame
+
+/** Um assento pedido no frame `start`. */
+export interface SeatFrame {
+  deck: string
+  bot: string
+  /** CR 903.3 — só em Commander; ausente usa o comandante da própria lista. */
+  commander?: string
+}
+
+/**
+ * O frame `start`.
+ *
+ * Duas formas, e o servidor aceita as duas: `seats[]` + `format` para a mesa
+ * de dois a quatro, `deckA`/`deckB` para o duelo antigo. Os campos são todos
+ * opcionais aqui porque um frame válido nunca tem os dois conjuntos.
+ */
 export interface StartFrame {
   type: 'start'
-  deckA: string
-  deckB: string
   seed: number
   speed: number
+  format?: string
+  seats?: SeatFrame[]
+  deckA?: string
+  deckB?: string
 }
 
 export type ClientFrame =
@@ -510,6 +536,7 @@ export type ClientFrame =
 export function isServerFrame(value: unknown): value is ServerFrame {
   if (typeof value !== 'object' || value === null) return false
   const tag = (value as { type?: unknown }).type
+  if (tag === 'error') return typeof (value as { message?: unknown }).message === 'string'
   return tag === 'init' || tag === 'events' || tag === 'done'
 }
 

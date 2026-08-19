@@ -15,6 +15,7 @@ import { Playmat } from './Playmat'
 import { StackPanel } from './StackPanel'
 import { TargetArrows } from './TargetArrows'
 import { CombatSeam } from './CombatSeam'
+import { TableLayout } from './TableLayout'
 import { ZonePile } from './ZonePile'
 import { buildCombatPlan, totalSlots } from './combatPlan'
 import type { CombatPlan } from './combatPlan'
@@ -54,6 +55,12 @@ export function BoardLayout() {
 
   if (view === null || view.players.length < 2) {
     return <TableStandby connecting={connection === 'connecting'} />
+  }
+
+  // Três e quatro jogadores caem numa vista própria: a geometria de dois
+  // tapetes com costura no meio é de duelo por construção. Ver `TableLayout`.
+  if (view.players.length > 2) {
+    return <TableLayout view={view} cards={cards} />
   }
 
   const bottom: PlayerView = view.players[0]

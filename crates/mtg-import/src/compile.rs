@@ -25,6 +25,7 @@ use crate::parse::{
     parse_rarity, parse_type_line, parse_word_number, Parsed, Unsupported,
 };
 use crate::scryfall::ScryfallCard;
+use mtg_oracle::layouts::{self, LayoutVerdict};
 
 /// Resultado da compilação de uma carta.
 #[derive(Debug, Clone)]
@@ -42,17 +43,61 @@ pub struct Compiled {
     /// Cores da identidade, em ordem WUBRG, para índice no banco.
     pub color_identity: String,
     pub colors: String,
+    /// `true` quando o comportamento veio da segunda passada
+    /// (`mtg_oracle::compile`) e não do compilador deste crate. Existe para
+    /// que o relatório possa dizer quantas cartas cada compilador comprou, e
+    /// para que a amostra de fidelidade saiba exatamente o que auditar.
+    pub second_pass: bool,
 }
 
-/// Único layout cujo comportamento o motor representa hoje. Todo o resto entra
-/// no catálogo como metadado navegável, não como carta jogável.
-const PLAYABLE_LAYOUT: &str = "normal";
+/// Escolhe a face que o compilador lê e diz se o layout tem representação fiel
+/// no IR.
+///
+/// O problema de layout volta na frente de qualquer outro porque ele torna
+/// irrelevante o que o texto diga: um `split` continuaria fora do jogo mesmo
+/// com as duas metades compilando. `None` significa "siga com esta face".
+fn layout_gate(card: &ScryfallCard) -> (Option<usize>, Option<Unsupported>) {
+    let layout = card.layout.as_deref().unwrap_or("normal");
+    let plan = layouts::plan_for(layout, card.face_count());
+    let problem = match plan.verdict {
+        LayoutVerdict::Blocked(why) => Some(Unsupported::new(why)),
+        LayoutVerdict::Unknown => Some(Unsupported::new(format!("layout desconhecido '{layout}'"))),
+        // Carta de uma face: não há outra face de que depender.
+        LayoutVerdict::Compile if card.face_count() < 2 => None,
+        // Mais de uma face, e só a frontal é lançável. Ela vale por si apenas
+        // quando não fala da outra — nem por texto, nem por regra de tipo.
+        LayoutVerdict::Compile => {
+            let text = card.face_oracle_text(plan.face);
+            let type_line = card.face_type_line(plan.face).unwrap_or("");
+            layouts::references_other_face(text)
+                .or_else(|| layouts::type_depends_on_other_face(type_line))
+                .map(|mark| {
+                    Unsupported::new(format!(
+                        "layout '{layout}': a face frontal depende da outra ('{mark}')"
+                    ))
+                })
+        }
+    };
+    (plan.face, problem)
+}
 
 pub fn compile_card(card: &ScryfallCard, id: u32) -> Compiled {
+    // O nome da CARTA é a identidade no catálogo e a chave única da tabela, e
+    // continua sendo o da raiz: "Delver of Secrets // Insectile Aberration".
+    // O nome da FACE tem outro papel — é como o texto de oráculo fala de si, e
+    // é ele que vira `~` na normalização. Trocar um pelo outro deixaria a
+    // autorreferência sem casar em toda carta de duas faces.
     let name = card.name.clone().unwrap_or_default();
     let mut problems: Vec<Unsupported> = Vec::new();
 
-    let type_line = match card.effective_type_line().map(parse_type_line) {
+    let (face, layout_problem) = layout_gate(card);
+    let compiles_from_face = layout_problem.is_none();
+    if let Some(what) = layout_problem {
+        problems.push(what);
+    }
+    let face_name = card.face_name(face).to_string();
+
+    let type_line = match card.face_type_line(face).map(parse_type_line) {
         Some(Ok(t)) => t,
         Some(Err(what)) => {
             problems.push(what);
@@ -64,7 +109,7 @@ pub fn compile_card(card: &ScryfallCard, id: u32) -> Compiled {
         }
     };
 
-    let mana_cost = match card.effective_mana_cost().map(parse_mana_cost) {
+    let mana_cost = match card.face_mana_cost(face).map(parse_mana_cost) {
         Some(Ok(c)) => c,
         Some(Err(what)) => {
             problems.push(what);
@@ -73,33 +118,45 @@ pub fn compile_card(card: &ScryfallCard, id: u32) -> Compiled {
         None => ManaCost::FREE,
     };
 
-    let power = printed(card.effective_power(), &mut problems);
-    let toughness = printed(card.effective_toughness(), &mut problems);
-    let loyalty = printed(card.effective_loyalty(), &mut problems);
+    let power = printed(card.face_power(face), &mut problems);
+    let toughness = printed(card.face_toughness(face), &mut problems);
+    let loyalty = printed(card.face_loyalty(face), &mut problems);
 
-    let layout = card.layout.as_deref().unwrap_or(PLAYABLE_LAYOUT);
-    if layout != PLAYABLE_LAYOUT {
-        problems.push(Unsupported::new(format!("layout '{layout}'")));
-    }
-    if card.is_multiface() {
-        problems.push(Unsupported::new("carta de mais de uma face"));
-    }
-
-    let oracle_text = card.effective_oracle_text().to_string();
+    // O texto que o compilador LÊ é sempre o da face escolhida. O texto que o
+    // catálogo GUARDA é o da carta inteira quando o layout foi barrado: aí não
+    // há IR nenhuma com que ser coerente, e mostrar meia carta na tela seria
+    // esconder do jogador metade do que ele tem na mão.
+    let read_text = card.face_oracle_text(face).to_string();
+    let oracle_text = if compiles_from_face { read_text.clone() } else { all_faces_text(card) };
     let mut abilities = Vec::new();
     let mut spell_effect = None;
     let mut spell_targets = Vec::new();
+    let mut second_pass = false;
 
-    match compile_text(&oracle_text, &name, &type_line) {
+    match compile_text(&read_text, &face_name, &type_line) {
         Ok(out) => {
             abilities = out.abilities;
             spell_effect = out.spell_effect;
             spell_targets = out.spell_targets;
         }
-        Err(what) => problems.push(what),
+        // Segunda passada: `mtg-oracle` é o outro compilador do repositório e
+        // reconhece famílias de texto que este aqui não tem. Ele só entra
+        // quando NADA MAIS reprovou a carta — layout, linha de tipo, custo e
+        // P/T já foram julgados acima e continuam valendo. Assim a segunda
+        // passada só pode transformar `Unsupported` em jogável, nunca o
+        // contrário: nenhuma carta que já compilava muda de IR por causa dela.
+        Err(what) => match oracle_second_pass(card, face, &face_name, problems.is_empty()) {
+            Some(out) => {
+                abilities = out.abilities;
+                spell_effect = out.spell_effect;
+                spell_targets = out.spell_targets;
+                second_pass = true;
+            }
+            None => problems.push(what),
+        },
     }
 
-    let colors = card.colors.as_ref().map(|c| parse_color_set(c)).unwrap_or_default();
+    let colors = card.face_colors(face).map(|c| parse_color_set(c)).unwrap_or_default();
     let identity = card.color_identity.as_ref().map(|c| parse_color_set(c)).unwrap_or_default();
     // O indicador de cor só é necessário quando a cor impressa não sai do
     // custo — carta incolor de custo colorido não existe, mas Devoid sim.
@@ -122,8 +179,8 @@ pub fn compile_card(card: &ScryfallCard, id: u32) -> Compiled {
         rarity: parse_rarity(card.rarity.as_deref()),
         set_code: card.set.clone().unwrap_or_default(),
         collector_number: card.collector_number.clone().unwrap_or_default(),
-        artist: card.effective_artist().map(|s| s.to_string()),
-        art_key: card.image("normal").map(|s| s.to_string()),
+        artist: card.face_artist(face).map(|s| s.to_string()),
+        art_key: card.face_image(face, "normal").map(|s| s.to_string()),
     };
 
     let playable = problems.is_empty();
@@ -142,7 +199,92 @@ pub fn compile_card(card: &ScryfallCard, id: u32) -> Compiled {
         pattern,
         color_identity: color_letters(identity),
         colors: color_letters(colors),
+        second_pass: playable && second_pass,
     }
+}
+
+/// Segunda passada de compilação de texto, delegada a `mtg_oracle::compile`.
+///
+/// Os dois compiladores nasceram separados e cobrem famílias de texto
+/// diferentes; medido sobre o bulk inteiro, o de `mtg-oracle` aceita cartas que
+/// este não aceita. Em vez de duplicar o vocabulário, a carta que este
+/// compilador reprovou **por texto** é reoferecida àquele.
+///
+/// `clean` é a condição de segurança: só há delegação quando nenhum outro
+/// problema foi registrado. Carta barrada por layout, por linha de tipo, por
+/// custo ou por P/T variável continua barrada, mesmo que o texto da face
+/// compile — senão "Fire // Ice" entraria no jogo como metade de si mesma.
+///
+/// O `CardDef` devolvido por `mtg-oracle` é usado **apenas** pelos três campos
+/// de comportamento. Nome, cores, arte e identidade continuam vindo daqui, que
+/// é quem enxerga a carta multiface inteira.
+fn oracle_second_pass(
+    card: &ScryfallCard,
+    face: Option<usize>,
+    face_name: &str,
+    clean: bool,
+) -> Option<CompiledText> {
+    if !clean {
+        return None;
+    }
+    let oracle_card = mtg_oracle::OracleCard {
+        name: face_name.to_string(),
+        mana_cost: card.face_mana_cost(face).unwrap_or_default().to_string(),
+        type_line: card.face_type_line(face).unwrap_or_default().to_string(),
+        oracle_text: card.face_oracle_text(face).to_string(),
+        power: card.face_power(face).map(str::to_string),
+        toughness: card.face_toughness(face).map(str::to_string),
+        loyalty: card.face_loyalty(face).map(str::to_string),
+        rarity: card.rarity.clone().unwrap_or_default(),
+        set_code: card.set.clone().unwrap_or_default(),
+        collector_number: card.collector_number.clone().unwrap_or_default(),
+        artist: card.face_artist(face).map(str::to_string),
+        flavor_text: None,
+        art_key: None,
+        layout: card.layout.clone().unwrap_or_default(),
+    };
+    let def = mtg_oracle::compile(&oracle_card).card()?.clone();
+    Some(CompiledText {
+        abilities: def.abilities,
+        spell_effect: def.spell_effect,
+        spell_targets: def.spell_targets,
+    })
+}
+
+/// Texto de oráculo da carta INTEIRA, para o catálogo de uma carta cujo layout
+/// foi barrado.
+///
+/// Sem isto "Fire // Ice" aparecia na tela só como "Fire deals 2 damage divided
+/// as you choose": o jogador via metade da carta sem ter como saber que faltava
+/// a outra. Cada face entra com nome e custo, na ordem em que o Scryfall
+/// entrega, separadas pelo mesmo `//` impresso na carta.
+///
+/// Carta de uma face cai no texto da raiz — não há nada a juntar.
+fn all_faces_text(card: &ScryfallCard) -> String {
+    if card.face_count() < 2 {
+        return card.face_oracle_text(None).to_string();
+    }
+    let mut out = String::new();
+    for i in 0..card.face_count() {
+        if i > 0 {
+            out.push_str("\n//\n");
+        }
+        let head = match card.face_mana_cost(Some(i)).filter(|c| !c.is_empty()) {
+            Some(cost) => format!("{} {cost}", card.face_name(Some(i))),
+            None => card.face_name(Some(i)).to_string(),
+        };
+        out.push_str(head.trim());
+        if let Some(t) = card.face_type_line(Some(i)).filter(|t| !t.is_empty()) {
+            out.push('\n');
+            out.push_str(t);
+        }
+        let body = card.face_oracle_text(Some(i));
+        if !body.is_empty() {
+            out.push('\n');
+            out.push_str(body);
+        }
+    }
+    out
 }
 
 fn printed(text: Option<&str>, problems: &mut Vec<Unsupported>) -> Option<i32> {
@@ -1532,6 +1674,7 @@ const DEFAULT_ZONE: ZoneScope = ZoneScope::Battlefield;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scryfall::CardFace;
 
     fn card(name: &str, type_line: &str, mana: &str, text: &str) -> ScryfallCard {
         ScryfallCard {
@@ -1686,12 +1829,171 @@ mod tests {
     }
 
     #[test]
-    fn multiface_card_is_never_playable() {
+    fn multiface_card_without_face_data_is_never_playable() {
         let mut c = card("A // B", "Creature \u{2014} Human", "{U}", "");
         c.layout = Some("transform".to_string());
         c.card_faces = Some(vec![Default::default(), Default::default()]);
         let out = compile_card(&c, 0);
         assert!(!out.playable);
+        assert_eq!(
+            out.reason.as_deref(),
+            Some("sem linha de tipo"),
+            "face vazia não tem linha de tipo, e é isso que tem de ser dito"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Layout: qual face o compilador lê
+    // -----------------------------------------------------------------------
+
+    /// Carta de duas faces com dado de verdade em cada face, como o Scryfall
+    /// entrega: a raiz só traz nome e linha de tipo juntados por `//`.
+    fn two_faced(layout: &str, front: CardFace, back: CardFace) -> ScryfallCard {
+        let joined = |a: &Option<String>, b: &Option<String>| {
+            format!("{} // {}", a.clone().unwrap_or_default(), b.clone().unwrap_or_default())
+        };
+        ScryfallCard {
+            oracle_id: Some("id".to_string()),
+            name: Some(joined(&front.name, &back.name)),
+            type_line: Some(joined(&front.type_line, &back.type_line)),
+            rarity: Some("common".to_string()),
+            set: Some("tst".to_string()),
+            collector_number: Some("1".to_string()),
+            layout: Some(layout.to_string()),
+            games: Some(vec!["paper".to_string()]),
+            card_faces: Some(vec![front, back]),
+            ..Default::default()
+        }
+    }
+
+    fn face(name: &str, cost: &str, type_line: &str, text: &str) -> CardFace {
+        CardFace {
+            name: Some(name.to_string()),
+            mana_cost: Some(cost.to_string()),
+            type_line: Some(type_line.to_string()),
+            oracle_text: Some(text.to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn transform_front_that_stands_alone_compiles_from_face_zero() {
+        // Não existe carta assim no bulk de hoje — toda frente `transform` fala
+        // da outra face. O teste prova o MECANISMO: quando a frente se basta,
+        // custo, tipo, P/T e texto saem da face 0, nunca da raiz.
+        let mut front = face("Lone Sentry", "{1}{U}", "Creature \u{2014} Bird", "Flying");
+        front.power = Some("2".to_string());
+        front.toughness = Some("3".to_string());
+        let back = face("Awakened Sentry", "", "Creature \u{2014} Bird Horror", "Trample");
+        let out = compile_card(&two_faced("transform", front, back), 0);
+
+        assert!(out.playable, "frente autossuficiente tem de compilar: {:?}", out.reason);
+        assert_eq!(out.def.mana_cost.mana_value(), 2, "custo vem da face 0, não da raiz");
+        assert_eq!(out.def.type_line.subtypes, vec!["Bird".to_string()]);
+        assert_eq!((out.def.power, out.def.toughness), (Some(2), Some(3)));
+        assert_eq!(
+            out.def.keywords().count(),
+            1,
+            "só o Flying da frente entra; o Trample de trás nunca"
+        );
+        assert_eq!(
+            out.def.name, "Lone Sentry // Awakened Sentry",
+            "o nome da CARTA continua o da raiz — é a chave do catálogo"
+        );
+    }
+
+    #[test]
+    fn transform_front_that_names_the_other_face_is_not_playable() {
+        let mut front = face(
+            "Delver of Secrets",
+            "{U}",
+            "Creature \u{2014} Human Wizard",
+            "At the beginning of your upkeep, look at the top card of your library. \
+             You may reveal that card. If an instant or sorcery card is revealed this \
+             way, transform Delver of Secrets.",
+        );
+        front.power = Some("1".to_string());
+        front.toughness = Some("1".to_string());
+        let back = face("Insectile Aberration", "", "Creature \u{2014} Human Insect", "Flying");
+        let out = compile_card(&two_faced("transform", front, back), 0);
+
+        assert!(!out.playable, "a frente manda virar a carta; jogar só metade seria mentira");
+        let why = out.reason.unwrap_or_default();
+        assert!(why.contains("transform"), "o motivo tem de nomear a marca achada, veio: {why}");
+        assert!(
+            out.pattern.is_none(),
+            "bloqueio de layout não é padrão de texto e não pode poluir o relatório"
+        );
+    }
+
+    #[test]
+    fn a_siege_is_blocked_even_without_saying_transform() {
+        // "Invasion of Alara": CR 310.9 lança a face de trás quando sai o
+        // último contador de defesa. O texto da frente não avisa nada disso.
+        let front = face(
+            "Invasion of Somewhere",
+            "{2}{R}",
+            "Battle \u{2014} Siege",
+            "When this Siege enters, it deals 3 damage to any target.",
+        );
+        let back = face("Aftermath", "", "Creature \u{2014} Horror", "Haste");
+        let out = compile_card(&two_faced("transform", front, back), 0);
+        assert!(!out.playable, "Siege sem a face de trás nunca faz o que a carta faz");
+        assert!(out.reason.unwrap_or_default().contains("battle"));
+    }
+
+    #[test]
+    fn split_is_blocked_and_the_catalog_keeps_both_halves() {
+        let out = compile_card(
+            &two_faced(
+                "split",
+                face("Fire", "{1}{R}", "Instant", "Fire deals 2 damage divided as you choose."),
+                face("Ice", "{1}{U}", "Instant", "Tap target permanent."),
+            ),
+            0,
+        );
+        assert!(!out.playable, "cada metade tem custo próprio; o IR não representa isso");
+        assert!(out.reason.unwrap_or_default().contains("custo proprio"));
+        let text = out.def.oracle_text.clone();
+        assert!(text.contains("Fire {1}{R}"), "a metade esquerda entra com nome e custo: {text}");
+        assert!(text.contains("Ice {1}{U}"), "a metade direita não pode sumir do catálogo: {text}");
+        assert!(text.contains("Tap target permanent."), "o texto da direita também: {text}");
+        assert_eq!(
+            out.def.type_line.types,
+            vec![CardType::Instant],
+            "a linha de tipo do catálogo sai da face 0, e não fica vazia como antes"
+        );
+    }
+
+    #[test]
+    fn single_face_layout_reaches_the_text_compiler() {
+        // Uma Saga não compila hoje, mas o motivo tem de ser o texto que falta,
+        // não a palavra "saga". Essa diferença é o que o relatório de cobertura
+        // mostra como trabalho a fazer.
+        let mut c = card(
+            "Saga de Teste",
+            "Enchantment \u{2014} Saga",
+            "{1}{W}",
+            "I \u{2014} Exile target creature.",
+        );
+        c.layout = Some("saga".to_string());
+        let out = compile_card(&c, 0);
+        assert!(!out.playable);
+        let why = out.reason.unwrap_or_default();
+        assert!(
+            !why.contains("layout"),
+            "layout de face única não pode mais ser motivo em si, veio: {why}"
+        );
+        assert!(out.pattern.is_some(), "bloqueio textual tem de virar padrão no relatório");
+    }
+
+    #[test]
+    fn an_unknown_layout_never_compiles() {
+        let mut c = creature("Carta do Futuro", "2", "2", "Flying");
+        c.layout = Some("hyperspace_dfc".to_string());
+        let out = compile_card(&c, 0);
+        assert!(!out.playable, "layout desconhecido é regra desconhecida");
+        assert_eq!(out.reason.as_deref(), Some("layout desconhecido 'hyperspace_dfc'"));
     }
 
     #[test]

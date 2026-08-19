@@ -6,6 +6,9 @@ edition.workspace = true
 [dependencies]
 mtg-core.workspace = true
 mtg-cards.workspace = true
+# Validação de legalidade de deck no `start`: sem isto o servidor aceitaria
+# qualquer lista em qualquer formato.
+mtg-format.workspace = true
 mtg-ai.workspace = true
 mtg-db.workspace = true
 serde.workspace = true

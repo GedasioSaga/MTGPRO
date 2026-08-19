@@ -24,10 +24,13 @@ use std::sync::Arc;
 
 use mtg_core::action::{Action, Request};
 use mtg_core::card::CardDatabase;
-use mtg_core::engine::{commander, sba, turn, Agent, Game, GameConfig, GameFormat, PlayerConfig};
+use mtg_core::engine::{
+    commander, layers, sba, turn, Agent, Game, GameConfig, GameFormat, PlayerConfig,
+};
 use mtg_core::event::LossReason;
 use mtg_core::ids::{CardDefId, ObjectId, PlayerId};
-use mtg_core::state::{GameOutcome, GameState};
+use mtg_core::ir::{Duration, StaticModRuntime};
+use mtg_core::state::{ContinuousEffect, GameOutcome, GameState};
 use mtg_core::zone::{ZoneId, ZoneKind};
 
 /// Jogadores por mesa.
@@ -501,4 +504,92 @@ fn put_top_card_on_battlefield(game: &mut Game, player: PlayerId) -> ObjectId {
     };
     turn::move_object(game, id, ZoneId::BATTLEFIELD);
     id
+}
+
+#[test]
+fn efeito_ate_o_seu_proximo_turno_expira_pulando_quem_ja_saiu() {
+    // CR 800.4d — quem deixou a partida sai da ordem de turno. `advance_turn`
+    // já respeita isso (usa `next_alive`), então a expiração de
+    // `Duration::YourNextTurn` tem de olhar para o **mesmo** jogador que vai
+    // de fato receber o próximo turno. Com o sucessor cru (módulo puro), os
+    // dois discordam exatamente quando alguém foi eliminado — e o efeito de
+    // quem herdou a vez nunca expira, virando permanente na prática.
+    //
+    // O duelo nunca pega isto: lá, se o outro jogador sai a partida acaba e
+    // não existe "próximo turno" para comparar. Só numa mesa de três ou mais.
+    let db = database();
+    let lists = commander_lists(&db);
+    let mut game = build_table(db, &lists, 7);
+
+    let active = PlayerId(0);
+    let dead = PlayerId(1);
+    let heir = PlayerId(2);
+
+    game.state.active_player = active;
+    turn::lose_game(&mut game, dead, LossReason::Concede);
+    assert!(game.state.player(dead).has_lost, "montagem: {dead:?} devia ter saído");
+    assert_eq!(
+        game.state.outcome,
+        GameOutcome::Ongoing,
+        "com três vivos a mesa continua (CR 104.2a)"
+    );
+
+    // Quem realmente joga depois de P0 é P2: o sucessor cru seria P1, que saiu.
+    let source = put_top_card_on_battlefield(&mut game, heir);
+    let created_turn = game.state.turn;
+    let timestamp = game.state.next_timestamp();
+    game.state.continuous.push(ContinuousEffect {
+        id: 1,
+        source,
+        affected: vec![source],
+        modification: StaticModRuntime::ModifyPT(2, 2),
+        duration: Duration::YourNextTurn,
+        timestamp,
+        created_turn,
+        controller: heir,
+    });
+
+    layers::expire_continuous_effects(&mut game);
+
+    assert!(
+        game.state.continuous.is_empty(),
+        "CR 800.4d — o efeito de {heir:?} devia expirar: com {dead:?} fora, \
+         é {heir:?} quem começa o próximo turno, não o sucessor cru {dead:?}"
+    );
+}
+
+#[test]
+fn efeito_ate_o_seu_proximo_turno_sobrevive_ao_turno_de_outro() {
+    // Contraprova do teste acima: sem eliminação nenhuma, o efeito de quem
+    // **não** é o próximo jogador ativo não pode expirar. Sem esta metade, o
+    // teste anterior passaria com um `retain` que apaga tudo.
+    let db = database();
+    let lists = commander_lists(&db);
+    let mut game = build_table(db, &lists, 7);
+
+    let active = PlayerId(0);
+    let distante = PlayerId(3);
+    game.state.active_player = active;
+
+    let source = put_top_card_on_battlefield(&mut game, distante);
+    let created_turn = game.state.turn;
+    let timestamp = game.state.next_timestamp();
+    game.state.continuous.push(ContinuousEffect {
+        id: 1,
+        source,
+        affected: vec![source],
+        modification: StaticModRuntime::ModifyPT(2, 2),
+        duration: Duration::YourNextTurn,
+        timestamp,
+        created_turn,
+        controller: distante,
+    });
+
+    layers::expire_continuous_effects(&mut game);
+
+    assert_eq!(
+        game.state.continuous.len(),
+        1,
+        "o próximo turno é de P1, não de {distante:?}: o efeito dele ainda vale"
+    );
 }

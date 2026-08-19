@@ -124,6 +124,13 @@ fn io_err(path: &Path, source: std::io::Error) -> ImportError {
 
 /// Lê o `.meta.json` do cache. Meta corrompida não é erro fatal: significa
 /// apenas "não sei o que tem em disco", e o download acontece de novo.
+/// Metadado do bulk em cache. Público porque o modo offline precisa do
+/// `updated_at` gravado: sem ele o relatório sai carimbado com "cache" e
+/// perde a única informação que diz de QUANDO são os números.
+pub fn cached_meta(cache_dir: &Path, kind: &str) -> Option<CacheMeta> {
+    read_meta(cache_dir, kind)
+}
+
 fn read_meta(cache_dir: &Path, kind: &str) -> Option<CacheMeta> {
     let raw = std::fs::read_to_string(meta_path(cache_dir, kind)).ok()?;
     serde_json::from_str(&raw).ok()

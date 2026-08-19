@@ -101,7 +101,7 @@ fn blocked_reason(layout: &str) -> Option<&'static str> {
 /// catálogo jogável; falso negativo custa uma carta que joga metade do que
 /// está escrito — e essa é a falha que este projeto não pode ter.
 pub fn references_other_face(oracle_text: &str) -> Option<&'static str> {
-    const MARKS: [&str; 15] = [
+    const MARKS: [&str; 18] = [
         "transform",
         "//",
         "back face",
@@ -117,9 +117,33 @@ pub fn references_other_face(oracle_text: &str) -> Option<&'static str> {
         "it becomes night",
         "becomes day",
         "becomes night",
+        // Sinônimos de "transform" que o oráculo usa sem dizer a palavra.
+        // "convert" é o verbo dos Transformers, "craft" é o de Ixalan e
+        // "more than meets the eye" é custo alternativo para lançar a carta
+        // já virada. Sem estes três, 18 frentes das 401 do bulk passavam pelo
+        // filtro e virariam cartas que ignoram metade do que está escrito.
+        "convert",
+        "craft",
+        "more than meets the eye",
     ];
     let hay = oracle_text.to_ascii_lowercase();
     MARKS.into_iter().find(|m| hay.contains(m))
+}
+
+/// Tipos cuja face de trás é alcançada por **regra**, sem uma palavra sequer
+/// no texto da frente.
+///
+/// `Battle — Siege` é o caso: CR 310.9 manda exilar a batalha e lançar a face
+/// de trás quando sai o último contador de defesa. Uma frente de Siege lida
+/// sozinha é uma carta que entra em jogo e nunca faz o que a carta faz.
+///
+/// Só se aplica a carta de mais de uma face: sem outra face não há de que
+/// depender.
+pub fn type_depends_on_other_face(type_line: &str) -> Option<&'static str> {
+    if type_line.to_ascii_lowercase().contains("battle") {
+        return Some("battle");
+    }
+    None
 }
 
 #[cfg(test)]
@@ -200,6 +224,34 @@ mod tests {
             references_other_face("Melds with Gisela, the Broken Blade."),
             Some("melds with")
         );
+    }
+
+    #[test]
+    fn transform_synonyms_are_treated_as_the_word_transform() {
+        // "Arcee, Sharpshooter" vira sem nunca dizer "transform".
+        assert_eq!(
+            references_other_face(
+                "{1}, Remove one or more +1/+1 counters from Arcee: It deals that much \
+                 damage to target creature. Convert Arcee."
+            ),
+            Some("convert")
+        );
+        // "Braided Net": craft exila a carta e devolve a face de trás.
+        assert_eq!(references_other_face("Craft with artifact {1}{U}"), Some("craft"));
+        // "Optimus Prime, Hero": custo alternativo para lançar já virada.
+        assert_eq!(
+            references_other_face("More Than Meets the Eye {2}{U}{R}{W}"),
+            Some("more than meets the eye")
+        );
+    }
+
+    #[test]
+    fn a_siege_depends_on_its_back_face_without_saying_so() {
+        // "Invasion of Alara": o texto da frente não cita a outra face, mas
+        // CR 310.9 lança a de trás quando sai o último contador de defesa.
+        assert_eq!(type_depends_on_other_face("Battle \u{2014} Siege"), Some("battle"));
+        assert_eq!(type_depends_on_other_face("Creature \u{2014} Human Wizard"), None);
+        assert_eq!(type_depends_on_other_face(""), None);
     }
 
     #[test]

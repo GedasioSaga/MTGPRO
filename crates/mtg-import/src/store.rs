@@ -109,7 +109,8 @@ impl ImportStore {
 /// a partida em silêncio, enquanto uma sem comportamento simplesmente não é
 /// escalada — `playable = false` a mantém fora de qualquer deck.
 pub fn imported_card(card: &ScryfallCard, compiled: Compiled) -> ImportedCard {
-    let Compiled { mut def, playable, reason, pattern, color_identity, colors } = compiled;
+    let Compiled { mut def, playable, reason, pattern, color_identity, colors, second_pass: _ } =
+        compiled;
     let _ = colors; // já está em `def` (custo de mana + `color_override`).
 
     if !playable {

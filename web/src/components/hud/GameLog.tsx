@@ -5,7 +5,7 @@ import { Divider } from '../ui/Divider'
 import { useMatchStore } from '../../state/matchStore'
 import { outcomeWinner } from '../../types/protocol'
 import type { CardView, GameView, MatchEvent, ObjectId, PlayerId } from '../../types/protocol'
-import { seatAccent } from '../../design/tokens'
+import { seatSwatch } from '../board/boardVisuals'
 
 const LOG_CAP = 300
 const BOTTOM_THRESHOLD_PX = 28
@@ -258,7 +258,9 @@ export function GameLog() {
 }
 
 function LogRow({ entry }: { entry: LogEntry }) {
-  const accent = entry.player !== null ? seatAccent[entry.player].core : undefined
+  // `seatSwatch` dá a volta na paleta (só há duas cores de assento). Indexar
+  // direto quebrava a mesa de três e quatro: o jogador 2 caía em `undefined`.
+  const accent = entry.player !== null ? seatSwatch(entry.player).core : undefined
   return (
     <div
       className="flex items-start gap-2 rounded-sm border-l-2 py-0.5 pr-1 pl-2 text-[12.5px] leading-snug text-ink"

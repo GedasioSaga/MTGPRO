@@ -13,6 +13,7 @@
 use std::collections::BTreeMap;
 
 use mtg_core::types::{CardType, TypeLine};
+use mtg_oracle::coverage::{self, Capability, Gap, Pool, PoolMask};
 
 /// Quantos caracteres de padrão cabem numa linha de tabela sem estourar.
 /// Texto mais longo é cortado em fronteira de palavra: dois textos que só
@@ -213,6 +214,10 @@ pub struct PatternRow {
     pub example: String,
 }
 
+/// Quantos pools existem. Fixo, porque a ordem das colunas é a de
+/// [`Pool::ALL`] e não pode depender de iteração de mapa.
+const POOL_COUNT: usize = Pool::ALL.len();
+
 #[derive(Debug, Clone, Default)]
 struct Tally {
     cards: u64,
@@ -220,6 +225,84 @@ struct Tally {
     /// arbitrária mas **estável**: o exemplo não muda quando o Scryfall
     /// reordena o bulk, então o diff do relatório mostra só o que mudou.
     example: String,
+    /// Quantas das cartas do balde participam de cada pool, na ordem de
+    /// [`Pool::ALL`]. É o que separa "destrava 200 cartas de Un-set" de
+    /// "destrava 80 de Pauper".
+    pools: [u64; POOL_COUNT],
+}
+
+impl Tally {
+    fn add(&mut self, name: &str, mask: PoolMask) {
+        self.cards += 1;
+        if self.example.is_empty() || name < self.example.as_str() {
+            self.example = name.to_string();
+        }
+        for (slot, pool) in self.pools.iter_mut().zip(Pool::ALL) {
+            if mask.contains(pool) {
+                *slot += 1;
+            }
+        }
+    }
+
+    fn pool(&self, pool: Pool) -> u64 {
+        Pool::ALL.iter().position(|p| *p == pool).map_or(0, |i| self.pools[i])
+    }
+}
+
+/// Uma carta que não compilou, com o pool a que pertence.
+#[derive(Debug, Clone)]
+struct Blocked {
+    /// O que classifica esta carta. Em `pending` é o trecho de oráculo que
+    /// travou; em `no_snippet` é o **motivo** que o compilador registrou
+    /// (`"substantivo 'enchanted'"`), porque ali não houve trecho nenhum.
+    text: String,
+    name: String,
+    mask: PoolMask,
+}
+
+/// Quantas cartas cada pool tem, e quantas dessas são jogáveis.
+#[derive(Debug, Clone, Default)]
+struct PoolTally {
+    seen: [u64; POOL_COUNT],
+    playable: [u64; POOL_COUNT],
+}
+
+impl PoolTally {
+    fn add(&mut self, mask: PoolMask, playable: bool) {
+        for (i, pool) in Pool::ALL.iter().enumerate() {
+            if mask.contains(*pool) {
+                self.seen[i] += 1;
+                if playable {
+                    self.playable[i] += 1;
+                }
+            }
+        }
+    }
+}
+
+/// Uma linha da tabela de cobertura por pool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PoolRow {
+    pub pool: Pool,
+    pub in_catalog: u64,
+    pub playable: u64,
+}
+
+impl PoolRow {
+    pub fn percent(&self) -> f64 {
+        percent(self.playable, self.in_catalog)
+    }
+}
+
+/// Uma linha da tabela de capacidades: um pedaço de trabalho de verdade.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapabilityRow {
+    pub capability: &'static Capability,
+    pub cards: u64,
+    pub pauper: u64,
+    pub standard: u64,
+    pub modern: u64,
+    pub example: String,
 }
 
 /// Junta os textos que não compilaram e devolve os padrões mais frequentes.
@@ -231,9 +314,19 @@ struct Tally {
 #[derive(Debug, Clone, Default)]
 pub struct CoverageReport {
     vocab: Vocabulary,
-    pending: Vec<(String, String)>,
-    /// Cartas não jogáveis cujo bloqueio não é textual (layout, duas faces).
-    structural: u64,
+    /// Bloqueio textual: o compilador leu o texto e não entendeu.
+    pending: Vec<Blocked>,
+    /// Bloqueio que não deixou trecho de texto: o compilador falhou fundo
+    /// dentro do parser e registrou só um motivo. NÃO é sinônimo de "layout" —
+    /// medindo o bulk, das cartas sem trecho só ~12% são de mais de uma face;
+    /// o resto é vocabulário faltando no parser.
+    no_snippet: Vec<Blocked>,
+    pools: PoolTally,
+    /// Quantas cartas trouxeram o campo `legalities`. Zero significa que as
+    /// colunas de formato mentiriam, e o relatório diz isso em vez de mostrar
+    /// 0% como se fosse medida.
+    with_legalities: u64,
+    cards_seen: u64,
 }
 
 impl CoverageReport {
@@ -241,45 +334,135 @@ impl CoverageReport {
         CoverageReport::default()
     }
 
-    pub fn observe_type_line(&mut self, type_line: &TypeLine) {
+    /// Registra uma carta do catálogo: alimenta o vocabulário de subtipos e a
+    /// contagem por pool. Tem de ser chamada para **toda** carta que entra no
+    /// catálogo, jogável ou não — é ela que forma o denominador.
+    pub fn observe_card(
+        &mut self,
+        type_line: &TypeLine,
+        mask: PoolMask,
+        playable: bool,
+        has_legalities: bool,
+    ) {
         self.vocab.observe(type_line);
+        self.pools.add(mask, playable);
+        self.cards_seen += 1;
+        if has_legalities {
+            self.with_legalities += 1;
+        }
     }
 
-    pub fn add_text_block(&mut self, snippet: &str, card_name: &str) {
-        self.pending.push((snippet.to_string(), card_name.to_string()));
+    pub fn add_text_block(&mut self, snippet: &str, card_name: &str, mask: PoolMask) {
+        self.pending.push(Blocked {
+            text: snippet.to_string(),
+            name: card_name.to_string(),
+            mask,
+        });
     }
 
-    pub fn add_structural_block(&mut self) {
-        self.structural += 1;
+    /// Registra uma carta que travou sem deixar trecho de texto. `reason` é o
+    /// motivo cru do compilador — é ele que diz se o bloqueio é de layout ou
+    /// de vocabulário, e sem ele os dois viram o mesmo número.
+    pub fn add_blocked_without_snippet(&mut self, reason: &str, card_name: &str, mask: PoolMask) {
+        self.no_snippet.push(Blocked {
+            text: reason.to_string(),
+            name: card_name.to_string(),
+            mask,
+        });
     }
 
     pub fn text_blocked(&self) -> u64 {
         self.pending.len() as u64
     }
 
-    pub fn structural_blocked(&self) -> u64 {
-        self.structural
+    pub fn blocked_without_snippet(&self) -> u64 {
+        self.no_snippet.len() as u64
     }
 
     pub fn vocabulary_size(&self) -> usize {
         self.vocab.len()
     }
 
+    pub fn cards_seen(&self) -> u64 {
+        self.cards_seen
+    }
+
+    /// `true` quando pelo menos uma carta trouxe `legalities`. Falso significa
+    /// que a tabela por formato não pode ser publicada como medida.
+    pub fn has_legalities(&self) -> bool {
+        self.with_legalities > 0
+    }
+
+    pub fn cards_with_legalities(&self) -> u64 {
+        self.with_legalities
+    }
+
+    /// Cobertura por pool, na ordem fixa de [`Pool::ALL`].
+    pub fn pool_rows(&self) -> Vec<PoolRow> {
+        Pool::ALL
+            .iter()
+            .enumerate()
+            .map(|(i, pool)| PoolRow {
+                pool: *pool,
+                in_catalog: self.pools.seen[i],
+                playable: self.pools.playable[i],
+            })
+            .collect()
+    }
+
     /// Agrupa os textos por uma chave derivada do padrão normalizado.
     fn tally_by(&self, key_of: impl Fn(&str) -> String) -> BTreeMap<String, Tally> {
         let mut buckets: BTreeMap<String, Tally> = BTreeMap::new();
-        for (snippet, name) in &self.pending {
-            let key = key_of(&normalize(snippet, &self.vocab));
+        for blocked in &self.pending {
+            let key = key_of(&normalize(&blocked.text, &self.vocab));
             if key.is_empty() {
                 continue;
             }
-            let entry = buckets.entry(key).or_default();
-            entry.cards += 1;
-            if entry.example.is_empty() || name.as_str() < entry.example.as_str() {
-                entry.example = name.clone();
-            }
+            buckets.entry(key).or_default().add(&blocked.name, blocked.mask);
         }
         buckets
+    }
+
+    /// Agrupa os travados por **capacidade faltante** — a tabela que responde
+    /// "o que implementar agora".
+    ///
+    /// Agrupar por frase literal produz milhares de linhas de contagem
+    /// pequena; agrupar por capacidade produz algumas dezenas, cada uma um
+    /// pedaço de trabalho que se faz junto. As cartas sem trecho de texto
+    /// entram pelo motivo, via [`coverage::classify_reason`]: elas sumiriam de
+    /// um relatório que só olhasse texto, e jogá-las todas no balde do layout
+    /// mandaria quase dez mil cartas para o crate errado.
+    pub fn capability_rows(&self) -> Vec<CapabilityRow> {
+        let mut buckets: BTreeMap<&'static str, (&'static Capability, Tally)> = BTreeMap::new();
+        {
+            let mut push = |cap: &'static Capability, name: &str, mask: PoolMask| {
+                let entry = buckets.entry(cap.id).or_insert((cap, Tally::default()));
+                entry.1.add(name, mask);
+            };
+            for blocked in &self.pending {
+                let pattern = normalize(&blocked.text, &self.vocab);
+                push(coverage::classify(&pattern), &blocked.name, blocked.mask);
+            }
+            for blocked in &self.no_snippet {
+                push(coverage::classify_reason(&blocked.text), &blocked.name, blocked.mask);
+            }
+        }
+
+        let mut rows: Vec<CapabilityRow> = buckets
+            .into_values()
+            .map(|(capability, t)| CapabilityRow {
+                capability,
+                cards: t.cards,
+                pauper: t.pool(Pool::Pauper),
+                standard: t.pool(Pool::Standard),
+                modern: t.pool(Pool::Modern),
+                example: t.example,
+            })
+            .collect();
+        // Empate em contagem desempata pelo id, que é estável — a saída tem de
+        // ser byte a byte igual entre execuções sobre o mesmo bulk.
+        rows.sort_by(|a, b| b.cards.cmp(&a.cards).then(a.capability.id.cmp(b.capability.id)));
+        rows
     }
 
     /// Empate em contagem é desempatado pelo texto, para a saída ser byte a
@@ -306,7 +489,7 @@ impl CoverageReport {
     /// milhares de padrões distintos e a maior linha mal passa de uma centena
     /// de cartas. O começo da frase é o que se implementa primeiro — "when ~
     /// enters the battlefield, ..." é um parser só, valha o que valer depois
-    /// da vírgula. É esta tabela que responde "o que destrava 400 cartas".
+    /// da vírgula.
     pub fn rank_prefixes(&self, top: usize, words: usize) -> (usize, Vec<PatternRow>) {
         CoverageReport::to_rows(self.tally_by(|p| prefix_of(p, words)), top)
     }
@@ -338,7 +521,6 @@ pub fn to_markdown(
     bulk_updated_at: &str,
     top: usize,
 ) -> String {
-    let (distinct, rows) = report.rank(top);
     let catalog = header.playable + header.unplayable;
     let mut out = String::new();
 
@@ -359,39 +541,182 @@ pub fn to_markdown(
         percent(header.unplayable, catalog)
     ));
     out.push_str(&format!(
-        "- Bloqueio textual: {} · bloqueio estrutural (layout, duas faces): {}\n",
+        "- Travadas com trecho de texto: {} · sem trecho, só com motivo: {}\n",
         report.text_blocked(),
-        report.structural_blocked()
-    ));
-    out.push_str(&format!(
-        "- Padrões distintos: {distinct} · subtipos de criatura no vocabulário: {}\n",
-        report.vocabulary_size()
+        report.blocked_without_snippet()
     ));
     out.push_str(&format!("- Tempo de importação: {:.1}s\n", header.elapsed_secs));
     out.push_str(&format!("- SQLite gerado: {:.1} MB\n", header.db_bytes as f64 / 1_048_576.0));
 
-    out.push_str("\n## Como ler\n\n");
+    push_pool_section(&mut out, report);
+    push_capability_section(&mut out, report);
+    push_pattern_sections(&mut out, report, top);
+    out
+}
+
+/// A tabela que troca "11,7% do catálogo" por "quanto do que se joga está
+/// coberto".
+fn push_pool_section(out: &mut String, report: &CoverageReport) {
+    out.push_str("\n## Cobertura por pool\n\n");
     out.push_str(
-        "`~` é o nome da própria carta, `N` é qualquer número, `<tipo>` é subtipo de criatura, \
-         `<cor>` é cor e `<terreno>` é tipo de terreno básico. A coluna **Cartas** é quantas \
-         cartas têm esse padrão como **primeiro** bloqueio — é o piso do que voltaria a \
-         compilar, não o teto, porque uma carta pode ter mais de um parágrafo travado.\n\n",
+        "A porcentagem crua do catálogo mede mal: ninguém monta deck com o catálogo inteiro. \
+         O que decide se dá para jogar é quanto de um **pool real** está coberto — e um pool \
+         pequeno e coerente como Pauper pode chegar perto de 100% enquanto o catálogo inteiro \
+         anda a 12%. Banida não conta como legal: ela inflaria o denominador sem mexer no \
+         numerador.\n\n",
     );
 
-    out.push_str(&format!("## {} padrões não suportados mais frequentes\n\n", rows.len()));
-    push_table(&mut out, &rows);
+    if !report.has_legalities() {
+        out.push_str(
+            "> **Coluna de formato indisponível.** Nenhuma carta desta importação trouxe o \
+             campo `legalities`, então Pauper, Standard e Modern não foram medidos. As linhas \
+             abaixo sairiam 0% por ausência de dado, não por ausência de cobertura — e 0% \
+             falso é pior que buraco declarado.\n\n",
+        );
+    }
+
+    out.push_str("| Pool | No catálogo | Jogáveis | % jogável |\n");
+    out.push_str("|---|---|---|---|\n");
+    for row in report.pool_rows() {
+        let measured = row.pool.scryfall_format().is_none() || report.has_legalities();
+        let cells = if measured {
+            format!("{} | {} | {:.1}%", row.in_catalog, row.playable, row.percent())
+        } else {
+            "— | — | não medido".to_string()
+        };
+        out.push_str(&format!("| {} | {} |\n", row.pool.label(), cells));
+    }
+    if report.has_legalities() && report.cards_with_legalities() < report.cards_seen() {
+        out.push_str(&format!(
+            "\n{} das {} cartas do catálogo não trouxeram `legalities`; elas contam no \
+             catálogo e ficam fora das linhas de formato.\n",
+            report.cards_seen() - report.cards_with_legalities(),
+            report.cards_seen()
+        ));
+    }
+}
+
+/// A tabela que responde "o que implementar agora", separada por quem pode
+/// fazer o trabalho.
+fn push_capability_section(out: &mut String, report: &CoverageReport) {
+    let rows = report.capability_rows();
+    // O balde "não classificado" sai das duas tabelas. Ele não é um pedido de
+    // IR nem um padrão de parser: é o buraco da PRÓPRIA taxonomia. Deixá-lo na
+    // tabela do IR faria milhares de cartas parecerem trabalho de `mtg-core`
+    // quando ninguém sabe ainda de que trabalho elas são.
+    let (unknown, known): (Vec<_>, Vec<_>) =
+        rows.into_iter().partition(|r| r.capability.id == coverage::UNCLASSIFIED.id);
+    let (parser, ir): (Vec<_>, Vec<_>) =
+        known.into_iter().partition(|r| r.capability.gap == Gap::Parser);
+
+    out.push_str("\n## O que implementar agora\n\n");
+    out.push_str(
+        "Agrupado por **capacidade faltante**, não por frase literal: a frase literal espalha \
+         o trabalho por milhares de linhas de contagem pequena, e a capacidade junta o que se \
+         implementa de uma vez só. As colunas de formato existem porque destravar 200 cartas \
+         de Un-set vale menos que destravar 80 de Pauper.\n\n",
+    );
+    out.push_str(
+        "A carta é contada na capacidade do seu **primeiro** bloqueio. É o piso do que \
+         voltaria a compilar, não o teto: uma carta pode ter mais de um parágrafo travado, e \
+         só some da lista quando o último cair.\n\n",
+    );
+
+    out.push_str(&format!(
+        "### Falta padrão no parser — {} capacidades, sem tocar em `mtg-core`\n\n",
+        parser.len()
+    ));
+    out.push_str(
+        "O vocabulário do IR **já tem** a construção; falta o compilador reconhecer o texto. \
+         A coluna \"Construção do IR\" nomeia o que resolve, para a afirmação poder ser \
+         conferida em `ir.rs` antes de alguém começar.\n\n",
+    );
+    push_capability_table(out, &parser, "Construção do IR que resolve");
+
+    out.push_str(&format!(
+        "\n### Falta capacidade no IR — {} capacidades, exige `mtg-core`\n\n",
+        ir.len()
+    ));
+    out.push_str(
+        "Não sai sem vocabulário novo no motor. São os **pedidos de IR**: enquanto não \
+         existirem, estas cartas continuam `Unsupported` de propósito — marcar como jogável \
+         algo que o motor não sabe executar quebra a partida em silêncio, que é bem pior que \
+         carta ausente.\n\n",
+    );
+    push_capability_table(out, &ir, "O que falta em `mtg-core`");
+    push_unclassified(out, &unknown);
+}
+
+/// O que a taxonomia ainda não sabe nomear.
+///
+/// Esta seção existe para o buraco aparecer com tamanho. Enquanto ela for a
+/// maior linha do relatório, a próxima hora de trabalho mais valiosa é
+/// classificar, não implementar: não dá para priorizar o que não tem nome.
+fn push_unclassified(out: &mut String, rows: &[CapabilityRow]) {
+    let Some(row) = rows.first() else { return };
+    out.push_str("
+### Ainda sem nome: o buraco da própria taxonomia
+
+");
+    out.push_str(&format!(
+        "**{} cartas** ({} em Pauper, {} em Standard, {} em Modern) travaram num texto que          nenhuma regra de `mtg_oracle::coverage` reconheceu. Elas NÃO são pedido de IR nem          padrão de parser: são cartas de que ainda não se sabe de quem é o trabalho. Exemplo:          {}.
+
+",
+        row.cards,
+        row.pauper,
+        row.standard,
+        row.modern,
+        escape_cell(&row.example)
+    ));
+    out.push_str(
+        "Enquanto esta for a maior linha do relatório, a hora de trabalho mais valiosa é          **classificar**, não implementar — a tabela de prioridade só vale o que a taxonomia          cobre. As tabelas de padrão literal logo abaixo são a matéria-prima para isso.
+",
+    );
+}
+
+fn push_capability_table(out: &mut String, rows: &[CapabilityRow], need_header: &str) {
+    out.push_str(&format!(
+        "| # | Capacidade | Cartas | Pauper | Standard | Modern | {need_header} | Exemplo |\n"
+    ));
+    out.push_str("|---|---|---|---|---|---|---|---|\n");
+    for (i, row) in rows.iter().enumerate() {
+        out.push_str(&format!(
+            "| {} | {} | {} | {} | {} | {} | {} | {} |\n",
+            i + 1,
+            escape_cell(row.capability.label),
+            row.cards,
+            row.pauper,
+            row.standard,
+            row.modern,
+            escape_cell(row.capability.need),
+            escape_cell(&row.example)
+        ));
+    }
+}
+
+/// As tabelas de frase literal. Continuam no relatório como **evidência** —
+/// é onde se confere que uma capacidade agrupou o que devia — mas não é por
+/// elas que se escolhe trabalho: a maior linha mal passa de uma centena.
+fn push_pattern_sections(out: &mut String, report: &CoverageReport, top: usize) {
+    let (distinct, rows) = report.rank(top);
+
+    out.push_str("\n## Evidência: os padrões literais por trás dos números\n\n");
+    out.push_str(&format!(
+        "`~` é o nome da própria carta, `N` é qualquer número, `<tipo>` é subtipo de criatura, \
+         `<cor>` é cor e `<terreno>` é tipo de terreno básico. {distinct} padrões distintos, \
+         {} subtipos de criatura no vocabulário. Estas tabelas servem para **conferir** o \
+         agrupamento acima, não para priorizar.\n\n",
+        report.vocabulary_size()
+    ));
+
+    out.push_str(&format!("### {} padrões não suportados mais frequentes\n\n", rows.len()));
+    push_table(out, &rows);
 
     let (prefix_distinct, prefixes) = report.rank_prefixes(top, PREFIX_WORDS);
     out.push_str(&format!(
-        "\n## Por começo de frase ({PREFIX_WORDS} primeiras palavras, {prefix_distinct} distintos)\n\n"
+        "\n### Por começo de frase ({PREFIX_WORDS} primeiras palavras, {prefix_distinct} distintos)\n\n"
     ));
-    out.push_str(
-        "O texto inteiro é específico demais para priorizar: quase toda carta tem a sua \
-         variação. Agrupando pelo começo da frase aparece o parser que se escreve **uma vez** \
-         e cobre a família inteira. É por esta tabela que se escolhe o próximo trabalho.\n\n",
-    );
-    push_table(&mut out, &prefixes);
-    out
+    push_table(out, &prefixes);
 }
 
 fn push_table(out: &mut String, rows: &[PatternRow]) {
@@ -439,6 +764,28 @@ mod tests {
             v.observe(&creature_line(subtypes));
         }
         v
+    }
+
+    /// Máscara de uma carta legal nos formatos dados, com a raridade dada.
+    fn mask(rarity: &str, formats: &[&str]) -> PoolMask {
+        let owned: Vec<String> = formats.iter().map(|s| s.to_string()).collect();
+        coverage::pools_of(rarity, |f| {
+            if owned.iter().any(|x| x == f) {
+                Some("legal")
+            } else {
+                Some("not_legal")
+            }
+        })
+    }
+
+    /// Registra uma carta travada por texto já com o vocabulário formado.
+    fn report_with(blocks: &[(&str, &str, PoolMask)]) -> CoverageReport {
+        let mut r = CoverageReport::new();
+        for (snippet, name, m) in blocks {
+            r.observe_card(&TypeLine::default(), *m, false, true);
+            r.add_text_block(snippet, name, *m);
+        }
+        r
     }
 
     #[test]
@@ -511,11 +858,11 @@ mod tests {
     fn ranking_is_deterministic_and_by_frequency() {
         let mut r = CoverageReport::new();
         for _ in 0..MIN_SUBTYPE_CARDS {
-            r.observe_type_line(&creature_line(&["Bear"]));
+            r.observe_card(&creature_line(&["Bear"]), PoolMask::empty(), true, true);
         }
-        r.add_text_block("create a 2/2 bear creature token", "Zed");
-        r.add_text_block("create a 3/3 bear creature token", "Alpha");
-        r.add_text_block("something else entirely", "Mid");
+        r.add_text_block("create a 2/2 bear creature token", "Zed", PoolMask::empty());
+        r.add_text_block("create a 3/3 bear creature token", "Alpha", PoolMask::empty());
+        r.add_text_block("something else entirely", "Mid", PoolMask::empty());
 
         let (distinct, rows) = r.rank(10);
         assert_eq!(distinct, 2);
@@ -555,9 +902,10 @@ mod tests {
     #[test]
     fn prefixes_group_what_full_text_splits() {
         let mut r = CoverageReport::new();
-        r.add_text_block("when ~ enters, draw a card", "Beta");
-        r.add_text_block("when ~ enters, gain 3 life", "Alpha");
-        r.add_text_block("when ~ enters, each opponent discards", "Gamma");
+        let m = PoolMask::empty();
+        r.add_text_block("when ~ enters, draw a card", "Beta", m);
+        r.add_text_block("when ~ enters, gain 3 life", "Alpha", m);
+        r.add_text_block("when ~ enters, each opponent discards", "Gamma", m);
 
         let (full, _) = r.rank(10);
         assert_eq!(full, 3, "texto inteiro separa as três");
@@ -576,10 +924,230 @@ mod tests {
     #[test]
     fn markdown_escapes_table_breakers() {
         let mut r = CoverageReport::new();
-        r.add_text_block("a | b `c`", "Pipe Card");
+        r.add_text_block("a | b `c`", "Pipe Card", PoolMask::empty());
         let md = to_markdown(&r, &CoverageHeader::default(), "2026-08-18", 5);
         assert!(md.contains("a \\| b 'c'"), "pipe e crase não podem quebrar a tabela");
-        // Duas tabelas — texto inteiro e começo de frase — logo dois "| 1 |".
-        assert_eq!(md.lines().filter(|l| l.starts_with("| 1 |")).count(), 2);
+        // Duas tabelas de padrão — texto inteiro e começo de frase.
+        assert!(md.contains("padrões não suportados mais frequentes"));
+        assert!(md.contains("Por começo de frase"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Cobertura por pool
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn pool_coverage_counts_each_pool_separately() {
+        let mut r = CoverageReport::new();
+        // Uma comum de Pauper que compila.
+        r.observe_card(&TypeLine::default(), mask("common", &["pauper", "modern"]), true, true);
+        // Uma comum de Pauper que não compila.
+        r.observe_card(&TypeLine::default(), mask("common", &["pauper", "modern"]), false, true);
+        // Uma rara de Standard que compila.
+        r.observe_card(
+            &TypeLine::default(),
+            mask("rare", &["standard", "modern"]),
+            true,
+            true,
+        );
+
+        let rows = r.pool_rows();
+        let by = |p: Pool| rows.iter().find(|x| x.pool == p).copied().expect("pool na tabela");
+
+        assert_eq!(by(Pool::Catalog).in_catalog, 3);
+        assert_eq!(by(Pool::Catalog).playable, 2);
+
+        let pauper = by(Pool::Pauper);
+        assert_eq!((pauper.in_catalog, pauper.playable), (2, 1));
+        assert!((pauper.percent() - 50.0).abs() < 1e-9, "Pauper mede 50%, não 66%");
+
+        let standard = by(Pool::Standard);
+        assert_eq!((standard.in_catalog, standard.playable), (1, 1));
+        assert!((standard.percent() - 100.0).abs() < 1e-9);
+
+        // Só as duas comuns entram na espinha; a rara não.
+        let backbone = by(Pool::CommonUncommon);
+        assert_eq!((backbone.in_catalog, backbone.playable), (2, 1));
+
+        // A ordem das linhas é a de `Pool::ALL`, não a de um mapa.
+        let order: Vec<Pool> = rows.iter().map(|x| x.pool).collect();
+        assert_eq!(order, Pool::ALL.to_vec());
+    }
+
+    #[test]
+    fn pool_percent_differs_from_raw_catalog_percent() {
+        // O ponto inteiro da tabela: o número cru do catálogo e o do pool
+        // divergem. Um teste que só olhasse o catálogo passaria sem afirmar
+        // nada sobre o que importa.
+        let mut r = CoverageReport::new();
+        for _ in 0..9 {
+            // Nove raras de Modern que não compilam.
+            r.observe_card(&TypeLine::default(), mask("rare", &["modern"]), false, true);
+        }
+        // Uma comum de Pauper que compila.
+        r.observe_card(&TypeLine::default(), mask("common", &["pauper"]), true, true);
+
+        let rows = r.pool_rows();
+        let by = |p: Pool| rows.iter().find(|x| x.pool == p).copied().expect("pool na tabela");
+        assert!((by(Pool::Catalog).percent() - 10.0).abs() < 1e-9, "catálogo cru: 10%");
+        assert!((by(Pool::Pauper).percent() - 100.0).abs() < 1e-9, "Pauper: 100%");
+        assert!((by(Pool::Modern).percent() - 0.0).abs() < 1e-9, "Modern: 0%");
+    }
+
+    #[test]
+    fn missing_legalities_is_declared_not_faked() {
+        let mut r = CoverageReport::new();
+        // Carta sem o campo: `pools_of` só devolve o catálogo.
+        let no_leg = coverage::pools_of("rare", |_| None);
+        r.observe_card(&TypeLine::default(), no_leg, true, false);
+
+        assert!(!r.has_legalities());
+        let md = to_markdown(&r, &CoverageHeader::default(), "2026-08-18", 5);
+        assert!(md.contains("Coluna de formato indisponível"), "a ausência tem de ser dita");
+        assert!(md.contains("não medido"), "formato sem dado não vira 0%");
+        assert!(
+            !md.contains("| Pauper | 0 | 0 | 0.0% |"),
+            "0% falso é pior que buraco declarado"
+        );
+    }
+
+    #[test]
+    fn legalities_present_produces_measured_rows() {
+        let mut r = CoverageReport::new();
+        r.observe_card(&TypeLine::default(), mask("common", &["pauper"]), true, true);
+        assert!(r.has_legalities());
+        let md = to_markdown(&r, &CoverageHeader::default(), "2026-08-18", 5);
+        assert!(!md.contains("Coluna de formato indisponível"));
+        assert!(md.contains("| Pauper | 1 | 1 | 100.0% |"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Capacidades
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn capabilities_group_what_literal_patterns_split() {
+        // Três frases literais diferentes, um único pedaço de trabalho.
+        let r = report_with(&[
+            ("scry 2", "Beta", PoolMask::empty()),
+            ("surveil 3", "Alpha", PoolMask::empty()),
+            ("target player mills 4 cards", "Gamma", PoolMask::empty()),
+        ]);
+
+        let (literal, _) = r.rank(10);
+        assert_eq!(literal, 3, "por frase literal são três linhas de contagem 1");
+
+        let rows = r.capability_rows();
+        assert_eq!(rows.len(), 1, "por capacidade é uma linha só");
+        assert_eq!(rows[0].capability.id, "vidente-e-moer");
+        assert_eq!(rows[0].cards, 3);
+        assert_eq!(rows[0].example, "Alpha", "exemplo estável, não o primeiro lido");
+    }
+
+    #[test]
+    fn capability_rows_carry_format_counts() {
+        // Duas cartas na mesma capacidade: uma de Pauper, uma só de Modern.
+        // A coluna é o que separa "80 de Pauper" de "200 de Un-set".
+        let r = report_with(&[
+            ("scry 2", "Pauper Card", mask("common", &["pauper", "modern"])),
+            ("surveil 1", "Fancy Card", mask("mythic", &["modern"])),
+            ("mills 3 cards", "Un Card", mask("rare", &[])),
+        ]);
+        let rows = r.capability_rows();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].cards, 3, "três cartas na capacidade");
+        assert_eq!(rows[0].pauper, 1, "só uma é legal em Pauper");
+        assert_eq!(rows[0].modern, 2);
+        assert_eq!(rows[0].standard, 0);
+    }
+
+    #[test]
+    fn cards_without_a_snippet_are_classified_by_reason() {
+        // Carta de duas faces trava antes de o texto ser lido. Se o relatório
+        // só olhasse texto, dez mil cartas sumiriam da priorização.
+        let mut r = CoverageReport::new();
+        let m = mask("common", &["pauper"]);
+        r.observe_card(&TypeLine::default(), m, false, true);
+        r.add_blocked_without_snippet(
+            "layout 'transform': a face frontal depende da outra ('transform')",
+            "Delver of Secrets",
+            m,
+        );
+
+        let rows = r.capability_rows();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].capability.id, "layout-multiface");
+        assert_eq!(rows[0].cards, 1);
+        assert_eq!(rows[0].pauper, 1, "layout também é medido por formato");
+        assert_eq!(rows[0].capability.gap, Gap::Ir);
+    }
+
+    #[test]
+    fn capability_rows_are_sorted_by_cards_and_deterministic() {
+        let r = report_with(&[
+            ("scry 1", "A", PoolMask::empty()),
+            ("scry 2", "B", PoolMask::empty()),
+            ("regenerate ~", "C", PoolMask::empty()),
+        ]);
+        let rows = r.capability_rows();
+        assert_eq!(rows[0].cards, 2, "a maior vem primeiro");
+        assert_eq!(rows[0].capability.id, "vidente-e-moer");
+        assert_eq!(rows[1].capability.id, "regeneracao");
+
+        for _ in 0..5 {
+            assert_eq!(r.capability_rows(), rows, "mesma entrada, mesma ordem");
+        }
+    }
+
+    #[test]
+    fn markdown_splits_parser_work_from_ir_work() {
+        // A separação que decide quem pode trabalhar em quê: `scry` é parser
+        // (o IR já tem `Effect::Scry`), `regenerate` é IR (falta escudo).
+        let r = report_with(&[
+            ("scry 2", "Scry Card", mask("common", &["pauper"])),
+            ("regenerate ~", "Regen Card", mask("common", &["pauper"])),
+        ]);
+        let md = to_markdown(&r, &CoverageHeader::default(), "2026-08-18", 5);
+
+        let parser_at = md.find("Falta padrão no parser").expect("seção do parser");
+        let ir_at = md.find("Falta capacidade no IR").expect("seção do IR");
+        assert!(parser_at < ir_at, "o que dá para fazer hoje vem primeiro");
+
+        let parser_block = &md[parser_at..ir_at];
+        assert!(parser_block.contains("Scry Card"), "scry é trabalho de parser");
+        assert!(!parser_block.contains("Regen Card"), "regenerate não é trabalho de parser");
+
+        // A seção do IR termina onde começam as tabelas de evidência, que
+        // listam os dois exemplos de novo. Sem esse limite o teste passaria
+        // por acidente em vez de afirmar a separação.
+        let evidence_at = md.find("## Evid").expect("seção de evidência");
+        assert!(ir_at < evidence_at);
+        let ir_block = &md[ir_at..evidence_at];
+        assert!(ir_block.contains("Regen Card"));
+        assert!(!ir_block.contains("Scry Card"));
+    }
+
+    #[test]
+    fn markdown_is_byte_identical_across_runs() {
+        let r = report_with(&[
+            ("scry 2", "Alpha", mask("common", &["pauper", "modern"])),
+            ("regenerate ~", "Beta", mask("rare", &["modern"])),
+            ("look at the top 3 cards of your library", "Gamma", mask("uncommon", &["standard"])),
+        ]);
+        let header = CoverageHeader {
+            total_lines: 10,
+            rejected: 1,
+            playable: 4,
+            unplayable: 5,
+            elapsed_secs: 1.25,
+            db_bytes: 2_097_152,
+        };
+        let first = to_markdown(&r, &header, "2026-08-18", 10);
+        for _ in 0..5 {
+            assert_eq!(to_markdown(&r, &header, "2026-08-18", 10), first);
+        }
+        // E os números do pool aparecem de fato no texto gerado.
+        assert!(first.contains("## Cobertura por pool"));
+        assert!(first.contains("| Pauper | 1 | 0 | 0.0% |"));
     }
 }

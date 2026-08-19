@@ -1,0 +1,15 @@
+# Cobertura gravada sobre o conjunto fixo de cartas reais.
+# Gerado por: UPDATE_COVERAGE_BASELINE=1 cargo test -p mtg-import \
+#             --test coverage_regression
+# NAO editar a mao. Numero que cai = carta que parou de compilar.
+cards=500
+catalog.total=500
+catalog.playable=61
+pauper.total=179
+pauper.playable=40
+standard.total=88
+standard.playable=5
+modern.total=355
+modern.playable=47
+common_uncommon.total=324
+common_uncommon.playable=55
