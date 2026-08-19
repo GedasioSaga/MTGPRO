@@ -1,30 +1,20 @@
-//! Mede, sobre o bulk real, quantas cartas cada um dos DOIS compiladores do
-//! repositório aceita: o do importador (`mtg_import::compile`) e o do crate
-//! `mtg-oracle` (`mtg_oracle::compile`). Existe para responder, com número, se
-//! o segundo acrescenta cobertura ao primeiro — e nao para entrar no produto.
+//! Cobertura por pool ANTES e DEPOIS da segunda passada, sobre o bulk real.
+//!
+//! "Antes" nao e uma execucao separada: e a mesma execucao contando so as
+//! cartas cuja IR veio do compilador deste crate (`second_pass == false`). A
+//! segunda passada so pode acrescentar, entao a diferenca e exatamente o que
+//! ela comprou — e a comparacao nao depende de rebuildar o binario antigo.
 use std::collections::HashSet;
 
 use mtg_import::compile::compile_card;
 use mtg_import::scryfall::{self, reject_reason, ScryfallCard};
-use mtg_oracle::{CompileResult, OracleCard};
+use mtg_oracle::coverage::{self, Pool, PoolMask};
 
-fn to_oracle(card: &ScryfallCard) -> OracleCard {
-    OracleCard {
-        name: card.face_name(None).to_string(),
-        mana_cost: card.face_mana_cost(None).unwrap_or("").to_string(),
-        type_line: card.face_type_line(None).unwrap_or("").to_string(),
-        oracle_text: card.face_oracle_text(None).to_string(),
-        power: card.face_power(None).map(str::to_string),
-        toughness: card.face_toughness(None).map(str::to_string),
-        loyalty: card.face_loyalty(None).map(str::to_string),
-        rarity: card.rarity.clone().unwrap_or_default(),
-        set_code: card.set.clone().unwrap_or_default(),
-        collector_number: card.collector_number.clone().unwrap_or_default(),
-        artist: card.face_artist(None).map(str::to_string),
-        flavor_text: None,
-        art_key: None,
-        layout: card.layout.clone().unwrap_or_default(),
-    }
+fn pool_mask_of(card: &ScryfallCard) -> PoolMask {
+    let rarity = card.rarity.as_deref().unwrap_or_default();
+    coverage::pools_of(rarity, |format| {
+        card.legalities.as_ref().and_then(|m| m.get(format)).map(String::as_str)
+    })
 }
 
 fn main() {
@@ -36,10 +26,11 @@ fn main() {
             return;
         }
     };
-    let (mut only_imp, mut only_ora, mut both, mut neither) = (0u64, 0u64, 0u64, 0u64);
     let mut seen: HashSet<String> = HashSet::new();
     let mut index = 0u32;
-    let mut samples_only_ora: Vec<String> = Vec::new();
+    let mut total = [0u64; 5];
+    let mut before = [0u64; 5];
+    let mut after = [0u64; 5];
     for entry in stream {
         let Ok(card) = entry else { continue };
         if reject_reason(&card).is_some() {
@@ -48,26 +39,34 @@ fn main() {
         if !seen.insert(card.name.clone().unwrap_or_default()) {
             continue;
         }
-        let imp = compile_card(&card, index).playable;
+        let c = compile_card(&card, index);
         index = index.saturating_add(1);
-        let ora = matches!(mtg_oracle::compile(&to_oracle(&card)), CompileResult::Playable(_));
-        match (imp, ora) {
-            (true, true) => both += 1,
-            (true, false) => only_imp += 1,
-            (false, true) => {
-                only_ora += 1;
-                if samples_only_ora.len() < 40 {
-                    samples_only_ora.push(card.name.clone().unwrap_or_default());
+        let mask = pool_mask_of(&card);
+        for (i, pool) in Pool::ALL.iter().enumerate() {
+            if !mask.contains(*pool) {
+                continue;
+            }
+            total[i] += 1;
+            if c.playable {
+                after[i] += 1;
+                if !c.second_pass {
+                    before[i] += 1;
                 }
             }
-            (false, false) => neither += 1,
         }
     }
-    println!("so importador ... {only_imp}");
-    println!("so oracle ....... {only_ora}");
-    println!("ambos ........... {both}");
-    println!("nenhum .......... {neither}");
-    println!("importador total  {}", only_imp + both);
-    println!("oracle total .... {}", only_ora + both);
-    println!("amostra so-oracle: {samples_only_ora:?}");
+    println!("| Pool | No catalogo | Antes | Depois | % antes | % depois |");
+    println!("|---|---|---|---|---|---|");
+    for (i, pool) in Pool::ALL.iter().enumerate() {
+        let pct = |n: u64| if total[i] == 0 { 0.0 } else { n as f64 * 100.0 / total[i] as f64 };
+        println!(
+            "| {} | {} | {} | {} | {:.1}% | {:.1}% |",
+            pool.label(),
+            total[i],
+            before[i],
+            after[i],
+            pct(before[i]),
+            pct(after[i])
+        );
+    }
 }

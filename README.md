@@ -21,9 +21,10 @@ card {
 | Métrica | Valor |
 |---|---|
 | Interações de regra cobertas | **65/65** (`docs/RULES_TESTS.md`) |
-| Testes | **348 passando**, 0 falhando |
+| Testes | **504 passando**, 0 falhando |
 | Fuzzing | 200 sementes, **0 pânicos**, 187 com vencedor |
-| Catálogo | **174 cartas** em Lua, 4 decks de 60 · **32.727** no SQLite (Scryfall) |
+| Catálogo | **174 cartas** em Lua, 4 decks de 60 · **32.452** no SQLite (Scryfall) |
+| Cartas jogáveis (IR completa) | **4.951** (15,3%) · Pauper **30,5%** · Modern **17,3%** · Standard **11,8%** |
 | Cartas lançáveis | 100% do catálogo |
 | IA heurística vs aleatória | **46/50 (92%)**, 0 derrotas |
 | Determinismo | mesma semente, partida idêntica |
@@ -124,11 +125,33 @@ Na tabela `cards` convivem duas fontes: as cartas curadas em Lua (sem
 testada; a importada só é `playable` quando o texto inteiro virou IR — carta
 que se comporta diferente do texto quebra a partida em silêncio.
 
-Números da carga de 2026-08-18 (bulk `oracle_cards`, 38.626 linhas): 5.902
-descartadas na entrada (ficha, emblema, digital-only, nome repetido no bulk),
-32.724 gravadas, 3.831 jogáveis, em 3,6 s, num arquivo de 80,9 MB. Com as
-curadas semeadas por cima: `/api/stats` responde 32.727 no total e 3.883
-jogáveis.
+Números da carga de 2026-08-19 (bulk `oracle_cards`, 38.626 linhas): 6.170
+descartadas na entrada (ficha, emblema, digital-only, formato sem regras no
+motor, nome repetido no bulk), **32.456 no catálogo, 4.920 jogáveis (15,2%)**,
+em 5,6 s. Com as curadas semeadas por cima: `/api/stats` responde **32.452 no
+total e 4.951 jogáveis** — as curadas ocupam o nome de 178 importadas, então o
+total do banco é menor que o da carga.
+
+A cobertura por pool está em `docs/ORACLE_COVERAGE.md` e é o número que decide
+se dá para jogar, porque ninguém monta deck com o catálogo inteiro:
+
+| Pool | No catálogo | Jogáveis | % |
+|---|---|---|---|
+| Catálogo inteiro | 32.456 | 4.920 | 15,2% |
+| Pauper | 10.389 | 3.173 | **30,5%** |
+| Modern | 22.365 | 3.862 | 17,3% |
+| Standard | 4.885 | 574 | 11,8% |
+
+O texto passa por **dois compiladores**: o de `mtg-import`, e — só quando aquele
+recusa a carta e nada mais a bloqueia — o de `mtg-oracle`, como segunda passada.
+Dos 4.920, **1.089 vêm da segunda passada**. Ela nunca reescreve carta que a
+primeira aceitou, e não ressuscita carta barrada por layout: o portão está em
+`compile.rs::oracle_second_pass` e tem teste.
+
+Cada carga apaga do banco as cartas importadas que ela não trouxe — sem isso o
+catálogo só crescia, e um filtro de entrada mais estrito deixava para trás 268
+cartas que a importação já não contava. Carta curada em Lua nunca é apagada
+(ela não tem `oracle_id`, e é esse o filtro).
 
 O banco **não vai para o git** (`data/`, `*.db` e `*.sqlite` estão no
 `.gitignore`), nem o bulk baixado em `.cache/scryfall/`. Máquina nova roda o
@@ -154,7 +177,7 @@ catálogo inteiro nunca sai numa resposta só.
 ## Verificação
 
 ```bash
-cargo test --workspace                    # 348 testes
+cargo test --workspace                    # 504 testes
 cargo test --workspace -- --ignored       # fuzzing de 200 sementes, catálogo inteiro
 cargo clippy --workspace --all-targets
 

@@ -85,6 +85,13 @@ impl ImportStore {
         Ok(self.inner.meta(key)?)
     }
 
+    /// Remove do banco as cartas importadas que esta carga não trouxe. Ver
+    /// [`mtg_db::CardStore::prune_imported_except`] — só vale para carga
+    /// completa, e nunca toca carta curada em Lua.
+    pub fn prune_stale(&self, seen: &[String]) -> Result<usize, ImportError> {
+        Ok(self.inner.prune_imported_except(seen)?)
+    }
+
     pub fn checkpoint(&self) -> Result<(), ImportError> {
         self.inner.checkpoint()?;
         Ok(())

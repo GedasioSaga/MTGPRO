@@ -145,7 +145,13 @@ pub fn compile_card(card: &ScryfallCard, id: u32) -> Compiled {
         // P/T já foram julgados acima e continuam valendo. Assim a segunda
         // passada só pode transformar `Unsupported` em jogável, nunca o
         // contrário: nenhuma carta que já compilava muda de IR por causa dela.
-        Err(what) => match oracle_second_pass(card, face, &face_name, problems.is_empty()) {
+        Err(what) => match oracle_second_pass(
+            card,
+            face,
+            &face_name,
+            &type_line,
+            problems.is_empty(),
+        ) {
             Some(out) => {
                 abilities = out.abilities;
                 spell_effect = out.spell_effect;
@@ -222,6 +228,7 @@ fn oracle_second_pass(
     card: &ScryfallCard,
     face: Option<usize>,
     face_name: &str,
+    importer_type_line: &TypeLine,
     clean: bool,
 ) -> Option<CompiledText> {
     if !clean {
@@ -244,6 +251,13 @@ fn oracle_second_pass(
         layout: card.layout.clone().unwrap_or_default(),
     };
     let def = mtg_oracle::compile(&oracle_card).card()?.clone();
+    // Os dois compiladores leem a linha de tipo por conta propria, e e ela que
+    // decide se o texto vira efeito de magica ou habilidade de permanente.
+    // Discordando, o comportamento importado ficaria pendurado no tipo errado
+    // — feitico virando criatura muda. Divergiu, nao entra.
+    if def.type_line != *importer_type_line {
+        return None;
+    }
     Some(CompiledText {
         abilities: def.abilities,
         spell_effect: def.spell_effect,
@@ -2052,8 +2066,13 @@ mod tests {
         assert!(!out.playable, "condição ignorada não pode virar carta jogável");
     }
 
+    /// O invariante e "nao truncar", nao "recusar". Enquanto so a primeira
+    /// passada existia, a unica saida fiel para esta frase era recusa-la; a
+    /// segunda passada compila a clausula inteira, e ai a carta jogavel PRECISA
+    /// trazer o `GrantKeywords`. Aceitar sem ele seria a infidelidade que este
+    /// teste sempre existiu para impedir.
     #[test]
-    fn pump_with_extra_clause_is_rejected_not_truncated() {
+    fn pump_with_extra_clause_is_never_truncated() {
         let c = card(
             "Might of the Ancestors",
             "Instant",
@@ -2061,7 +2080,29 @@ mod tests {
             "Target creature you control gets +2/+0 and gains vigilance until end of turn.",
         );
         let out = compile_card(&c, 0);
-        assert!(!out.playable, "'and gains vigilance' não pode ser descartado em silêncio");
+        if !out.playable {
+            return;
+        }
+        let Some(Effect::Sequence(steps)) = &out.def.spell_effect else {
+            panic!("duas clausulas, um efeito so: {:?}", out.def.spell_effect);
+        };
+        assert!(
+            steps.contains(&Effect::ModifyPT {
+                target: ObjRef::Target(0),
+                power: Value::Const(2),
+                toughness: Value::Const(0),
+                duration: Duration::EndOfTurn,
+            }),
+            "faltou o +2/+0: {steps:?}"
+        );
+        assert!(
+            steps.contains(&Effect::GrantKeywords {
+                target: ObjRef::Target(0),
+                keywords: vec![Keyword::Vigilance],
+                duration: Duration::EndOfTurn,
+            }),
+            "'and gains vigilance' foi descartado em silencio: {steps:?}"
+        );
     }
 
     #[test]
@@ -2148,5 +2189,103 @@ mod tests {
         let b = compile_card(&c, 7);
         assert_eq!(a.def, b.def);
         assert_eq!(a.playable, b.playable);
+    }
+
+    // -----------------------------------------------------------------------
+    // Segunda passada (`mtg_oracle::compile`)
+    // -----------------------------------------------------------------------
+
+    /// "Each player sacrifices a land of their choice" e vocabulario que so o
+    /// compilador de `mtg-oracle` tem. O teste afirma o IR INTEIRO, nao so o
+    /// `playable`: e o texto que manda cada jogador sacrificar UM terreno, e e
+    /// exatamente isso que tem de estar no `Effect`.
+    #[test]
+    fn second_pass_compiles_each_player_sacrifices_with_faithful_ir() {
+        let c = card(
+            "Tremble",
+            "Sorcery",
+            "{1}{R}",
+            "Each player sacrifices a land of their choice.",
+        );
+        let out = compile_card(&c, 0);
+        assert!(out.playable, "esperava jogavel, veio {:?}", out.reason);
+        assert!(out.second_pass, "esta familia so existe na segunda passada");
+        assert_eq!(
+            out.def.spell_effect,
+            Some(Effect::Sacrifice {
+                player: PlayerRef::Each,
+                count: Value::Const(1),
+                filter: Filter::HasType(CardType::Land),
+            })
+        );
+        assert!(out.def.spell_targets.is_empty(), "a carta nao tem alvo");
+    }
+
+    /// Custo composto com sacrificio de si mesma, alvo restrito e dano: a IR
+    /// tem de trazer o custo, o alvo e o dano exatamente como escritos.
+    #[test]
+    fn second_pass_compiles_activated_ability_with_faithful_cost_and_target() {
+        let mut c = creature(
+            "Expendable Troops",
+            "2",
+            "1",
+            "{T}, Sacrifice this creature: It deals 2 damage to target attacking or blocking creature.",
+        );
+        c.mana_cost = Some("{1}{W}".to_string());
+        let out = compile_card(&c, 0);
+        assert!(out.playable, "esperava jogavel, veio {:?}", out.reason);
+        assert!(out.second_pass);
+        let [Ability::Activated(a)] = &out.def.abilities[..] else {
+            panic!("esperava uma habilidade ativada, veio {:?}", out.def.abilities);
+        };
+        assert_eq!(a.cost, Cost::Composite(vec![Cost::Tap, Cost::Sacrifice(1, Filter::IsSelf)]));
+        assert_eq!(a.effect, Effect::DealDamage { amount: Value::Const(2), target: ObjRef::Target(0) });
+        assert_eq!(a.targets.len(), 1, "um alvo, o da frase");
+    }
+
+    /// O portao de seguranca: a segunda passada nao pode ressuscitar carta
+    /// barrada por LAYOUT. O texto da face frontal aqui compila sozinho, e
+    /// mesmo assim a carta tem de continuar fora — a outra metade nao existe
+    /// no IR e jogar so a frente seria jogar outra carta.
+    #[test]
+    fn second_pass_does_not_rescue_a_card_blocked_by_layout() {
+        let mut c = card("Fire // Ice", "Instant // Instant", "", "");
+        c.layout = Some("split".to_string());
+        c.card_faces = Some(vec![
+            CardFace {
+                name: Some("Fire".to_string()),
+                mana_cost: Some("{1}{R}".to_string()),
+                type_line: Some("Instant".to_string()),
+                oracle_text: Some("Each player sacrifices a land of their choice.".to_string()),
+                ..Default::default()
+            },
+            CardFace {
+                name: Some("Ice".to_string()),
+                mana_cost: Some("{1}{U}".to_string()),
+                type_line: Some("Instant".to_string()),
+                oracle_text: Some("Draw a card.".to_string()),
+                ..Default::default()
+            },
+        ]);
+        let out = compile_card(&c, 0);
+        assert!(!out.playable, "split nao pode entrar por meia carta");
+        assert!(!out.second_pass);
+        let reason = out.reason.unwrap_or_default();
+        assert!(reason.contains("split"), "o motivo tem de ser o layout, veio {reason}");
+    }
+
+    /// Carta que o compilador deste crate ja aceitava nao pode mudar de IR por
+    /// causa da segunda passada — ela so entra depois de um `Err`.
+    #[test]
+    fn second_pass_never_touches_a_card_the_first_pass_accepted() {
+        let bolt = card(
+            "Lightning Bolt",
+            "Instant",
+            "{R}",
+            "Lightning Bolt deals 3 damage to any target.",
+        );
+        let out = compile_card(&bolt, 0);
+        assert!(out.playable);
+        assert!(!out.second_pass, "primeira passada aceitou, a segunda nao roda");
     }
 }

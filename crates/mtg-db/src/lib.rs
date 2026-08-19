@@ -370,6 +370,45 @@ impl CardStore {
     /// Devolve quantas linhas foram de fato escritas (inseridas ou
     /// atualizadas); a diferença para `batch.len()` é o número de cartas do
     /// Scryfall ofuscadas por uma carta Lua de mesmo nome.
+    /// Apaga as cartas IMPORTADAS cujo `oracle_id` não está em `keep`.
+    ///
+    /// Sem isto o catálogo só cresce: quando um filtro de entrada fica mais
+    /// estrito, as cartas que ele passou a recusar continuam no banco de cargas
+    /// anteriores, e `/api/stats` conta carta que a importação não contou.
+    ///
+    /// O critério é o conjunto de ids desta carga, não o relógio: `imported_at`
+    /// tem resolução de segundo, e duas cargas dentro do mesmo segundo ficariam
+    /// indistinguíveis. Conjunto não depende de relógio nenhum, e o resultado é
+    /// o mesmo em qualquer máquina.
+    ///
+    /// **Carta curada em Lua nunca é apagada**: ela não tem `oracle_id`, e é
+    /// exatamente esse o filtro. Chamar isto depois de uma carga PARCIAL
+    /// (`--limit`) apagaria o resto do catálogo, então quem chama tem de
+    /// garantir que a carga foi completa — o importador só chama sem `--limit`.
+    pub fn prune_imported_except(&self, keep: &[String]) -> Result<usize, DbError> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute_batch(
+            "CREATE TEMP TABLE IF NOT EXISTS keep_oracle_ids (oracle_id TEXT PRIMARY KEY);
+             DELETE FROM keep_oracle_ids;",
+        )?;
+        {
+            let mut ins =
+                tx.prepare("INSERT OR IGNORE INTO keep_oracle_ids (oracle_id) VALUES (?1)")?;
+            for id in keep {
+                ins.execute(params![id])?;
+            }
+        }
+        let removed = tx.execute(
+            "DELETE FROM cards
+             WHERE oracle_id IS NOT NULL AND oracle_id <> ''
+               AND oracle_id NOT IN (SELECT oracle_id FROM keep_oracle_ids)",
+            [],
+        )?;
+        tx.execute_batch("DROP TABLE keep_oracle_ids;")?;
+        tx.commit()?;
+        Ok(removed)
+    }
+
     pub fn import_cards(&self, batch: &[ImportedCard]) -> Result<usize, DbError> {
         let tx = self.conn.unchecked_transaction()?;
         let mut written = 0usize;
@@ -1340,6 +1379,41 @@ mod tests {
 
     /// O caso que o bug de duas fontes escondia: importar em massa e depois
     /// semear o catálogo curado, no mesmo banco, sem uma fonte comer a outra.
+    /// A poda existe para que o catálogo encolha quando o filtro de entrada
+    /// fica mais estrito. O que ela NÃO pode fazer é levar junto a carta
+    /// curada em Lua — essa não veio de carga nenhuma e não tem carimbo.
+    #[test]
+    fn prune_removes_stale_import_and_never_touches_curated() {
+        let store = CardStore::open_in_memory().expect("abrir banco em memória");
+
+        // Carga velha: 10 cartas importadas, mais o catálogo curado.
+        let velha: Vec<ImportedCard> = (0..10).map(|i| imported(i, i % 2 == 0)).collect();
+        assert_eq!(store.import_cards(&velha).expect("carga velha"), 10);
+        let lua = sample_db();
+        store.seed_from(&lua).expect("seed_from");
+        let curadas = lua.cards.len() as u64;
+
+        // Carga nova: só 4 das 10 continuam existindo no bulk.
+        let nova: Vec<ImportedCard> = (0..4).map(|i| imported(i, true)).collect();
+        store.import_cards(&nova).expect("carga nova");
+        let vistos: Vec<String> = nova.iter().map(|c| c.oracle_id.clone()).collect();
+        assert_eq!(vistos.len(), 4, "a carga nova precisa trazer os ids");
+
+        let removidas = store.prune_imported_except(&vistos).expect("prune");
+        assert_eq!(removidas, 6, "as 6 que a carga nova não tocou têm de sair");
+
+        let stats = store.stats().expect("stats");
+        assert_eq!(stats.total, 4 + curadas, "sobrou carta de carga velha");
+
+        // O ponto do teste: nenhuma curada sumiu, e todas continuam jogáveis.
+        let page = store
+            .search_page(&CardQuery { limit: 2_000, ..Default::default() })
+            .expect("search_page");
+        let sem_oracle = page.items.iter().filter(|c| c.oracle_id.is_none()).count();
+        assert_eq!(sem_oracle as u64, curadas, "a poda comeu carta curada em Lua");
+        assert!(page.items.iter().filter(|c| c.oracle_id.is_none()).all(|c| c.playable));
+    }
+
     #[test]
     fn seed_after_import_keeps_both_sources() {
         const IMPORTED: usize = 1_000;

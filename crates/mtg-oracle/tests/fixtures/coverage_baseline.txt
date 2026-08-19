@@ -4,12 +4,12 @@
 # NAO editar a mao. Numero que cai = carta que parou de compilar.
 cards=500
 catalog.total=500
-catalog.playable=61
+catalog.playable=75
 pauper.total=179
-pauper.playable=40
+pauper.playable=46
 standard.total=88
-standard.playable=5
+standard.playable=7
 modern.total=355
-modern.playable=47
+modern.playable=59
 common_uncommon.total=324
-common_uncommon.playable=55
+common_uncommon.playable=67

@@ -48,7 +48,7 @@ fn main() {
         }
         let ir = format!(
             "type_line={:?}\n  mana_cost={:?}\n  pt={:?}/{:?}\n  abilities={:#?}\n  spell_effect={:#?}\n  spell_targets={:#?}",
-            c.def.type_line.to_string(),
+            &c.def.type_line,
             c.def.mana_cost,
             c.def.power,
             c.def.toughness,

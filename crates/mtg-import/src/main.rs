@@ -188,7 +188,13 @@ fn sync(args: SyncArgs) -> Result<(), ImportError> {
     println!("banco do catálogo ..... {} (o mesmo que o mtg-server lê)", args.db.display());
     let mut coverage = CoverageReport::new();
     let started = Instant::now();
-    let stats = import_file(&path, &mut store, args.limit, &mut coverage)?;
+    let mut seen_ids: Vec<String> = Vec::new();
+    let stats = import_file(&path, &mut store, args.limit, &mut coverage, &mut seen_ids)?;
+    // Carga parcial não pode podar: `--limit 500` apagaria as outras 32 mil.
+    let pruned = match args.limit {
+        None => store.prune_stale(&seen_ids)?,
+        Some(_) => 0,
+    };
     let elapsed = started.elapsed();
     store.set_meta("bulk_kind", &args.bulk)?;
     store.set_meta("bulk_updated_at", &updated_at)?;
@@ -199,6 +205,9 @@ fn sync(args: SyncArgs) -> Result<(), ImportError> {
     store.checkpoint()?;
 
     print_summary(&stats, &store, args.report_lines)?;
+    if pruned > 0 {
+        println!("    removidas de carga anterior  {pruned} (cartas que a entrada agora recusa)");
+    }
     println!("tempo de importação ... {:.1}s", elapsed.as_secs_f64());
     let db_bytes = std::fs::metadata(&args.db).map(|m| m.len()).unwrap_or(0);
     println!("banco ................. {:.1} MB ({})", db_bytes as f64 / 1_048_576.0, args.db.display());
@@ -234,6 +243,8 @@ fn import_file(
     store: &mut ImportStore,
     limit: Option<u64>,
     coverage: &mut CoverageReport,
+    // `oracle_id` de tudo que esta carga aceitou. É o que sobrevive à poda.
+    seen_ids: &mut Vec<String>,
 ) -> Result<ImportStats, ImportError> {
     let mut stats = ImportStats::default();
     let stream = scryfall::stream_cards(path)?;
@@ -275,6 +286,9 @@ fn import_file(
         coverage.observe_card(&compiled.def.type_line, pools, compiled.playable, has_legalities);
         if compiled.playable {
             stats.playable += 1;
+            if compiled.second_pass {
+                stats.playable_second_pass += 1;
+            }
         } else {
             stats.note_unplayable(compiled.reason.as_deref().unwrap_or("motivo não registrado"));
             match compiled.pattern.as_deref() {
@@ -287,6 +301,9 @@ fn import_file(
                     pools,
                 ),
             }
+        }
+        if let Some(id) = card.oracle_id.clone() {
+            seen_ids.push(id);
         }
         store.push(imported_card(&card, compiled))?;
     }
@@ -325,6 +342,11 @@ fn print_summary(
         "    jogável ........... {} ({:.1}%)",
         stats.playable,
         percent(stats.playable, kept)
+    );
+    println!(
+        "        pela 2a passada  {} ({} do compilador deste crate)",
+        stats.playable_second_pass,
+        stats.playable.saturating_sub(stats.playable_second_pass)
     );
     println!(
         "    não jogável ....... {} ({:.1}%)",

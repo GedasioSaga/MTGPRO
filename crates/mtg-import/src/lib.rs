@@ -59,6 +59,10 @@ pub struct ImportStats {
     pub total_lines: u64,
     pub rejected: BTreeMap<&'static str, u64>,
     pub playable: u64,
+    /// Quantas das `playable` vieram da segunda passada (`mtg_oracle::compile`)
+    /// em vez do compilador deste crate. Dois compiladores convivem aqui; sem
+    /// este número não dá para saber qual dos dois está pagando a cobertura.
+    pub playable_second_pass: u64,
     pub unplayable: u64,
     /// Motivo pelo qual a carta não é jogável, do mais frequente ao menos.
     pub unplayable_reasons: BTreeMap<String, u64>,
